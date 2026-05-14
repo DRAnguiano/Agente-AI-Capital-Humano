@@ -1,17 +1,26 @@
 {
-  "name": "Telegram HR Recruiter -> Groq RAG",
+  "name": "Agente AI Capital Humano Transmontes",
   "nodes": [
     {
-      "parameters": {},
-      "id": "TelegramTrigger",
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "1add3168-ac9f-4721-9402-ea08e276a11e",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1,
-      "position": [-640, 0],
+      "position": [
+        -1920,
+        496
+      ],
+      "webhookId": "3771b1a9-892c-4568-88b6-4c4fc6eb6bfa",
       "credentials": {
         "telegramApi": {
-          "id": "__RELINK__",
-          "name": "TELEGRAM_BOT"
+          "id": "ww7kfAVxr5ivNP9i",
+          "name": "Telegram account"
         }
       }
     },
@@ -39,66 +48,248 @@
             {
               "name": "text",
               "value": "={{$json[\"message\"][\"text\"] || ''}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$json[\"message\"][\"date\"]}}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{$json[\"message\"][\"message_id\"]}}"
+            },
+            {
+              "name": "conversation_key",
+              "value": "={{\"telegram:\" + $json[\"message\"][\"chat\"][\"id\"]}}"
             }
           ]
-        }
+        },
+        "options": {}
       },
-      "id": "SetExtract",
+      "id": "350eec06-f4a7-4bfe-b58a-814e08f3bf46",
       "name": "Set extract",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [-420, 0]
+      "position": [
+        -1776,
+        496
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
             {
-              "value1": "={{$json.chat_type}}",
-              "operation": "equal",
-              "value2": "private"
+              "id": "ac1e8226-5331-4f8e-9dff-9511bb8c7603",
+              "leftValue": "={{$json.chat_type}}",
+              "rightValue": "=private",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "IfPrivate",
+      "id": "7235c544-d85d-4b9a-84f2-99b4073bb688",
       "name": "IF private",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [-220, 0]
+      "position": [
+        -1632,
+        496
+      ]
     },
     {
       "parameters": {
-        "authentication": "none",
-        "url": "http://api:8000/ask",
         "method": "POST",
-        "jsonParameters": true,
-        "optionsJson": "={\"bodyParametersJson\":{\"q\":\"={{$json.text}}\",\"history\":\"\",\"top_k\":3}}"
+        "url": "http://api:8000/ask",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  q: $json.text,\n  history: $json.history || 'No hay historial previo.',\n  top_k: 4\n} }}",
+        "options": {}
       },
-      "id": "RagAsk",
-      "name": "RAG Ask",
+      "id": "6e70fcc2-d427-4e90-a6a9-2811f29f2de4",
+      "name": "RAG: Ask (/ask)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [20, 0]
+      "position": [
+        -736,
+        464
+      ]
     },
     {
       "parameters": {
-        "chatId": "={{$node[\"Set extract\"].json.chat_id}}",
-        "text": "={{$json.text || 'No encontre respuesta.'}}"
+        "chatId": "={{$node[\"Telegram Trigger\"].json[\"message\"][\"chat\"][\"id\"]}}",
+        "text": "={{$node[\"RAG: Ask (/ask)\"].json.text}}",
+        "additionalFields": {}
       },
-      "id": "TelegramSend",
-      "name": "Telegram Send",
+      "id": "ffed6bd5-4647-41cb-9614-914174cde275",
+      "name": "Telegram: Send",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [260, 0],
+      "position": [
+        -208,
+        464
+      ],
+      "webhookId": "f797357b-a416-44c7-b8c8-e71f49cf2bc4",
       "credentials": {
         "telegramApi": {
-          "id": "__RELINK__",
-          "name": "TELEGRAM_BOT"
+          "id": "ww7kfAVxr5ivNP9i",
+          "name": "Telegram account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1c000a72-0be4-449d-91ab-028d43ab858a",
+              "leftValue": "={{$json.text}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1424,
+        480
+      ],
+      "id": "f1a7a0a4-c0b3-4bda-8e60-e7771f3515a3",
+      "name": "IF has text"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH payload AS (\n    SELECT $1::jsonb AS j\n)\nINSERT INTO rh_conversations (\n    channel,\n    channel_user_id,\n    conversation_key,\n    current_stage\n)\nSELECT\n    'telegram',\n    j->>'chat_id',\n    j->>'conversation_key',\n    'START'\nFROM payload\nON CONFLICT (conversation_key)\nDO UPDATE SET\n    updated_at = now()\nRETURNING\n    id,\n    channel,\n    channel_user_id,\n    conversation_key,\n    current_stage,\n    status;",
+        "options": {
+          "queryReplacement": "=={{JSON.stringify({\n  chat_id: $node[\"Set extract\"].json.chat_id,\n  conversation_key: $node[\"Set extract\"].json.conversation_key\n})}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1200,
+        464
+      ],
+      "id": "dfea3463-cf69-44ff-8533-ab510663633c",
+      "name": "PG - Upsert Conversation",
+      "credentials": {
+        "postgres": {
+          "id": "pY9gv99IJHRxAxfh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    role,\n    message,\n    created_at\nFROM rh_messages\nWHERE conversation_key = $1\nORDER BY created_at DESC\nLIMIT 10;",
+        "options": {
+          "queryReplacement": "={{$node[\"Set extract\"].json.conversation_key}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1056,
+        464
+      ],
+      "id": "90e4a406-4f59-4177-8b65-68c0450523b7",
+      "name": "PG - Get Memory",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "pY9gv99IJHRxAxfh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH payload AS (\n    SELECT $1::jsonb AS j\n)\nINSERT INTO rh_messages (\n    conversation_key,\n    role,\n    message\n)\nSELECT\n    j->>'conversation_key',\n    'user',\n    j->>'text'\nFROM payload\nRETURNING id;",
+        "options": {
+          "queryReplacement": "=={{JSON.stringify({\n  conversation_key: $node[\"Set extract\"].json.conversation_key,\n  text: $node[\"Set extract\"].json.text\n})}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -560,
+        464
+      ],
+      "id": "561dafc9-8046-4796-9587-6f0bec96246b",
+      "name": "PG - Save User Message",
+      "credentials": {
+        "postgres": {
+          "id": "pY9gv99IJHRxAxfh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH payload AS (\n    SELECT $1::jsonb AS j\n)\nINSERT INTO rh_messages (\n    conversation_key,\n    role,\n    message\n)\nSELECT\n    j->>'conversation_key',\n    'assistant',\n    j->>'text'\nFROM payload\nRETURNING id;",
+        "options": {
+          "queryReplacement": "=={{JSON.stringify({\n  conversation_key: $node[\"Set extract\"].json.conversation_key,\n  text: $node[\"RAG: Ask (/ask)\"].json.text\n})}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -368,
+        464
+      ],
+      "id": "6fc44cf3-0cd7-47eb-be11-9de07b50a4c6",
+      "name": "PG - Save Assistant Message",
+      "credentials": {
+        "postgres": {
+          "id": "pY9gv99IJHRxAxfh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.all();\n\nconst messages = input\n  .map(item => item.json)\n  .filter(m => m.role && m.message)\n  .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));\n\nconst history = messages.length > 0\n  ? messages\n      .map(m => {\n        const role = m.role === 'assistant' ? 'Agente' : 'Candidato';\n        return `${role}: ${m.message}`;\n      })\n      .join('\\n')\n  : 'No hay historial previo.';\n\nconst setData = $node[\"Set extract\"].json;\n\nreturn [\n  {\n    json: {\n      chat_id: setData.chat_id,\n      chat_type: setData.chat_type,\n      username: setData.username,\n      first_name: setData.first_name,\n      text: setData.text,\n      message_id: setData.message_id,\n      conversation_key: setData.conversation_key,\n      history\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        464
+      ],
+      "id": "f9f1a084-707b-4396-a664-a971d59cb1ed",
+      "name": "Build RAG Payload"
     }
   ],
+  "pinData": {},
   "connections": {
     "Telegram Trigger": {
       "main": [
@@ -126,24 +317,101 @@
       "main": [
         [
           {
-            "node": "RAG Ask",
+            "node": "IF has text",
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
-    "RAG Ask": {
+    "RAG: Ask (/ask)": {
       "main": [
         [
           {
-            "node": "Telegram Send",
+            "node": "PG - Save User Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF has text": {
+      "main": [
+        [
+          {
+            "node": "PG - Upsert Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG - Upsert Conversation": {
+      "main": [
+        [
+          {
+            "node": "PG - Get Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG - Get Memory": {
+      "main": [
+        [
+          {
+            "node": "Build RAG Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG - Save User Message": {
+      "main": [
+        [
+          {
+            "node": "PG - Save Assistant Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build RAG Payload": {
+      "main": [
+        [
+          {
+            "node": "RAG: Ask (/ask)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG - Save Assistant Message": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send",
             "type": "main",
             "index": 0
           }
         ]
       ]
     }
-  }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "faae867c-7ec2-443f-987f-39a401c4d0de",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c26844e1cc30d54fcab909ab618f4d860e305486d2612cca3b108a6c2ea5b1c8"
+  },
+  "id": "MJTsGT2XUniOm6Vb",
+  "tags": []
 }
