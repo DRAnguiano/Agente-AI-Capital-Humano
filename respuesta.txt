@@ -1,5 +1,0 @@
-﻿Docker es una plataforma y un ecosistema para la creaciÃ³n, ejecuciÃ³n y gestiÃ³n de contenedores. Es decir, te permite encapsular tu aplicaciÃ³n en un entorno aislado que puede ser movido entre distintas mÃ¡quinas sin preocuparte por las diferencias operativas o configuraciones.
-
-En tÃ©rminos tÃ©cnicos: Docker utiliza tecnologÃ­as de contenedorizaciÃ³n para empaquetar la aplicaciÃ³n y sus dependencias en un 'contenedor', que es una imagen ejecutable, junto con todo lo necesario para su funcionamiento (como el sistema operativo base, los archivos del proyecto y las bibliotecas). Esto facilita desplegar tu aplicaciÃ³n rÃ¡pidamente e independientemente de la infraestructura subyacente.
-
-Para solucionar un error como "container no saludable", primero revisarÃ­a los logs con `docker logs` para entender quÃ© estÃ¡ sucediendo dentro del contenedor, luego corregirÃ­a el config y reconstruirÃ­a el contenedor si es necesario.

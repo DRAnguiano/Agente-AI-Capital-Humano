@@ -1,20 +1,13 @@
-# Python
-.venv/
+.env
 __pycache__/
 *.pyc
-
-# Env
-.env
-
-# Data
-data/
-chroma_db/
+node_modules/
+*.backup
 *.db
-
-# Cache
-.cache/
-
-# OS
-.DS_Store
-Thumbs.db
-
+chroma/
+chroma_db/
+data/private/
+backups/
+*.log
+.vscode/
+.venv/
