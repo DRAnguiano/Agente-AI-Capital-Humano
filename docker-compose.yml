@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:16
+    container_name: hr_postgres
+    ports:
+      - "5432:5432"
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
+      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -21,10 +36,17 @@ services:
       REINDEX_CLEAN: ${REINDEX_CLEAN:-false}
       DATA_DIR: /app/data
       DB_DIR: /app/chroma_db
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
+      POSTGRES_USER: ${POSTGRES_USER:-hr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
     volumes:
       - chroma_data:/app/chroma_db
       - ./data:/app/data
     restart: unless-stopped
+    depends_on:
+      - postgres
 
   n8n:
     image: n8nio/n8n:latest
@@ -44,6 +66,7 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+      - postgres
 
   ngrok:
     image: ngrok/ngrok:latest
@@ -68,3 +91,5 @@ services:
 volumes:
   chroma_data:
   n8n_data:
+  pg_data:
+  
