@@ -1,12 +1,12 @@
 import time
 import traceback
+import .orchestrator import orchestrate_message
 
 from fastapi import FastAPI, Header, Query
 from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
 from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int
-from .orchestrator import orchestrate_message
 from .persona_config import SYSTEM_PROMPT
 from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY
 
@@ -59,7 +59,6 @@ def reindex(
 
     started = time.time()
     top_k = _to_int(k, _to_int(getattr(body, "top_k", None), 3))
-
     try:
         stats = build_index()
         return {
@@ -81,22 +80,13 @@ class AskBody(BaseModel):
     history: str | None = ""
     top_k: int | None = None
 
-
 class OrchestrateMessageBody(BaseModel):
-    channel: str = "telegram_demo"
+    channel:str = "telegram_demo"
     channel_user_id: str
-    username: str | None = None
-    phone: str | None = None
-    message: str
-    external_message_id: str | None = None
-
+    username: str None= none
 
 @app.post("/ask")
 def ask(body: AskBody):
-    """
-    Endpoint RAG original.
-    Lo conservamos para compatibilidad con tu workflow actual de n8n.
-    """
     try:
         question = body.q.strip()
         history_text = body.history.strip() if body.history else "No hay historial previo."
@@ -141,36 +131,6 @@ RESPUESTA:
                 for item in valid_ctx
             ],
         }
-    except Exception as exc:
-        traceback.print_exc()
-        return JSONResponse(status_code=500, content={"error": _public_error(exc)})
-
-
-@app.post("/orchestrate/message")
-def orchestrate(body: OrchestrateMessageBody):
-    """
-    Nuevo endpoint principal del sistema.
-
-    Este endpoint:
-    - crea/actualiza conversación
-    - guarda mensaje entrante
-    - detecta intención/riesgo
-    - extrae datos del candidato
-    - consulta RAG si aplica
-    - crea handoff humano si aplica
-    - guarda eventos analíticos
-    - devuelve respuesta lista para Telegram/Chatwoot/WhatsApp
-    """
-    try:
-        result = orchestrate_message(
-            channel=body.channel,
-            channel_user_id=body.channel_user_id,
-            username=body.username,
-            phone=body.phone,
-            message=body.message,
-            external_message_id=body.external_message_id,
-        )
-        return result
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
