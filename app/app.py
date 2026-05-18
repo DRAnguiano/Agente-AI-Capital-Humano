@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int
 from .orchestrator import orchestrate_message
+from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
 from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY
 
@@ -98,7 +99,7 @@ class OrchestrateMessageBody(BaseModel):
 def ask(body: AskBody):
     """
     Endpoint RAG original.
-    Lo conservamos para compatibilidad con tu workflow actual de n8n.
+    Lo conservamos para compatibilidad con el workflow actual.
     """
     try:
         question = body.q.strip()
@@ -258,6 +259,197 @@ async def _send_chatwoot_message(
         return response.json()
 
 
+def _normalize_chatwoot_labels(labels) -> list[str]:
+    """
+    Normaliza labels sugeridas desde PostgreSQL.
+    PostgreSQL puede devolver arrays como list, tuple o string tipo "{a,b}".
+    """
+    if not labels:
+        return []
+
+    if isinstance(labels, str):
+        labels = labels.strip()
+        if labels.startswith("{") and labels.endswith("}"):
+            labels = labels[1:-1].split(",")
+        else:
+            labels = [labels]
+
+    clean = []
+    for label in labels:
+        value = str(label or "").strip().lower()
+        if value:
+            clean.append(value)
+
+    return sorted(set(clean))
+
+
+def _fallback_chatwoot_labels(result: dict) -> list[str]:
+    """
+    Labels básicas si por alguna razón no se puede leer v_rh_work_queue.
+    """
+    labels = ["bot_activo"]
+
+    if result.get("requires_human"):
+        labels.extend(["requiere_humano", "requiere_revision_ch"])
+
+    if result.get("risk_level") == "high":
+        labels.extend(["riesgo_alto", "requiere_humano"])
+
+    if result.get("current_stage") == "PROFILE_READY":
+        labels.extend(["perfil_listo", "requiere_revision_ch"])
+
+    return sorted(set(labels))
+
+
+def _get_rh_work_queue_metadata(conversation_key: str) -> dict:
+    """
+    Consulta la cola operativa RH para traer prioridad, acción recomendada y labels.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    conversation_key,
+                    current_stage,
+                    ciudad,
+                    risk_level,
+                    requires_human,
+                    is_foraneo_candidate,
+                    foraneo_reason,
+                    needs_travel_validation,
+                    work_priority,
+                    work_bucket,
+                    recommended_action,
+                    suggested_chatwoot_labels
+                FROM v_rh_work_queue
+                WHERE conversation_key = %(conversation_key)s
+                LIMIT 1;
+                """,
+                {"conversation_key": conversation_key},
+            )
+            row = cur.fetchone()
+
+    return dict(row) if row else {}
+
+
+async def _set_chatwoot_labels(
+    account_id: int | str,
+    conversation_id: int | str,
+    labels: list[str],
+) -> dict:
+    """
+    Reemplaza/asigna labels a una conversación de Chatwoot.
+    """
+    clean_labels = _normalize_chatwoot_labels(labels)
+    if not clean_labels:
+        return {"skipped": True, "reason": "empty_labels"}
+
+    base_url = os.getenv("CHATWOOT_BASE_URL", "").strip().rstrip("/")
+    api_token = os.getenv("CHATWOOT_API_TOKEN", "").strip()
+
+    if not base_url:
+        raise RuntimeError("CHATWOOT_BASE_URL is not configured")
+
+    if not api_token:
+        raise RuntimeError("CHATWOOT_API_TOKEN is not configured")
+
+    url = (
+        f"{base_url}/api/v1/accounts/{account_id}"
+        f"/conversations/{conversation_id}/labels"
+    )
+
+    headers = {
+        "api_access_token": api_token,
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "labels": clean_labels,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        return response.json()
+
+
+async def _send_chatwoot_private_note(
+    account_id: int | str,
+    conversation_id: int | str,
+    content: str,
+) -> dict:
+    """
+    Crea una nota interna en la conversación de Chatwoot.
+    """
+    base_url = os.getenv("CHATWOOT_BASE_URL", "").strip().rstrip("/")
+    api_token = os.getenv("CHATWOOT_API_TOKEN", "").strip()
+
+    if not base_url:
+        raise RuntimeError("CHATWOOT_BASE_URL is not configured")
+
+    if not api_token:
+        raise RuntimeError("CHATWOOT_API_TOKEN is not configured")
+
+    url = (
+        f"{base_url}/api/v1/accounts/{account_id}"
+        f"/conversations/{conversation_id}/messages"
+    )
+
+    headers = {
+        "api_access_token": api_token,
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "content": content,
+        "message_type": "outgoing",
+        "private": True,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        return response.json()
+
+
+def _build_chatwoot_internal_note(
+    result: dict,
+    work_queue: dict,
+    labels: list[str],
+    username: str,
+    content: str,
+) -> str:
+    """
+    Construye una nota interna breve para Capital Humano.
+    """
+    current_stage = result.get("current_stage") or work_queue.get("current_stage") or "N/D"
+    intent = result.get("intent") or "N/D"
+    risk_level = result.get("risk_level") or work_queue.get("risk_level") or "N/D"
+    requires_human = result.get("requires_human")
+    work_bucket = work_queue.get("work_bucket") or "N/D"
+    recommended_action = work_queue.get("recommended_action") or "N/D"
+    ciudad = work_queue.get("ciudad") or "N/D"
+    foraneo_reason = work_queue.get("foraneo_reason") or "N/D"
+
+    labels_text = ", ".join(labels) if labels else "N/D"
+
+    return (
+        "Nota automática del Agente IA Capital Humano\n\n"
+        f"Prospecto: {username}\n"
+        f"Último mensaje: {content[:500]}\n\n"
+        f"Etapa actual: {current_stage}\n"
+        f"Intención detectada: {intent}\n"
+        f"Riesgo: {risk_level}\n"
+        f"Requiere humano: {requires_human}\n\n"
+        f"Cola RH: {work_bucket}\n"
+        f"Acción recomendada: {recommended_action}\n"
+        f"Ciudad: {ciudad}\n"
+        f"Foráneo: {foraneo_reason}\n\n"
+        f"Labels sugeridas/aplicadas: {labels_text}"
+    )
+
+
 @app.post("/chatwoot/webhook")
 async def chatwoot_webhook(
     request: Request,
@@ -266,13 +458,6 @@ async def chatwoot_webhook(
 ):
     """
     Webhook de Chatwoot integrado con el orquestador RH.
-
-    Flujo:
-    - Recibe eventos de Chatwoot.
-    - Ignora eventos que no sean mensajes entrantes reales.
-    - Convierte el payload al formato del orquestador.
-    - Ejecuta orchestrate_message().
-    - Envía la respuesta de vuelta a la conversación en Chatwoot.
     """
     expected_token = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "").strip()
     received_token = x_chatwoot_webhook_token or token
@@ -333,8 +518,6 @@ async def chatwoot_webhook(
         flush=True,
     )
 
-    # Ignorar todo lo que no sea un mensaje entrante real del prospecto.
-    # Esto evita responder a templates, mensajes salientes y eventos internos.
     if event != "message_created":
         return {
             "status": "ignored",
@@ -399,6 +582,74 @@ async def chatwoot_webhook(
             content=reply,
         )
 
+        conversation_key = make_conversation_key("chatwoot", channel_user_id)
+        work_queue = _get_rh_work_queue_metadata(conversation_key)
+
+        labels = _normalize_chatwoot_labels(
+            work_queue.get("suggested_chatwoot_labels")
+        )
+
+        if not labels:
+            labels = _fallback_chatwoot_labels(result)
+
+        labels_applied = False
+        note_created = False
+        labels_error = None
+        note_error = None
+
+        try:
+            await _set_chatwoot_labels(
+                account_id=account_id,
+                conversation_id=conversation_id,
+                labels=labels,
+            )
+            labels_applied = True
+        except Exception as label_exc:
+            labels_error = str(label_exc)
+            print(
+                "[CHATWOOT_LABELS_ERROR]",
+                json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "account_id": account_id,
+                        "labels": labels,
+                        "error": labels_error[:500],
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+
+        try:
+            note = _build_chatwoot_internal_note(
+                result=result,
+                work_queue=work_queue,
+                labels=labels,
+                username=username,
+                content=content,
+            )
+
+            await _send_chatwoot_private_note(
+                account_id=account_id,
+                conversation_id=conversation_id,
+                content=note,
+            )
+            note_created = True
+        except Exception as note_exc:
+            note_error = str(note_exc)
+            print(
+                "[CHATWOOT_NOTE_ERROR]",
+                json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "account_id": account_id,
+                        "error": note_error[:500],
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+
         return {
             "status": "ok",
             "processed": True,
@@ -410,6 +661,13 @@ async def chatwoot_webhook(
             "requires_human": result.get("requires_human"),
             "risk_level": result.get("risk_level"),
             "chatwoot_message_id": chatwoot_response.get("id"),
+            "labels": labels,
+            "labels_applied": labels_applied,
+            "labels_error": labels_error,
+            "note_created": note_created,
+            "note_error": note_error,
+            "work_bucket": work_queue.get("work_bucket"),
+            "recommended_action": work_queue.get("recommended_action"),
         }
 
     except httpx.HTTPStatusError as exc:
