@@ -3,6 +3,7 @@ from typing import Any
 
 from .db import (
     create_handoff,
+    find_city_catalog_match,
     get_conversation_state,
     log_event,
     save_message,
@@ -400,6 +401,81 @@ def detect_intent_and_risk(message: str) -> dict[str, Any]:
     }
 
 
+def _clean_city_text(message: str) -> str:
+    """
+    Limpia respuestas tipo:
+    - Soy de Nuevo Laredo
+    - Vivo en Torreón
+    - Estoy en San Diego California
+    - Radico en Gómez
+    """
+    raw = (message or "").strip()
+    if not raw:
+        return raw
+
+    cleaned = raw.strip(" .,!¡¿?;:'\"").strip()
+
+    patterns = [
+        r"^(soy\s+de|soi\s+de|vivo\s+en|vivo\s+por|estoy\s+en|ando\s+en|radico\s+en|resido\s+en|me\s+ubico\s+en|me\s+encuentro\s+en)\s+",
+        r"^(de\s+)",
+        r"^(en\s+)",
+    ]
+
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
+
+    cleaned = cleaned.strip(" .,!¡¿?;:'\"").strip()
+
+    if len(cleaned) > 100:
+        return raw
+
+    return cleaned or raw
+
+
+def _city_fields_from_catalog(message: str, current_stage: str | None) -> dict[str, Any]:
+    """
+    Consulta rh_city_catalog para normalizar ciudad.
+
+    Solo busca ciudad cuando estamos en una etapa donde tiene sentido:
+    START / NEW_LEAD / ASK_CITY.
+    """
+    stage = current_stage or "START"
+
+    if stage not in {"START", "NEW_LEAD", "ASK_CITY"}:
+        return {}
+
+    if not message or len(message.strip()) > 120:
+        return {}
+
+    cleaned_city = _clean_city_text(message)
+
+    match = find_city_catalog_match(cleaned_city) or find_city_catalog_match(message)
+
+    if not match:
+        if stage == "ASK_CITY" and len(cleaned_city.strip()) <= 60:
+            return {
+                "ciudad": cleaned_city.strip(),
+                "observaciones": "Ciudad no encontrada en catálogo; validar manualmente si aplica.",
+            }
+        return {}
+
+    observaciones = (
+        "Ciudad normalizada por catálogo: "
+        f"{match.get('canonical_city')} / {match.get('state_region')} / "
+        f"{match.get('country_code')} / {match.get('city_group')}."
+    )
+
+    if match.get("requires_ch_validation"):
+        observaciones += " Requiere validación de Capital Humano por ubicación."
+
+    return {
+        "ciudad": match.get("canonical_city"),
+        "observaciones": observaciones,
+        "_city_catalog": match,
+        "_city_requires_ch_validation": bool(match.get("requires_ch_validation")),
+    }
+
+
 def extract_profile_fields(message: str, current_stage: str | None) -> dict[str, Any]:
     m = _norm(message)
     fields: dict[str, Any] = {}
@@ -410,50 +486,36 @@ def extract_profile_fields(message: str, current_stage: str | None) -> dict[str,
         if 18 <= age <= 75:
             fields["edad"] = age
 
-    city_patterns = [
-        "torreon",
-        "gomez palacio",
-        "lerdo",
-        "matamoros",
-        "saltillo",
-        "monterrey",
-        "durango",
-        "chihuahua",
-    ]
-    for city in city_patterns:
-        if city in m:
-            fields["ciudad"] = city.title()
+    city_fields = _city_fields_from_catalog(message, current_stage)
+    if city_fields:
+        fields.update(city_fields)
 
     if "federal" in m or "licencia" in m:
         fields["licencia_federal"] = (
-            "SI" if any(x in m for x in ["si", "tengo", "cuento", "federal"]) else "NO"
+            "SI" if any(x in m for x in ["si", "sí", "tengo", "cuento", "federal"]) else "NO"
         )
 
         type_match = re.search(r"\b(tipo\s*)?([abe])\b", m)
         if type_match:
             fields["tipo_licencia"] = type_match.group(2).upper()
 
-    if "apto" in m or "medico" in m:
+    if "apto" in m or "medico" in m or "médico" in m:
         fields["apto_medico"] = (
-            "SI" if any(x in m for x in ["si", "tengo", "vigente", "cuento"]) else "NO"
+            "SI" if any(x in m for x in ["si", "sí", "tengo", "vigente", "cuento"]) else "NO"
         )
 
-    if "viajar" in m or "disponibilidad" in m or "foraneo" in m or "foraneas" in m:
+    if "viajar" in m or "disponibilidad" in m or "foraneo" in m or "foráneo" in m or "foraneas" in m:
         fields["disponibilidad_viajar"] = (
-            "SI" if any(x in m for x in ["si", "tengo", "disponible", "cuento"]) else "NO"
+            "SI" if any(x in m for x in ["si", "sí", "tengo", "disponible", "cuento"]) else "NO"
         )
 
     exp_match = re.search(r"\b(\d{1,2})\s*(anos|años|año)\b", m)
     if exp_match and any(x in m for x in ["experiencia", "manejando", "quinta", "rueda", "tracto"]):
         fields["experiencia_quinta_rueda"] = f"{exp_match.group(1)} años"
 
-    if current_stage == "ASK_CITY" and not fields.get("ciudad"):
-        if len(message.strip()) <= 60:
-            fields["ciudad"] = message.strip()
-
     if current_stage == "ASK_LICENSE" and not fields.get("licencia_federal"):
         fields["licencia_federal"] = (
-            "SI" if any(x in m for x in ["si", "tengo", "cuento", "federal"]) else "NO"
+            "SI" if any(x in m for x in ["si", "sí", "tengo", "cuento", "federal"]) else "NO"
         )
 
     if current_stage == "ASK_EXPERIENCE" and not fields.get("experiencia_quinta_rueda"):
@@ -461,12 +523,12 @@ def extract_profile_fields(message: str, current_stage: str | None) -> dict[str,
 
     if current_stage == "ASK_APTO" and not fields.get("apto_medico"):
         fields["apto_medico"] = (
-            "SI" if any(x in m for x in ["si", "tengo", "vigente", "cuento"]) else "NO"
+            "SI" if any(x in m for x in ["si", "sí", "tengo", "vigente", "cuento"]) else "NO"
         )
 
     if current_stage == "ASK_AVAILABILITY" and not fields.get("disponibilidad_viajar"):
         fields["disponibilidad_viajar"] = (
-            "SI" if any(x in m for x in ["si", "tengo", "disponible", "cuento"]) else "NO"
+            "SI" if any(x in m for x in ["si", "sí", "tengo", "disponible", "cuento"]) else "NO"
         )
 
     return fields
@@ -730,6 +792,17 @@ def orchestrate_message(
     requires_clarification = bool(detection.get("requires_clarification", False))
 
     fields = extract_profile_fields(message, current_stage)
+
+    city_catalog = fields.pop("_city_catalog", None) if fields else None
+    city_requires_ch_validation = (
+        bool(fields.pop("_city_requires_ch_validation", False)) if fields else False
+    )
+
+    if city_requires_ch_validation and risk_level != "high":
+        intent = "foreign_location_validation"
+        risk_level = "medium"
+        requires_human = True
+
     if fields:
         fields["last_detected_intent"] = intent
         fields["risk_level"] = risk_level
@@ -749,6 +822,8 @@ def orchestrate_message(
             "channel": channel,
             "requires_clarification": requires_clarification,
             "reason": detection.get("reason"),
+            "city_catalog": city_catalog,
+            "city_requires_ch_validation": city_requires_ch_validation,
         },
     )
 
@@ -955,7 +1030,7 @@ def orchestrate_message(
         stage_to=next_stage,
         intent=intent,
         risk_level=risk_level,
-        requires_human=False,
+        requires_human=requires_human,
     )
 
     save_message(conversation_key, "assistant", reply)
@@ -967,8 +1042,12 @@ def orchestrate_message(
         stage_to=next_stage,
         intent=intent,
         risk_level=risk_level,
-        requires_human=False,
-        metadata={"fields": fields},
+        requires_human=requires_human,
+        metadata={
+            "fields": fields,
+            "city_catalog": city_catalog,
+            "city_requires_ch_validation": city_requires_ch_validation,
+        },
     )
 
     return {
@@ -976,7 +1055,7 @@ def orchestrate_message(
         "conversation_key": conversation_key,
         "reply": reply,
         "current_stage": next_stage,
-        "requires_human": False,
+        "requires_human": requires_human,
         "risk_level": risk_level,
         "intent": intent,
         "sources": [],

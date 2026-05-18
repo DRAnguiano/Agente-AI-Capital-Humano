@@ -421,3 +421,58 @@ def save_rag_audit(
                     "min_score": min_score,
                 },
             )
+
+def find_city_catalog_match(city_text: str) -> dict[str, Any] | None:
+    """
+    Busca una ciudad/alias en rh_city_catalog.
+
+    Intenta:
+    - match exacto contra alias_norm
+    - match contenido: "soy de nuevo laredo" contiene "nuevo laredo"
+
+    Devuelve la mejor coincidencia o None.
+    """
+    raw = (city_text or "").strip()
+    if not raw:
+        return None
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH q AS (
+                    SELECT rh_norm_text(%(city_text)s) AS query_norm
+                )
+                SELECT
+                    c.id,
+                    c.alias_text,
+                    c.alias_norm,
+                    c.canonical_city,
+                    c.state_region,
+                    c.country_code,
+                    c.country_name,
+                    c.city_group,
+                    c.is_local_laguna,
+                    c.is_foreign_country,
+                    c.requires_ch_validation,
+                    c.needs_travel_validation,
+                    c.notes
+                FROM rh_city_catalog c
+                CROSS JOIN q
+                WHERE
+                    c.alias_norm = q.query_norm
+                    OR q.query_norm LIKE '%%' || c.alias_norm || '%%'
+                ORDER BY
+                    CASE
+                        WHEN c.alias_norm = q.query_norm THEN 1
+                        ELSE 2
+                    END,
+                    length(c.alias_norm) DESC,
+                    c.alias_text ASC
+                LIMIT 1;
+                """,
+                {"city_text": raw},
+            )
+            row = cur.fetchone()
+
+    return dict(row) if row else None
