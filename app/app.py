@@ -2,6 +2,7 @@ import time
 import traceback
 import os
 import json
+import httpx
 
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse, ORJSONResponse
@@ -151,7 +152,7 @@ RESPUESTA:
 @app.post("/orchestrate/message")
 def orchestrate(body: OrchestrateMessageBody):
     """
-    Nuevo endpoint principal del sistema.
+    Endpoint principal del sistema.
 
     Este endpoint:
     - crea/actualiza conversación
@@ -176,6 +177,87 @@ def orchestrate(body: OrchestrateMessageBody):
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
+
+
+def _extract_chatwoot_contact(payload: dict) -> dict:
+    """
+    Extrae datos del contacto desde distintas formas de payload de Chatwoot.
+    OJO: esta función NO debe tener decorador @app.post.
+    """
+    sender = payload.get("sender") or {}
+    conversation = payload.get("conversation") or {}
+
+    meta = conversation.get("meta") or {}
+    sender_from_meta = meta.get("sender") or {}
+
+    contact = sender or sender_from_meta or {}
+
+    contact_id = (
+        contact.get("id")
+        or payload.get("sender_id")
+        or payload.get("contact_id")
+        or payload.get("source_id")
+    )
+
+    name = (
+        contact.get("name")
+        or contact.get("email")
+        or contact.get("phone_number")
+        or sender_from_meta.get("name")
+        or sender_from_meta.get("email")
+        or sender_from_meta.get("phone_number")
+    )
+
+    phone = contact.get("phone_number") or sender_from_meta.get("phone_number")
+    email = contact.get("email") or sender_from_meta.get("email")
+
+    return {
+        "contact_id": contact_id,
+        "name": name,
+        "phone": phone,
+        "email": email,
+    }
+
+
+async def _send_chatwoot_message(
+    account_id: int | str,
+    conversation_id: int | str,
+    content: str,
+) -> dict:
+    """
+    Envía una respuesta pública a una conversación de Chatwoot.
+    """
+    base_url = os.getenv("CHATWOOT_BASE_URL", "").strip().rstrip("/")
+    api_token = os.getenv("CHATWOOT_API_TOKEN", "").strip()
+
+    if not base_url:
+        raise RuntimeError("CHATWOOT_BASE_URL is not configured")
+
+    if not api_token:
+        raise RuntimeError("CHATWOOT_API_TOKEN is not configured")
+
+    url = (
+        f"{base_url}/api/v1/accounts/{account_id}"
+        f"/conversations/{conversation_id}/messages"
+    )
+
+    headers = {
+        "api_access_token": api_token,
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "content": content,
+        "message_type": "outgoing",
+        "private": False,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        return response.json()
+
+
 @app.post("/chatwoot/webhook")
 async def chatwoot_webhook(
     request: Request,
@@ -183,16 +265,16 @@ async def chatwoot_webhook(
     x_chatwoot_webhook_token: str | None = Header(default=None),
 ):
     """
-    Endpoint inicial para recibir webhooks de Chatwoot.
+    Webhook de Chatwoot integrado con el orquestador RH.
 
-    Acepta token por:
-    - header: x-chatwoot-webhook-token
-    - query param: ?token=...
-
-    En esta primera fase solo registra el payload y responde OK.
+    Flujo:
+    - Recibe eventos de Chatwoot.
+    - Ignora eventos que no sean mensajes entrantes reales.
+    - Convierte el payload al formato del orquestador.
+    - Ejecuta orchestrate_message().
+    - Envía la respuesta de vuelta a la conversación en Chatwoot.
     """
     expected_token = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "").strip()
-
     received_token = x_chatwoot_webhook_token or token
 
     if expected_token and received_token != expected_token:
@@ -211,23 +293,26 @@ async def chatwoot_webhook(
             "raw_body": (await request.body()).decode("utf-8", errors="ignore")
         }
 
-    event = payload.get("event") if isinstance(payload, dict) else None
-    message_type = payload.get("message_type") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        return {
+            "status": "ignored",
+            "reason": "payload_not_dict",
+        }
 
-    conversation_id = None
-    account_id = None
-    inbox_id = None
-    content = None
+    event = payload.get("event")
+    message_type = payload.get("message_type")
+    content = (payload.get("content") or "").strip()
 
-    if isinstance(payload, dict):
-        conversation = payload.get("conversation") or {}
-        account = payload.get("account") or {}
-        inbox = payload.get("inbox") or {}
+    conversation = payload.get("conversation") or {}
+    account = payload.get("account") or {}
+    inbox = payload.get("inbox") or {}
 
-        conversation_id = conversation.get("id") or payload.get("conversation_id")
-        account_id = account.get("id") or payload.get("account_id")
-        inbox_id = inbox.get("id") or payload.get("inbox_id")
-        content = payload.get("content")
+    conversation_id = conversation.get("id") or payload.get("conversation_id")
+    account_id = account.get("id") or payload.get("account_id")
+    inbox_id = inbox.get("id") or payload.get("inbox_id")
+    message_id = payload.get("id") or payload.get("message_id")
+
+    contact = _extract_chatwoot_contact(payload)
 
     print(
         "[CHATWOOT_WEBHOOK]",
@@ -238,17 +323,113 @@ async def chatwoot_webhook(
                 "account_id": account_id,
                 "conversation_id": conversation_id,
                 "inbox_id": inbox_id,
-                "content_preview": str(content or "")[:300],
+                "message_id": message_id,
+                "contact_id": contact.get("contact_id"),
+                "contact_name": contact.get("name"),
+                "content_preview": content[:300],
             },
             ensure_ascii=False,
         ),
         flush=True,
     )
 
-    return {
-        "status": "ok",
-        "received": True,
-        "event": event,
-        "message_type": message_type,
-        "conversation_id": conversation_id,
-    }
+    # Ignorar todo lo que no sea un mensaje entrante real del prospecto.
+    # Esto evita responder a templates, mensajes salientes y eventos internos.
+    if event != "message_created":
+        return {
+            "status": "ignored",
+            "reason": "not_message_created",
+            "event": event,
+        }
+
+    if message_type != "incoming":
+        return {
+            "status": "ignored",
+            "reason": "not_incoming",
+            "message_type": message_type,
+        }
+
+    if not content:
+        return {
+            "status": "ignored",
+            "reason": "empty_content",
+        }
+
+    if not account_id or not conversation_id:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error": "missing_account_or_conversation_id",
+            },
+        )
+
+    channel_user_id = str(
+        contact.get("phone")
+        or contact.get("contact_id")
+        or conversation_id
+    )
+
+    username = contact.get("name") or f"Chatwoot Contact {channel_user_id}"
+
+    try:
+        result = orchestrate_message(
+            channel="chatwoot",
+            channel_user_id=channel_user_id,
+            username=username,
+            phone=contact.get("phone"),
+            message=content,
+            external_message_id=str(message_id or ""),
+        )
+
+        reply = (result.get("reply") or result.get("text") or "").strip()
+
+        if not reply:
+            return {
+                "status": "ok",
+                "processed": True,
+                "sent_to_chatwoot": False,
+                "reason": "empty_reply",
+                "orchestrator_result": result,
+            }
+
+        chatwoot_response = await _send_chatwoot_message(
+            account_id=account_id,
+            conversation_id=conversation_id,
+            content=reply,
+        )
+
+        return {
+            "status": "ok",
+            "processed": True,
+            "sent_to_chatwoot": True,
+            "conversation_id": conversation_id,
+            "account_id": account_id,
+            "current_stage": result.get("current_stage"),
+            "intent": result.get("intent"),
+            "requires_human": result.get("requires_human"),
+            "risk_level": result.get("risk_level"),
+            "chatwoot_message_id": chatwoot_response.get("id"),
+        }
+
+    except httpx.HTTPStatusError as exc:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "error",
+                "error": "chatwoot_api_error",
+                "details": str(exc),
+                "response_text": exc.response.text[:1000],
+            },
+        )
+
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error": _public_error(exc),
+            },
+        )
