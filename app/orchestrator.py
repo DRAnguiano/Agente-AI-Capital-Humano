@@ -453,9 +453,22 @@ def _city_fields_from_catalog(message: str, current_stage: str | None) -> dict[s
 
     if not match:
         if stage == "ASK_CITY" and len(cleaned_city.strip()) <= 60:
-            return {
+                        return {
                 "ciudad": cleaned_city.strip(),
+                "ciudad_raw": message.strip(),
+                "estado_region": None,
+                "pais_codigo": None,
+                "pais_nombre": None,
+                "city_group": "No catalogada",
+                "is_local_laguna": False,
+                "is_foreign_country": False,
+                "location_requires_ch_validation": True,
+                "location_needs_travel_validation": True,
+                "city_catalog_alias": None,
+                "city_catalog_id": None,
                 "observaciones": "Ciudad no encontrada en catálogo; validar manualmente si aplica.",
+                "_city_catalog": None,
+                "_city_requires_ch_validation": True,
             }
         return {}
 
@@ -470,6 +483,17 @@ def _city_fields_from_catalog(message: str, current_stage: str | None) -> dict[s
 
     return {
         "ciudad": match.get("canonical_city"),
+        "ciudad_raw": message.strip(),
+        "estado_region": match.get("state_region"),
+        "pais_codigo": match.get("country_code"),
+        "pais_nombre": match.get("country_name"),
+        "city_group": match.get("city_group"),
+        "is_local_laguna": bool(match.get("is_local_laguna")),
+        "is_foreign_country": bool(match.get("is_foreign_country")),
+        "location_requires_ch_validation": bool(match.get("requires_ch_validation")),
+        "location_needs_travel_validation": bool(match.get("needs_travel_validation")),
+        "city_catalog_alias": match.get("alias_text"),
+        "city_catalog_id": match.get("id"),
         "observaciones": observaciones,
         "_city_catalog": match,
         "_city_requires_ch_validation": bool(match.get("requires_ch_validation")),

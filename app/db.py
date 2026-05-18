@@ -306,6 +306,17 @@ def update_candidate_profile(conversation_key: str, fields: dict[str, Any]) -> N
         "nombre_completo",
         "edad",
         "ciudad",
+        "ciudad_raw",
+        "estado_region",
+        "pais_codigo",
+        "pais_nombre",
+        "city_group",
+        "is_local_laguna",
+        "is_foreign_country",
+        "location_requires_ch_validation",
+        "location_needs_travel_validation",
+        "city_catalog_alias",
+        "city_catalog_id",
         "telefono",
         "experiencia_quinta_rueda",
         "licencia_federal",
@@ -421,6 +432,7 @@ def save_rag_audit(
                     "min_score": min_score,
                 },
             )
+
 
 def find_city_catalog_match(city_text: str) -> dict[str, Any] | None:
     """
