@@ -1,7 +1,9 @@
 import time
 import traceback
+import os
+import json
 
-from fastapi import FastAPI, Header, Query
+from fastapi import FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
@@ -174,3 +176,79 @@ def orchestrate(body: OrchestrateMessageBody):
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
+@app.post("/chatwoot/webhook")
+async def chatwoot_webhook(
+    request: Request,
+    token: str | None = Query(default=None),
+    x_chatwoot_webhook_token: str | None = Header(default=None),
+):
+    """
+    Endpoint inicial para recibir webhooks de Chatwoot.
+
+    Acepta token por:
+    - header: x-chatwoot-webhook-token
+    - query param: ?token=...
+
+    En esta primera fase solo registra el payload y responde OK.
+    """
+    expected_token = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "").strip()
+
+    received_token = x_chatwoot_webhook_token or token
+
+    if expected_token and received_token != expected_token:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status": "error",
+                "error": "unauthorized",
+            },
+        )
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {
+            "raw_body": (await request.body()).decode("utf-8", errors="ignore")
+        }
+
+    event = payload.get("event") if isinstance(payload, dict) else None
+    message_type = payload.get("message_type") if isinstance(payload, dict) else None
+
+    conversation_id = None
+    account_id = None
+    inbox_id = None
+    content = None
+
+    if isinstance(payload, dict):
+        conversation = payload.get("conversation") or {}
+        account = payload.get("account") or {}
+        inbox = payload.get("inbox") or {}
+
+        conversation_id = conversation.get("id") or payload.get("conversation_id")
+        account_id = account.get("id") or payload.get("account_id")
+        inbox_id = inbox.get("id") or payload.get("inbox_id")
+        content = payload.get("content")
+
+    print(
+        "[CHATWOOT_WEBHOOK]",
+        json.dumps(
+            {
+                "event": event,
+                "message_type": message_type,
+                "account_id": account_id,
+                "conversation_id": conversation_id,
+                "inbox_id": inbox_id,
+                "content_preview": str(content or "")[:300],
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+
+    return {
+        "status": "ok",
+        "received": True,
+        "event": event,
+        "message_type": message_type,
+        "conversation_id": conversation_id,
+    }

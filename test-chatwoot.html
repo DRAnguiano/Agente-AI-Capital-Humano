@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Prueba Chatwoot RH</title>
+</head>
+<body>
+  <h1>Prueba Chatwoot - Agente RH</h1>
+  <p>Esta página solo sirve para probar el widget de Chatwoot.</p>
+
+  <script>
+    (function(d,t) {
+      var BASE_URL="http://localhost:3000";
+      var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+      g.src=BASE_URL+"/packs/js/sdk.js";
+      g.async = true;
+      s.parentNode.insertBefore(g,s);
+      g.onload=function(){
+        window.chatwootSDK.run({
+          websiteToken: 'vvNsYzZ8cfpcn7sSxQh5E6te',
+          baseUrl: BASE_URL
+        })
+      }
+    })(document,"script");
+  </script>
+</body>
+</html>

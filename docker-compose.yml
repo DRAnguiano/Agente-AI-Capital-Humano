@@ -93,6 +93,10 @@ services:
     volumes:
       - chroma_data:/app/chroma_db
       - ./data:/app/data
+    networks:
+      default:
+        aliases:
+          - api.localhost
     restart: unless-stopped
     depends_on:
       - postgres
