@@ -304,7 +304,7 @@ def _fallback_chatwoot_labels(result: dict) -> list[str]:
 def _get_rh_work_queue_metadata(conversation_key: str) -> dict:
     """
     Consulta la cola operativa RH para traer prioridad, acción recomendada,
-    ubicación estructurada y labels sugeridas para Chatwoot.
+    ubicación estructurada, contacto y labels sugeridas para Chatwoot.
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -312,8 +312,13 @@ def _get_rh_work_queue_metadata(conversation_key: str) -> dict:
                 """
                 SELECT
                     conversation_key,
+                    channel,
+                    channel_user_id,
                     current_stage,
                     last_intent,
+
+                    nombre_completo,
+                    telefono,
 
                     ciudad,
                     ciudad_raw,
@@ -570,6 +575,20 @@ def _build_chatwoot_internal_note(
     queue_label = _short_queue_label(work_queue)
 
     recommended_action = work_queue.get("recommended_action") or "Continuar seguimiento según etapa."
+
+    nombre_contacto = (
+        work_queue.get("nombre_completo")
+        or username
+        or "No disponible"
+    )
+
+    telefono_contacto = (
+        work_queue.get("telefono")
+        or "No disponible"
+    )
+
+    canal = work_queue.get("channel") or "chatwoot"
+
     ciudad = work_queue.get("ciudad") or "N/D"
     estado_region = work_queue.get("estado_region") or "N/D"
     pais_codigo = work_queue.get("pais_codigo") or "N/D"
@@ -585,6 +604,10 @@ def _build_chatwoot_internal_note(
         f"{title}\n\n"
         f"Acción: {recommended_action}.\n"
         f"Último mensaje: \"{safe_content}\"\n\n"
+        "👤 Contacto\n"
+        f"Nombre: {nombre_contacto}\n"
+        f"Teléfono: {telefono_contacto}\n"
+        f"Canal: {canal}\n\n"
         "📋 Estado del proceso\n"
         f"Etapa: {current_stage}\n"
         f"Cola: {queue_label}\n"
@@ -822,6 +845,8 @@ async def chatwoot_webhook(
             "estado_region": work_queue.get("estado_region"),
             "pais_codigo": work_queue.get("pais_codigo"),
             "city_group": work_queue.get("city_group"),
+            "nombre_completo": work_queue.get("nombre_completo"),
+            "telefono": work_queue.get("telefono"),
         }
 
     except httpx.HTTPStatusError as exc:
