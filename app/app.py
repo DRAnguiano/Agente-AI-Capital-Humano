@@ -303,7 +303,8 @@ def _fallback_chatwoot_labels(result: dict) -> list[str]:
 
 def _get_rh_work_queue_metadata(conversation_key: str) -> dict:
     """
-    Consulta la cola operativa RH para traer prioridad, acción recomendada y labels.
+    Consulta la cola operativa RH para traer prioridad, acción recomendada,
+    ubicación estructurada y labels sugeridas para Chatwoot.
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -312,12 +313,23 @@ def _get_rh_work_queue_metadata(conversation_key: str) -> dict:
                 SELECT
                     conversation_key,
                     current_stage,
+                    last_intent,
+
                     ciudad,
+                    ciudad_raw,
+                    estado_region,
+                    pais_codigo,
+                    pais_nombre,
+                    city_group,
+                    is_local_laguna,
+                    is_foreign_country,
+                    location_requires_ch_validation,
+                    location_needs_travel_validation,
+                    city_catalog_alias,
+                    city_catalog_id,
+
                     risk_level,
                     requires_human,
-                    is_foraneo_candidate,
-                    foraneo_reason,
-                    needs_travel_validation,
                     work_priority,
                     work_bucket,
                     recommended_action,
@@ -413,6 +425,129 @@ async def _send_chatwoot_private_note(
         return response.json()
 
 
+def _human_bool(value) -> str:
+    """
+    Convierte booleanos/valores a texto amigable para notas internas.
+    """
+    if value is True:
+        return "SÍ"
+    if value is False:
+        return "NO"
+    if value is None:
+        return "N/D"
+    return "SÍ" if bool(value) else "NO"
+
+
+def _human_required(value) -> str:
+    """
+    Para textos tipo 'No requerida' / 'Requerida', más claro que SÍ/NO.
+    """
+    if value is True:
+        return "Requerida"
+    if value is False:
+        return "No requerida"
+    return "N/D"
+
+
+def _human_risk_level(value: str | None) -> str:
+    mapping = {
+        "low": "Bajo",
+        "medium": "Medio",
+        "high": "Alto",
+    }
+    return mapping.get((value or "").lower(), value or "N/D")
+
+
+def _human_stage(value: str | None) -> str:
+    mapping = {
+        "START": "Inicio",
+        "NEW_LEAD": "Nuevo prospecto",
+        "ASK_CITY": "Ciudad pendiente",
+        "ASK_LICENSE": "Licencia pendiente",
+        "ASK_EXPERIENCE": "Experiencia pendiente",
+        "ASK_APTO": "Apto médico pendiente",
+        "ASK_AVAILABILITY": "Disponibilidad pendiente",
+        "PROFILE_READY": "Perfil listo",
+        "CLARIFY_AMBIGUOUS_SLANG": "Aclaración pendiente",
+        "HUMAN_REVIEW_REQUIRED": "Revisión humana requerida",
+    }
+    return mapping.get(value or "", value or "N/D")
+
+
+def _human_intent(value: str | None) -> str:
+    mapping = {
+        "candidate_answer": "Respuesta del candidato",
+        "document_question": "Pregunta documental",
+        "followup_time_question": "Pregunta sobre seguimiento",
+        "documents_complete_followup": "Documentación / siguiente paso",
+        "foraneo_travel_question": "Pregunta sobre traslado foráneo",
+        "foreign_location_validation": "Ubicación extranjera / validar CH",
+        "sensitive_handoff": "Tema sensible",
+        "rcontrol_or_incident_handoff": "Incidencia / R-Control",
+        "salary_sensitive": "Sueldo / validación CH",
+        "ambiguous_slang_clarification": "Aclaración de jerga",
+        "slang_clarified_safe": "Jerga aclarada",
+        "slang_clarification_risky": "Jerga con riesgo",
+    }
+    return mapping.get(value or "", value or "N/D")
+
+
+def _human_city_group(value: str | None) -> str:
+    mapping = {
+        "Laguna": "Local Laguna",
+        "Foráneo México": "Foráneo",
+        "Extranjero / validar C.H.": "Extranjero / validar CH",
+        "No catalogada": "No catalogada",
+    }
+    return mapping.get(value or "", value or "N/D")
+
+
+def _note_title_from_work_queue(work_queue: dict, labels: list[str]) -> str:
+    """
+    Título corto y operativo para la nota interna.
+    """
+    if work_queue.get("is_foreign_country"):
+        return "🤖 Nota IA: Candidato extranjero"
+
+    if "foraneo" in labels or work_queue.get("location_needs_travel_validation"):
+        return "🤖 Nota IA: Candidato foráneo"
+
+    if "local_laguna" in labels or work_queue.get("is_local_laguna"):
+        return "🤖 Nota IA: Candidato local"
+
+    if work_queue.get("requires_human"):
+        return "🤖 Nota IA: Revisión CH requerida"
+
+    return "🤖 Nota IA: Seguimiento de candidato"
+
+
+def _short_queue_label(work_queue: dict) -> str:
+    """
+    Convierte work_bucket largo en una lectura corta para RH.
+    """
+    priority = work_queue.get("work_priority")
+    bucket = work_queue.get("work_bucket") or "N/D"
+
+    if priority == 1:
+        return "1 - Urgente"
+    if priority == 2:
+        return "2 - Ubicación extranjera"
+    if priority == 3:
+        return "3 - Foráneo"
+    if priority == 4:
+        return "4 - Local"
+    if priority == 5:
+        return "5 - Perfil listo"
+    if priority == 6:
+        return "6 - Aclaración"
+    if priority == 7:
+        return "7 - Posible abandono"
+    if priority == 8:
+        return "8 - En proceso"
+
+    return bucket
+
+
 def _build_chatwoot_internal_note(
     result: dict,
     work_queue: dict,
@@ -421,32 +556,46 @@ def _build_chatwoot_internal_note(
     content: str,
 ) -> str:
     """
-    Construye una nota interna breve para Capital Humano.
+    Construye una nota interna breve, escaneable y humana para Capital Humano.
     """
-    current_stage = result.get("current_stage") or work_queue.get("current_stage") or "N/D"
-    intent = result.get("intent") or "N/D"
-    risk_level = result.get("risk_level") or work_queue.get("risk_level") or "N/D"
-    requires_human = result.get("requires_human")
-    work_bucket = work_queue.get("work_bucket") or "N/D"
-    recommended_action = work_queue.get("recommended_action") or "N/D"
+    current_stage_raw = result.get("current_stage") or work_queue.get("current_stage")
+    intent_raw = result.get("intent") or work_queue.get("last_intent")
+    risk_level_raw = result.get("risk_level") or work_queue.get("risk_level")
+
+    current_stage = _human_stage(current_stage_raw)
+    intent = _human_intent(intent_raw)
+    risk_level = _human_risk_level(risk_level_raw)
+
+    title = _note_title_from_work_queue(work_queue, labels)
+    queue_label = _short_queue_label(work_queue)
+
+    recommended_action = work_queue.get("recommended_action") or "Continuar seguimiento según etapa."
     ciudad = work_queue.get("ciudad") or "N/D"
-    foraneo_reason = work_queue.get("foraneo_reason") or "N/D"
+    estado_region = work_queue.get("estado_region") or "N/D"
+    pais_codigo = work_queue.get("pais_codigo") or "N/D"
+    city_group = _human_city_group(work_queue.get("city_group"))
+
+    location_requires_ch_validation = bool(work_queue.get("location_requires_ch_validation"))
+    location_needs_travel_validation = bool(work_queue.get("location_needs_travel_validation"))
 
     labels_text = ", ".join(labels) if labels else "N/D"
+    safe_content = (content or "").strip()[:500]
 
     return (
-        "Nota automática del Agente IA Capital Humano\n\n"
-        f"Prospecto: {username}\n"
-        f"Último mensaje: {content[:500]}\n\n"
-        f"Etapa actual: {current_stage}\n"
-        f"Intención detectada: {intent}\n"
-        f"Riesgo: {risk_level}\n"
-        f"Requiere humano: {requires_human}\n\n"
-        f"Cola RH: {work_bucket}\n"
-        f"Acción recomendada: {recommended_action}\n"
-        f"Ciudad: {ciudad}\n"
-        f"Foráneo: {foraneo_reason}\n\n"
-        f"Labels sugeridas/aplicadas: {labels_text}"
+        f"{title}\n\n"
+        f"Acción: {recommended_action}.\n"
+        f"Último mensaje: \"{safe_content}\"\n\n"
+        "📋 Estado del proceso\n"
+        f"Etapa: {current_stage}\n"
+        f"Cola: {queue_label}\n"
+        f"Intención: {intent}\n"
+        f"Riesgo: {risk_level}\n\n"
+        "📍 Ubicación\n"
+        f"Ciudad: {ciudad}, {estado_region} ({pais_codigo})\n"
+        f"Clasificación: {city_group}\n"
+        f"Requiere boleto/traslado: {_human_bool(location_needs_travel_validation)}\n"
+        f"Validación CH por ubicación: {_human_required(location_requires_ch_validation)}\n\n"
+        f"Labels: {labels_text}"
     )
 
 
@@ -666,8 +815,13 @@ async def chatwoot_webhook(
             "labels_error": labels_error,
             "note_created": note_created,
             "note_error": note_error,
+            "work_priority": work_queue.get("work_priority"),
             "work_bucket": work_queue.get("work_bucket"),
             "recommended_action": work_queue.get("recommended_action"),
+            "ciudad": work_queue.get("ciudad"),
+            "estado_region": work_queue.get("estado_region"),
+            "pais_codigo": work_queue.get("pais_codigo"),
+            "city_group": work_queue.get("city_group"),
         }
 
     except httpx.HTTPStatusError as exc:
