@@ -338,7 +338,13 @@ def _get_rh_work_queue_metadata(conversation_key: str) -> dict:
                     work_priority,
                     work_bucket,
                     recommended_action,
-                    suggested_chatwoot_labels
+                    suggested_chatwoot_labels,
+
+                    is_profile_ready,
+                    has_base_profile_data,
+                    is_restrictive_review,
+                    needs_location_ch_validation,
+                    is_foraneo_mx
                 FROM v_rh_work_queue
                 WHERE conversation_key = %(conversation_key)s
                 LIMIT 1;
@@ -474,7 +480,7 @@ def _human_stage(value: str | None) -> str:
         "ASK_AVAILABILITY": "Disponibilidad pendiente",
         "PROFILE_READY": "Perfil listo",
         "CLARIFY_AMBIGUOUS_SLANG": "Aclaración pendiente",
-        "HUMAN_REVIEW_REQUIRED": "Revisión humana requerida",
+        "HUMAN_REVIEW_REQUIRED": "Revisión restrictiva",
     }
     return mapping.get(value or "", value or "N/D")
 
@@ -511,17 +517,20 @@ def _note_title_from_work_queue(work_queue: dict, labels: list[str]) -> str:
     """
     Título corto y operativo para la nota interna.
     """
+    if work_queue.get("is_restrictive_review"):
+        return "🤖 Nota IA: Revisión restrictiva"
+
     if work_queue.get("is_foreign_country"):
         return "🤖 Nota IA: Candidato extranjero"
 
-    if "foraneo" in labels or work_queue.get("location_needs_travel_validation"):
+    if "foraneo" in labels or work_queue.get("is_foraneo_mx"):
         return "🤖 Nota IA: Candidato foráneo"
 
     if "local_laguna" in labels or work_queue.get("is_local_laguna"):
         return "🤖 Nota IA: Candidato local"
 
-    if work_queue.get("requires_human"):
-        return "🤖 Nota IA: Revisión CH requerida"
+    if work_queue.get("is_profile_ready"):
+        return "🤖 Nota IA: Perfil listo"
 
     return "🤖 Nota IA: Seguimiento de candidato"
 
@@ -529,26 +538,36 @@ def _note_title_from_work_queue(work_queue: dict, labels: list[str]) -> str:
 def _short_queue_label(work_queue: dict) -> str:
     """
     Convierte work_bucket largo en una lectura corta para RH.
+
+    Prioridad actual:
+    1 = perfil listo local
+    2 = perfil listo foráneo
+    3 = perfil listo extranjero
+    4 = perfil listo con dato pendiente
+    5 = en proceso
+    6 = aclaración pendiente
+    7 = posible abandono
+    8 = revisión restrictiva / posible no apto
     """
     priority = work_queue.get("work_priority")
     bucket = work_queue.get("work_bucket") or "N/D"
 
     if priority == 1:
-        return "1 - Urgente"
+        return "1 - Local listo"
     if priority == 2:
-        return "2 - Ubicación extranjera"
+        return "2 - Foráneo listo"
     if priority == 3:
-        return "3 - Foráneo"
+        return "3 - Extranjero listo"
     if priority == 4:
-        return "4 - Local"
+        return "4 - Perfil listo / validar dato"
     if priority == 5:
-        return "5 - Perfil listo"
+        return "5 - En proceso"
     if priority == 6:
         return "6 - Aclaración"
     if priority == 7:
         return "7 - Posible abandono"
     if priority == 8:
-        return "8 - En proceso"
+        return "8 - Revisión restrictiva"
 
     return bucket
 
@@ -847,6 +866,10 @@ async def chatwoot_webhook(
             "city_group": work_queue.get("city_group"),
             "nombre_completo": work_queue.get("nombre_completo"),
             "telefono": work_queue.get("telefono"),
+            "is_profile_ready": work_queue.get("is_profile_ready"),
+            "is_restrictive_review": work_queue.get("is_restrictive_review"),
+            "is_foraneo_mx": work_queue.get("is_foraneo_mx"),
+            "needs_location_ch_validation": work_queue.get("needs_location_ch_validation"),
         }
 
     except httpx.HTTPStatusError as exc:
