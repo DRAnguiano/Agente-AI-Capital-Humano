@@ -2,6 +2,7 @@ import time
 import traceback
 import os
 import json
+import re
 import httpx
 
 from fastapi import FastAPI, Header, Query, Request
@@ -21,6 +22,83 @@ def _sanitize(text: str):
     if not text:
         return text
     return text.replace("\uFFFD", "").encode("utf-8", "ignore").decode("utf-8").strip()
+
+
+def _clean_llm_answer(text: str):
+    """
+    Limpia cierres genéricos que algunos modelos agregan aunque el prompt pida no hacerlo.
+    No toca el contenido central de la respuesta.
+    """
+    cleaned = _sanitize(text or "")
+
+    if not cleaned:
+        return cleaned
+
+    # Frases exactas frecuentes.
+    generic_endings = [
+        "Si tienes alguna otra duda sobre el proceso, puedo ayudarte a resolverla.",
+        "Si tienes alguna otra duda sobre el proceso, puedo ayudarte a resolverlas.",
+        "Si tienes alguna otra duda, puedo ayudarte a resolverla.",
+        "Si tienes alguna otra duda, puedo ayudarte a resolverlas.",
+        "Si tienes otra duda, puedo ayudarte.",
+        "Puedo ayudarte si tienes alguna otra duda.",
+        "Estoy aquí para ayudarte.",
+        "¿Tienes alguna otra duda?",
+        "¿Puedo ayudarte con algo más?",
+        "¿Quieres que te aclare algo más?",
+    ]
+
+    changed = True
+    while changed:
+        changed = False
+        for ending in generic_endings:
+            if cleaned.endswith(ending):
+                cleaned = cleaned[: -len(ending)].rstrip()
+                changed = True
+
+    # Variantes abiertas que Cohere puede redactar de formas ligeramente distintas.
+    generic_patterns = [
+        r"\n*Si tienes más dudas sobre .*?, puedo ayudarte a resolverlas\.?\s*$",
+        r"\n*Si tienes más dudas.*, puedo ayudarte.*$",
+        r"\n*Si hay algo más que quieras saber.*, puedo buscar.*$",
+        r"\n*No olvides que Capital Humano puede validar cualquier duda.*$",
+        r"\n*Capital Humano puede confirmar los detalles exactos.*$",
+        r"\n*Estoy aquí para ayudarte.*$",
+        r"\n*Puedo ayudarte a resolver.*$",
+        r"\n*¿Tienes alguna otra duda\?\s*$",
+        r"\n*¿Quieres que te aclare algo más\?\s*$",
+    ]
+
+    for pattern in generic_patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+
+    return cleaned.strip()
+
+
+def _source_payload(item: dict) -> dict:
+    """
+    Normaliza fuentes para respuesta pública/debug.
+
+    Con Rerank activo, indexer.py puede devolver:
+    - score: score final usado por filtros
+    - rerank_score: score de Cohere Rerank
+    - chroma_score: score original de Chroma
+    """
+    payload = {
+        "source": item.get("source"),
+        "score": round(item.get("score") or 0, 4),
+    }
+
+    if item.get("rerank_score") is not None:
+        payload["rerank_score"] = round(item.get("rerank_score") or 0, 4)
+
+    if item.get("chroma_score") is not None:
+        payload["chroma_score"] = round(item.get("chroma_score") or 0, 4)
+
+    if item.get("id"):
+        payload["id"] = item.get("id")
+
+    return payload
 
 
 def _split_for_telegram(text: str, limit: int = 3500):
@@ -126,22 +204,28 @@ def ask(body: AskBody):
 {question}
 
 INSTRUCCIONES DE RESPUESTA:
-1. Evalua el MENSAJE ACTUAL DEL CANDIDATO: es una RESPUESTA a tu pregunta anterior, o es una PREGUNTA hacia ti?
-2. Si es una RESPUESTA, por ejemplo experiencia, edad, licencia, ubicacion o disponibilidad, ignora el contexto, agradece el dato y haz la siguiente pregunta del proceso de reclutamiento.
-3. Si es una PREGUNTA hacia ti, usa unicamente el contexto recuperado. Si el contexto dice que no se encontro informacion, di que no tienes ese dato a la mano y regresa al perfilamiento.
-4. Responde directo, natural, sin preambulos roboticos y sin repetir la misma pregunta.
-5. Nunca hagas mas de una pregunta a la vez.
+1. Responde únicamente con base en el contexto recuperado.
+2. Si no hay información suficiente, dilo con claridad y no inventes.
+3. No prometas sueldo, contratación, beneficios, rutas, descansos, pago por kilómetro ni condiciones no confirmadas.
+4. Si el contexto recuperado trae una cifra o condición específica, puedes mencionarla como "según la información disponible", aclarando que Capital Humano confirma la información final.
+5. Si el contexto no trae una cifra o condición específica, no la inventes y di que Capital Humano debe confirmarla.
+6. No avances etapas de reclutamiento desde este endpoint.
+7. No extraigas ni guardes datos del candidato desde este endpoint.
+8. Responde breve, natural y en español.
+9. No hagas preguntas de seguimiento.
+10. No cierres con frases genéricas como "si tienes otra duda", "puedo ayudarte", "estoy aquí para ayudarte" o similares.
+11. Si el dato debe validarlo Capital Humano, dilo de forma natural.
 
 RESPUESTA:
 """
-        final = _sanitize(call_llm(prompt))
+        final = _clean_llm_answer(call_llm(prompt))
 
         return {
             "text": final,
             "chunks": _split_for_telegram(final),
-            "mode": "hr_recruiting_groq",
+            "mode": f"hr_recruiting_{os.getenv('LLM_PROVIDER', 'groq').strip().lower()}",
             "sources": [
-                {"source": item["source"], "score": round(item["score"], 4)}
+                _source_payload(item)
                 for item in valid_ctx
             ],
         }
@@ -218,6 +302,45 @@ def _extract_chatwoot_contact(payload: dict) -> dict:
         "phone": phone,
         "email": email,
     }
+
+
+def _extract_chatwoot_channel_label(payload: dict) -> str:
+    """
+    Devuelve un nombre humano del canal real desde donde llegó la conversación.
+
+    Ejemplos:
+    - Telegram
+    - WhatsApp
+    - Webchat
+    - Chatwoot
+    """
+    inbox = payload.get("inbox") or {}
+    conversation = payload.get("conversation") or {}
+    meta = conversation.get("meta") or {}
+
+    inbox_name = str(inbox.get("name") or "").strip()
+    channel_type = str(
+        inbox.get("channel_type")
+        or inbox.get("channel")
+        or meta.get("channel")
+        or ""
+    ).lower()
+
+    raw_text = f"{inbox_name} {channel_type}".lower()
+
+    if "telegram" in raw_text:
+        return "Telegram"
+
+    if "whatsapp" in raw_text or channel_type == "wa":
+        return "WhatsApp"
+
+    if "webwidget" in raw_text or "website" in raw_text or "webchat" in raw_text:
+        return "Webchat"
+
+    if inbox_name:
+        return inbox_name
+
+    return "Chatwoot"
 
 
 async def _send_chatwoot_message(
@@ -499,6 +622,7 @@ def _human_intent(value: str | None) -> str:
         "ambiguous_slang_clarification": "Aclaración de jerga",
         "slang_clarified_safe": "Jerga aclarada",
         "slang_clarification_risky": "Jerga con riesgo",
+        "conditional_availability": "Disponibilidad condicionada",
     }
     return mapping.get(value or "", value or "N/D")
 
@@ -578,6 +702,7 @@ def _build_chatwoot_internal_note(
     labels: list[str],
     username: str,
     content: str,
+    channel_label: str | None = None,
 ) -> str:
     """
     Construye una nota interna breve, escaneable y humana para Capital Humano.
@@ -606,7 +731,7 @@ def _build_chatwoot_internal_note(
         or "No disponible"
     )
 
-    canal = work_queue.get("channel") or "chatwoot"
+    canal = channel_label or work_queue.get("channel") or "Chatwoot"
 
     ciudad = work_queue.get("ciudad") or "N/D"
     estado_region = work_queue.get("estado_region") or "N/D"
@@ -689,6 +814,7 @@ async def chatwoot_webhook(
     message_id = payload.get("id") or payload.get("message_id")
 
     contact = _extract_chatwoot_contact(payload)
+    channel_label = _extract_chatwoot_channel_label(payload)
 
     print(
         "[CHATWOOT_WEBHOOK]",
@@ -702,6 +828,7 @@ async def chatwoot_webhook(
                 "message_id": message_id,
                 "contact_id": contact.get("contact_id"),
                 "contact_name": contact.get("name"),
+                "channel_label": channel_label,
                 "content_preview": content[:300],
             },
             ensure_ascii=False,
@@ -818,6 +945,7 @@ async def chatwoot_webhook(
                 labels=labels,
                 username=username,
                 content=content,
+                channel_label=channel_label,
             )
 
             await _send_chatwoot_private_note(
@@ -866,6 +994,7 @@ async def chatwoot_webhook(
             "city_group": work_queue.get("city_group"),
             "nombre_completo": work_queue.get("nombre_completo"),
             "telefono": work_queue.get("telefono"),
+            "channel_label": channel_label,
             "is_profile_ready": work_queue.get("is_profile_ready"),
             "is_restrictive_review": work_queue.get("is_restrictive_review"),
             "is_foraneo_mx": work_queue.get("is_foraneo_mx"),

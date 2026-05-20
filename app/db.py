@@ -284,10 +284,22 @@ def update_stage(
                 """
                 UPDATE rh_conversations
                 SET
-                    current_stage = %(stage_to)s,
+                    current_stage = CASE
+                        WHEN current_stage = 'HUMAN_REVIEW_REQUIRED'
+                        THEN 'HUMAN_REVIEW_REQUIRED'
+                        ELSE %(stage_to)s
+                    END,
                     last_intent = %(intent)s,
-                    risk_level = %(risk_level)s,
-                    requires_human = %(requires_human)s,
+                    risk_level = CASE
+                        WHEN current_stage = 'HUMAN_REVIEW_REQUIRED'
+                        THEN 'high'
+                        ELSE %(risk_level)s
+                    END,
+                    requires_human = CASE
+                        WHEN current_stage = 'HUMAN_REVIEW_REQUIRED'
+                        THEN true
+                        ELSE %(requires_human)s
+                    END,
                     updated_at = now()
                 WHERE conversation_key = %(conversation_key)s;
                 """,
@@ -374,13 +386,19 @@ def create_handoff(
                     summary,
                     created_at
                 )
-                VALUES (
+                SELECT
                     %(conversation_key)s,
                     %(reason)s,
                     %(risk_level)s,
                     'OPEN',
                     %(summary)s,
                     now()
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM rh_human_handoffs
+                    WHERE conversation_key = %(conversation_key)s
+                      AND status = 'OPEN'
+                      AND reason = %(reason)s
                 );
                 """,
                 {
