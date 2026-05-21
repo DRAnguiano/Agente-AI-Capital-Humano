@@ -14,6 +14,35 @@ from app.graphs.hr_nodes_profile import (
 from app.graphs.hr_state import HRState
 
 
+POLICY_BOUNDARY_FALLBACK_REPLY = (
+    "Por seguridad operativa, ese punto debe revisarlo Capital Humano antes de continuar. "
+    "No puedo confirmarlo por aquí ni avanzar el proceso con ese tema abierto."
+)
+
+
+def policy_boundary_response_node(state: HRState) -> dict[str, Any]:
+    review = state.get("new_information_review") or {}
+    reply = (state.get("reply") or review.get("reply") or POLICY_BOUNDARY_FALLBACK_REPLY).strip()
+    return {
+        "reply": reply,
+        "text": reply,
+        "next_stage": state.get("current_stage") or "START",
+        "route_stub_used": False,
+        "profile_real_flow_used": False,
+        "human_handoff_real_flow_used": False,
+        "clarification_real_flow_used": False,
+        "fallback_real_flow_used": False,
+        "policy_boundary_real_flow_used": True,
+        "events": [
+            {
+                "type": "policy_boundary_answered",
+                "reason": state.get("reason") or review.get("reason"),
+                "risk_level": state.get("risk_level"),
+            }
+        ],
+    }
+
+
 def route_stub_response_node(state: HRState) -> dict[str, Any]:
     """
     Produce a controlled response for non-RAG routes.
@@ -22,10 +51,8 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
     - profile: runs the real profile extraction/stage update branch.
     - human_handoff: creates real handoff, updates stage, generates controlled reply.
     - clarification: updates stage and asks for a real clarification.
+    - policy_boundary: responds with a safety boundary and does not advance profile.
     - fallback: generates a real safe fallback reply and logs it.
-
-    This keeps the full-router/orchestrate-graph diagnostic paths legacy-free
-    while progressively replacing stubs with real nodes.
     """
     route = state.get("route") or "fallback"
 
@@ -45,6 +72,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             "human_handoff_real_flow_used": False,
             "clarification_real_flow_used": False,
             "fallback_real_flow_used": False,
+            "policy_boundary_real_flow_used": False,
         }
 
     if route == "human_handoff":
@@ -69,6 +97,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             "human_handoff_real_flow_used": True,
             "clarification_real_flow_used": False,
             "fallback_real_flow_used": False,
+            "policy_boundary_real_flow_used": False,
         }
 
     if route == "clarification":
@@ -81,7 +110,11 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             "human_handoff_real_flow_used": False,
             "clarification_real_flow_used": True,
             "fallback_real_flow_used": False,
+            "policy_boundary_real_flow_used": False,
         }
+
+    if route == "policy_boundary":
+        return policy_boundary_response_node(state)
 
     fallback_update = fallback_response_node(state)
 
@@ -92,4 +125,5 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
         "human_handoff_real_flow_used": False,
         "clarification_real_flow_used": False,
         "fallback_real_flow_used": True,
+        "policy_boundary_real_flow_used": False,
     }
