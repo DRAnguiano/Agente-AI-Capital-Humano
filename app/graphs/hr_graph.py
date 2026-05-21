@@ -19,6 +19,7 @@ from app.graphs.hr_nodes_rag import (
     save_output_node,
 )
 from app.graphs.hr_nodes_router import route_message_node
+from app.graphs.hr_nodes_stubs import route_stub_response_node
 from app.graphs.hr_routes import route_after_grading
 from app.graphs.hr_state import HRState
 
@@ -27,6 +28,7 @@ INPUT_TEST_CHANNEL = "test_input_nodes"
 ROUTER_TEST_CHANNEL = "test_router_nodes"
 RAG_TEST_CHANNEL = "test_rag_nodes"
 RAG_REPLACEMENT_TEST_CHANNEL = "test_rag_replacement"
+FULL_ROUTER_TEST_CHANNEL = "test_full_router"
 
 
 def build_hr_graph():
@@ -46,6 +48,7 @@ def build_hr_graph():
     workflow.add_node("save_incoming_message", save_incoming_message_node)
     workflow.add_node("save_assistant_message", save_assistant_message_node)
     workflow.add_node("route_message", route_message_node)
+    workflow.add_node("route_stub_response", route_stub_response_node)
 
     workflow.add_node("legacy_orchestrator", legacy_orchestrator_node)
 
@@ -106,6 +109,12 @@ def _route_after_rag_test_router(state: HRState) -> str:
     if state.get("route") == "rag":
         return "retrieve_documents"
     return "save_output"
+
+
+def _route_after_full_router(state: HRState) -> str:
+    if state.get("route") == "rag":
+        return "retrieve_documents"
+    return "route_stub_response"
 
 
 def _route_after_rag_answer_check(state: HRState) -> str:
@@ -268,11 +277,93 @@ def build_hr_rag_replacement_test_graph():
     return workflow.compile()
 
 
+def build_hr_full_router_test_graph():
+    """
+    Diagnostic graph for full routing without legacy fallback.
+
+    Trigger:
+        channel = "test_full_router"
+
+    RAG routes execute the RAG replacement path. Non-RAG routes produce a
+    controlled stub response and persist it as assistant output. This validates
+    the graph router end-to-end without duplicate legacy writes.
+    """
+    workflow = StateGraph(HRState)
+
+    workflow.add_node("normalize_input", normalize_input_node)
+    workflow.add_node("load_conversation", load_conversation_node)
+    workflow.add_node("save_incoming_message", save_incoming_message_node)
+    workflow.add_node("route_message", route_message_node)
+    workflow.add_node("route_stub_response", route_stub_response_node)
+    workflow.add_node("retrieve_documents", retrieve_documents_node)
+    workflow.add_node("grade_documents", grade_documents_node)
+    workflow.add_node("fallback_no_context", fallback_no_context_node)
+    workflow.add_node("generate_answer", generate_answer_node)
+    workflow.add_node("hallucination_check", hallucination_check_node)
+    workflow.add_node("answer_check", answer_check_node)
+    workflow.add_node("save_assistant_message", save_assistant_message_node)
+    workflow.add_node("save_output", save_output_node)
+
+    workflow.add_edge(START, "normalize_input")
+    workflow.add_edge("normalize_input", "load_conversation")
+    workflow.add_edge("load_conversation", "save_incoming_message")
+    workflow.add_edge("save_incoming_message", "route_message")
+
+    workflow.add_conditional_edges(
+        "route_message",
+        _route_after_full_router,
+        {
+            "retrieve_documents": "retrieve_documents",
+            "route_stub_response": "route_stub_response",
+        },
+    )
+
+    workflow.add_edge("route_stub_response", "save_assistant_message")
+
+    workflow.add_edge("retrieve_documents", "grade_documents")
+
+    workflow.add_conditional_edges(
+        "grade_documents",
+        route_after_grading,
+        {
+            "generate_answer": "generate_answer",
+            "fallback_no_context": "fallback_no_context",
+        },
+    )
+
+    workflow.add_edge("generate_answer", "hallucination_check")
+    workflow.add_edge("hallucination_check", "answer_check")
+
+    workflow.add_conditional_edges(
+        "answer_check",
+        _route_after_rag_replacement_answer_check,
+        {
+            "save_assistant_message": "save_assistant_message",
+            "fallback_no_context": "fallback_no_context",
+        },
+    )
+
+    workflow.add_conditional_edges(
+        "fallback_no_context",
+        _route_after_rag_replacement_fallback,
+        {
+            "save_assistant_message": "save_assistant_message",
+            "save_output": "save_output",
+        },
+    )
+
+    workflow.add_edge("save_assistant_message", "save_output")
+    workflow.add_edge("save_output", END)
+
+    return workflow.compile()
+
+
 hr_graph = build_hr_graph()
 hr_input_test_graph = build_hr_input_test_graph()
 hr_router_test_graph = build_hr_router_test_graph()
 hr_rag_test_graph = build_hr_rag_test_graph()
 hr_rag_replacement_test_graph = build_hr_rag_replacement_test_graph()
+hr_full_router_test_graph = build_hr_full_router_test_graph()
 
 
 def _initial_state(
@@ -436,6 +527,52 @@ def _rag_response_payload(
     }
 
 
+def _full_router_response_payload(
+    final_state: HRState,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    retrieved_docs = final_state.get("retrieved_docs", []) or []
+    relevant_docs = final_state.get("relevant_docs", []) or []
+
+    return {
+        "status": final_state.get("status", "ok"),
+        "conversation_key": final_state.get("conversation_key"),
+        "conversation_id": final_state.get("conversation_id"),
+        "candidate_id": final_state.get("candidate_id"),
+        "current_stage": final_state.get("current_stage"),
+        "next_stage": final_state.get("next_stage"),
+        "incoming_message_saved": bool(final_state.get("incoming_message_saved", False)),
+        "assistant_message_saved": bool(final_state.get("assistant_message_saved", False)),
+        "intent": final_state.get("intent"),
+        "risk_level": final_state.get("risk_level"),
+        "requires_human": bool(final_state.get("requires_human", False)),
+        "requires_rag": bool(final_state.get("requires_rag", False)),
+        "requires_clarification": bool(final_state.get("requires_clarification", False)),
+        "reason": final_state.get("reason"),
+        "selected_route": final_state.get("route"),
+        "route_stub_used": bool(final_state.get("route_stub_used", False)),
+        "retrieved_docs_count": len(retrieved_docs),
+        "relevant_docs_count": len(relevant_docs),
+        "docs_are_relevant": bool(final_state.get("docs_are_relevant", False)),
+        "hallucination_check": final_state.get("hallucination_check"),
+        "answer_check": final_state.get("answer_check"),
+        "reply": final_state.get("reply") or final_state.get("text") or "",
+        "sources": final_state.get("sources", []),
+        "events": final_state.get("events", []),
+        "graph": {
+            "enabled": True,
+            "route": "full_router_test",
+            "selected_route": final_state.get("route"),
+            "thread_id": config["configurable"]["thread_id"],
+            "input_nodes_extracted": True,
+            "router_node_extracted": True,
+            "rag_nodes_extracted": True,
+            "assistant_persistence_enabled": True,
+            "legacy_bypassed": True,
+        },
+    }
+
+
 def _run_rag_test_graph(
     initial_state: HRState,
     config: dict[str, Any],
@@ -460,6 +597,14 @@ def _run_rag_replacement_test_graph(
         graph_route="rag_replacement_test",
         assistant_persistence_enabled=True,
     )
+
+
+def _run_full_router_test_graph(
+    initial_state: HRState,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    final_state = hr_full_router_test_graph.invoke(initial_state, config=config)
+    return _full_router_response_payload(final_state, config)
 
 
 def run_hr_graph_message(
@@ -494,6 +639,9 @@ def run_hr_graph_message(
 
     if normalized_channel == RAG_REPLACEMENT_TEST_CHANNEL:
         return _run_rag_replacement_test_graph(initial_state, config)
+
+    if normalized_channel == FULL_ROUTER_TEST_CHANNEL:
+        return _run_full_router_test_graph(initial_state, config)
 
     final_state = hr_graph.invoke(initial_state, config=config)
     legacy_result = final_state.get("legacy_result") or {}
