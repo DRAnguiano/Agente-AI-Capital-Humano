@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from app.graphs.hr_nodes_core import (
     load_conversation_node,
     normalize_input_node,
+    save_assistant_message_node,
     save_incoming_message_node,
 )
 from app.graphs.hr_nodes_rag import (
@@ -25,6 +26,7 @@ from app.graphs.hr_state import HRState
 INPUT_TEST_CHANNEL = "test_input_nodes"
 ROUTER_TEST_CHANNEL = "test_router_nodes"
 RAG_TEST_CHANNEL = "test_rag_nodes"
+RAG_REPLACEMENT_TEST_CHANNEL = "test_rag_replacement"
 
 
 def build_hr_graph():
@@ -42,6 +44,7 @@ def build_hr_graph():
     workflow.add_node("normalize_input", normalize_input_node)
     workflow.add_node("load_conversation", load_conversation_node)
     workflow.add_node("save_incoming_message", save_incoming_message_node)
+    workflow.add_node("save_assistant_message", save_assistant_message_node)
     workflow.add_node("route_message", route_message_node)
 
     workflow.add_node("legacy_orchestrator", legacy_orchestrator_node)
@@ -64,12 +67,6 @@ def build_hr_graph():
 
 
 def build_hr_input_test_graph():
-    """
-    Diagnostic graph for input nodes.
-
-    Trigger:
-        channel = "test_input_nodes"
-    """
     workflow = StateGraph(HRState)
 
     workflow.add_node("normalize_input", normalize_input_node)
@@ -87,12 +84,6 @@ def build_hr_input_test_graph():
 
 
 def build_hr_router_test_graph():
-    """
-    Diagnostic graph for input nodes + router node.
-
-    Trigger:
-        channel = "test_router_nodes"
-    """
     workflow = StateGraph(HRState)
 
     workflow.add_node("normalize_input", normalize_input_node)
@@ -112,26 +103,28 @@ def build_hr_router_test_graph():
 
 
 def _route_after_rag_test_router(state: HRState) -> str:
-    """
-    RAG diagnostic gate.
-
-    Only document-question routes continue into the RAG chain. Other routes stop
-    at save_output, so this diagnostic endpoint does not accidentally execute
-    profile/handoff behavior.
-    """
     if state.get("route") == "rag":
         return "retrieve_documents"
     return "save_output"
 
 
 def _route_after_rag_answer_check(state: HRState) -> str:
-    """
-    If the generated answer fails validation, use the safe no-context fallback
-    instead of creating handoff records in this diagnostic graph.
-    """
     if state.get("answer_check") == "PASS":
         return "save_output"
     return "fallback_no_context"
+
+
+def _route_after_rag_replacement_answer_check(state: HRState) -> str:
+    if state.get("answer_check") == "PASS":
+        return "save_assistant_message"
+    return "fallback_no_context"
+
+
+def _route_after_rag_replacement_fallback(state: HRState) -> str:
+    reply = (state.get("reply") or state.get("text") or "").strip()
+    if reply:
+        return "save_assistant_message"
+    return "save_output"
 
 
 def build_hr_rag_test_graph():
@@ -140,14 +133,6 @@ def build_hr_rag_test_graph():
 
     Trigger:
         channel = "test_rag_nodes"
-
-    Pattern:
-        route_message
-        -> retrieve_documents
-        -> grade_documents
-        -> generate_answer
-        -> hallucination_check
-        -> answer_check
     """
     workflow = StateGraph(HRState)
 
@@ -206,10 +191,88 @@ def build_hr_rag_test_graph():
     return workflow.compile()
 
 
+def build_hr_rag_replacement_test_graph():
+    """
+    Diagnostic graph for replacing the legacy RAG branch.
+
+    Trigger:
+        channel = "test_rag_replacement"
+
+    Difference vs test_rag_nodes:
+    - persists the assistant reply through save_assistant_message_node.
+    """
+    workflow = StateGraph(HRState)
+
+    workflow.add_node("normalize_input", normalize_input_node)
+    workflow.add_node("load_conversation", load_conversation_node)
+    workflow.add_node("save_incoming_message", save_incoming_message_node)
+    workflow.add_node("route_message", route_message_node)
+    workflow.add_node("retrieve_documents", retrieve_documents_node)
+    workflow.add_node("grade_documents", grade_documents_node)
+    workflow.add_node("fallback_no_context", fallback_no_context_node)
+    workflow.add_node("generate_answer", generate_answer_node)
+    workflow.add_node("hallucination_check", hallucination_check_node)
+    workflow.add_node("answer_check", answer_check_node)
+    workflow.add_node("save_assistant_message", save_assistant_message_node)
+    workflow.add_node("save_output", save_output_node)
+
+    workflow.add_edge(START, "normalize_input")
+    workflow.add_edge("normalize_input", "load_conversation")
+    workflow.add_edge("load_conversation", "save_incoming_message")
+    workflow.add_edge("save_incoming_message", "route_message")
+
+    workflow.add_conditional_edges(
+        "route_message",
+        _route_after_rag_test_router,
+        {
+            "retrieve_documents": "retrieve_documents",
+            "save_output": "save_output",
+        },
+    )
+
+    workflow.add_edge("retrieve_documents", "grade_documents")
+
+    workflow.add_conditional_edges(
+        "grade_documents",
+        route_after_grading,
+        {
+            "generate_answer": "generate_answer",
+            "fallback_no_context": "fallback_no_context",
+        },
+    )
+
+    workflow.add_edge("generate_answer", "hallucination_check")
+    workflow.add_edge("hallucination_check", "answer_check")
+
+    workflow.add_conditional_edges(
+        "answer_check",
+        _route_after_rag_replacement_answer_check,
+        {
+            "save_assistant_message": "save_assistant_message",
+            "fallback_no_context": "fallback_no_context",
+        },
+    )
+
+    workflow.add_conditional_edges(
+        "fallback_no_context",
+        _route_after_rag_replacement_fallback,
+        {
+            "save_assistant_message": "save_assistant_message",
+            "save_output": "save_output",
+        },
+    )
+
+    workflow.add_edge("save_assistant_message", "save_output")
+    workflow.add_edge("save_output", END)
+
+    return workflow.compile()
+
+
 hr_graph = build_hr_graph()
 hr_input_test_graph = build_hr_input_test_graph()
 hr_router_test_graph = build_hr_router_test_graph()
 hr_rag_test_graph = build_hr_rag_test_graph()
+hr_rag_replacement_test_graph = build_hr_rag_replacement_test_graph()
 
 
 def _initial_state(
@@ -253,6 +316,7 @@ def _run_input_test_graph(
         "current_stage": final_state.get("current_stage"),
         "next_stage": final_state.get("next_stage"),
         "incoming_message_saved": bool(final_state.get("incoming_message_saved", False)),
+        "assistant_message_saved": bool(final_state.get("assistant_message_saved", False)),
         "reply": final_state.get("reply") or final_state.get("text") or "",
         "events": final_state.get("events", []),
         "graph": {
@@ -284,6 +348,7 @@ def _run_router_test_graph(
         "current_stage": final_state.get("current_stage"),
         "next_stage": final_state.get("next_stage"),
         "incoming_message_saved": bool(final_state.get("incoming_message_saved", False)),
+        "assistant_message_saved": bool(final_state.get("assistant_message_saved", False)),
         "intent": final_state.get("intent"),
         "risk_level": final_state.get("risk_level"),
         "requires_human": bool(final_state.get("requires_human", False)),
@@ -311,12 +376,13 @@ def _run_router_test_graph(
     }
 
 
-def _run_rag_test_graph(
-    initial_state: HRState,
+def _rag_response_payload(
+    final_state: HRState,
     config: dict[str, Any],
+    *,
+    graph_route: str,
+    assistant_persistence_enabled: bool,
 ) -> dict[str, Any]:
-    final_state = hr_rag_test_graph.invoke(initial_state, config=config)
-
     retrieved_docs = final_state.get("retrieved_docs", []) or []
     relevant_docs = final_state.get("relevant_docs", []) or []
 
@@ -328,6 +394,7 @@ def _run_rag_test_graph(
         "current_stage": final_state.get("current_stage"),
         "next_stage": final_state.get("next_stage"),
         "incoming_message_saved": bool(final_state.get("incoming_message_saved", False)),
+        "assistant_message_saved": bool(final_state.get("assistant_message_saved", False)),
         "intent": final_state.get("intent"),
         "risk_level": final_state.get("risk_level"),
         "requires_human": bool(final_state.get("requires_human", False)),
@@ -345,12 +412,13 @@ def _run_rag_test_graph(
         "events": final_state.get("events", []),
         "graph": {
             "enabled": True,
-            "route": "rag_test",
+            "route": graph_route,
             "selected_route": final_state.get("route"),
             "thread_id": config["configurable"]["thread_id"],
             "input_nodes_extracted": True,
             "router_node_extracted": True,
             "rag_nodes_extracted": True,
+            "assistant_persistence_enabled": assistant_persistence_enabled,
             "executed_nodes": [
                 "normalize_input",
                 "load_conversation",
@@ -361,10 +429,37 @@ def _run_rag_test_graph(
                 "generate_answer_or_fallback",
                 "hallucination_check",
                 "answer_check",
+                "save_assistant_message" if assistant_persistence_enabled else "save_output",
                 "save_output",
             ],
         },
     }
+
+
+def _run_rag_test_graph(
+    initial_state: HRState,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    final_state = hr_rag_test_graph.invoke(initial_state, config=config)
+    return _rag_response_payload(
+        final_state,
+        config,
+        graph_route="rag_test",
+        assistant_persistence_enabled=False,
+    )
+
+
+def _run_rag_replacement_test_graph(
+    initial_state: HRState,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    final_state = hr_rag_replacement_test_graph.invoke(initial_state, config=config)
+    return _rag_response_payload(
+        final_state,
+        config,
+        graph_route="rag_replacement_test",
+        assistant_persistence_enabled=True,
+    )
 
 
 def run_hr_graph_message(
@@ -396,6 +491,9 @@ def run_hr_graph_message(
 
     if normalized_channel == RAG_TEST_CHANNEL:
         return _run_rag_test_graph(initial_state, config)
+
+    if normalized_channel == RAG_REPLACEMENT_TEST_CHANNEL:
+        return _run_rag_replacement_test_graph(initial_state, config)
 
     final_state = hr_graph.invoke(initial_state, config=config)
     legacy_result = final_state.get("legacy_result") or {}
