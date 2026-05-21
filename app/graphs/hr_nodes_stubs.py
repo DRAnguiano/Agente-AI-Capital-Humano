@@ -1,5 +1,10 @@
 from typing import Any
 
+from app.graphs.hr_nodes_handoff import (
+    create_handoff_node,
+    generate_handoff_reply_node,
+    update_handoff_stage_node,
+)
 from app.graphs.hr_nodes_profile import (
     extract_profile_fields_node,
     update_profile_and_stage_node,
@@ -8,7 +13,6 @@ from app.graphs.hr_state import HRState
 
 
 _ROUTE_REPLY = {
-    "human_handoff": "Ruta de revisión humana detectada. En producción, este flujo creará handoff para Capital Humano.",
     "clarification": "Ruta de aclaración detectada. En producción, este flujo pedirá una aclaración breve antes de continuar.",
     "fallback": "Ruta fallback detectada. En producción, este flujo responderá de forma segura sin inventar información.",
 }
@@ -20,7 +24,8 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
 
     Current behavior:
     - profile: runs the real profile extraction/stage update branch.
-    - human_handoff/clarification/fallback: still use controlled placeholders.
+    - human_handoff: creates real handoff, updates stage, generates controlled reply.
+    - clarification/fallback: still use controlled placeholders.
 
     This keeps the full-router/orchestrate-graph diagnostic paths legacy-free
     while progressively replacing stubs with real nodes.
@@ -40,6 +45,29 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             **profile_update,
             "route_stub_used": False,
             "profile_real_flow_used": True,
+            "human_handoff_real_flow_used": False,
+        }
+
+    if route == "human_handoff":
+        handoff_update = create_handoff_node(state)
+        stage_state: HRState = {
+            **state,
+            **handoff_update,
+        }
+        stage_update = update_handoff_stage_node(stage_state)
+        reply_state: HRState = {
+            **stage_state,
+            **stage_update,
+        }
+        reply_update = generate_handoff_reply_node(reply_state)
+
+        return {
+            **handoff_update,
+            **stage_update,
+            **reply_update,
+            "route_stub_used": False,
+            "profile_real_flow_used": False,
+            "human_handoff_real_flow_used": True,
         }
 
     reply = _ROUTE_REPLY.get(route, _ROUTE_REPLY["fallback"])
@@ -49,6 +77,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
         "text": reply,
         "route_stub_used": True,
         "profile_real_flow_used": False,
+        "human_handoff_real_flow_used": False,
         "events": [
             {
                 "type": "route_stub_response_generated",
