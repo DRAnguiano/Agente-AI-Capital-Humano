@@ -37,7 +37,6 @@ ALLOWED_ROUTES = {
 }
 
 GREETING_INTENTS = {"greeting", "initial_greeting"}
-HUMAN_REVIEW_STAGE = "HUMAN_REVIEW_REQUIRED"
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -79,12 +78,7 @@ def _clean_route(value: Any) -> str:
     return route if route in ALLOWED_ROUTES else "fallback"
 
 
-def _normalize_classification(
-    payload: dict[str, Any],
-    *,
-    current_stage: str,
-    message: str,
-) -> dict[str, Any]:
+def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
     data = {**DEFAULT_CLASSIFICATION, **(payload or {})}
 
     classifier_intent = str(data.get("classifier_intent") or "fallback").strip().lower()
@@ -99,38 +93,15 @@ def _normalize_classification(
         confidence = 0.0
     confidence = max(0.0, min(1.0, confidence))
 
-    # Contract-level guardrail: a greeting is intent discovery, not profile.
     if classifier_intent in GREETING_INTENTS:
         route = "greeting"
-
-    # If the conversation is already under human review, never fall back into
-    # generic RAG/profile/fallback. Keep the safety boundary and preserve review.
-    review_locked = current_stage == HUMAN_REVIEW_STAGE
-    if review_locked:
-        route = "policy_boundary"
-        risk_level = "high"
-        classifier_intent = classifier_intent if classifier_intent != "fallback" else "human_review_followup"
-        data["reason"] = data.get("reason") or "human_review_followup"
-
-    # If the classifier is uncertain and web search is enabled, let Tavily +
-    # review handle unknown context instead of sending a generic fallback.
-    web_fallback = (
-        not review_locked
-        and _env_bool("WEB_SEARCH_ENABLED", False)
-        and route == "fallback"
-        and len((message or "").strip()) >= 4
-    )
-    if web_fallback:
-        route = "web_review"
-        classifier_intent = "unknown_or_ambiguous_term"
-        data["reason"] = data.get("reason") or "fallback_escalated_to_web_review"
 
     requires_human = bool(data.get("requires_human", False)) or route == "human_handoff" or risk_level == "high"
     requires_clarification = bool(data.get("requires_clarification", False)) or route == "clarification"
     requires_web_lookup = bool(data.get("requires_web_lookup", False)) or route == "web_review"
     requires_rag = bool(data.get("requires_rag", False)) or route == "rag"
 
-    if requires_human and route not in {"policy_boundary"}:
+    if requires_human:
         route = "human_handoff"
         requires_rag = False
         requires_web_lookup = False
@@ -151,7 +122,7 @@ def _normalize_classification(
         "requires_clarification": requires_clarification,
         "should_continue_profile": bool(data.get("should_continue_profile", False)),
         "safe_reply_mode": str(data.get("safe_reply_mode") or "fallback").strip().lower(),
-        "web_query": data.get("web_query") or message or None,
+        "web_query": data.get("web_query") or None,
         "reason": str(data.get("reason") or "classifier_no_reason").strip().lower(),
         "confidence": confidence,
     }
@@ -171,7 +142,7 @@ def classify_message_node(state: HRState) -> dict[str, Any]:
     current_stage = state.get("current_stage") or "START"
     profile_snapshot = state.get("profile_snapshot") or {}
     history_messages = state.get("history_messages") or []
-    recent_history = history_messages[-8:] if isinstance(history_messages, list) else []
+    recent_history = history_messages[-6:] if isinstance(history_messages, list) else []
 
     prompt = f"""
 You are a strict JSON classifier for a Mexican trucking recruiting assistant.
@@ -194,11 +165,7 @@ Classify this message according to the policy. Return exactly the JSON contract.
     try:
         raw = call_llm(prompt)
         parsed = _json_from_text(raw)
-        classification = _normalize_classification(
-            parsed,
-            current_stage=current_stage,
-            message=message,
-        )
+        classification = _normalize_classification(parsed)
     except Exception as exc:
         classification = {
             **DEFAULT_CLASSIFICATION,
