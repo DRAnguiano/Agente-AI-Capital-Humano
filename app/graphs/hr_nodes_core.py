@@ -73,9 +73,9 @@ def save_incoming_message_node(state: HRState) -> dict[str, Any]:
     """
     Persist the inbound candidate message.
 
-    This node is not yet wired into the active graph route because the legacy
-    orchestrator still saves the incoming message internally. It is ready for
-    the next cut, where we remove that responsibility from the legacy path.
+    This node is not yet wired into the active production route because the
+    legacy orchestrator still saves the incoming message internally. It is used
+    by diagnostic/replacement graphs where we avoid the legacy setup path.
     """
     conversation_key = state.get("conversation_key")
     message = (state.get("message") or "").strip()
@@ -94,6 +94,35 @@ def save_incoming_message_node(state: HRState) -> dict[str, Any]:
                 "type": "incoming_message_saved",
                 "conversation_key": conversation_key,
                 "external_message_id": state.get("external_message_id"),
+            }
+        ],
+    }
+
+
+def save_assistant_message_node(state: HRState) -> dict[str, Any]:
+    """
+    Persist the generated assistant reply.
+
+    This is the first output persistence node used by the RAG replacement
+    diagnostic graph. It intentionally does not update stages or handoff state.
+    Those responsibilities will get their own nodes later.
+    """
+    conversation_key = state.get("conversation_key")
+    reply = (state.get("reply") or state.get("text") or "").strip()
+
+    if not conversation_key or not reply:
+        return {
+            "assistant_message_saved": False,
+        }
+
+    save_message(conversation_key, "assistant", reply)
+
+    return {
+        "assistant_message_saved": True,
+        "events": [
+            {
+                "type": "assistant_message_saved",
+                "conversation_key": conversation_key,
             }
         ],
     }
