@@ -1,4 +1,3 @@
-import re
 from typing import Any
 
 from app.graphs.hr_state import HRState
@@ -17,11 +16,6 @@ GENERATION_ERROR_MARKERS = {
     "internal_error",
     "exception",
 }
-TOPIC_TERMS = {
-    "pay": {"pago", "paga", "pagan", "sueldo", "salario", "comision", "comisión", "km", "kilometro", "kilómetro", "prestacion", "prestación"},
-    "route": {"ruta", "rutas", "viaje", "viajes", "local", "foraneo", "foráneo", "base", "patio"},
-    "document": {"documento", "documentos", "licencia", "ine", "curp", "rfc", "nss", "apto", "requisito", "requisitos"},
-}
 
 
 def _source_payload(item: dict[str, Any]) -> dict[str, Any]:
@@ -29,16 +23,12 @@ def _source_payload(item: dict[str, Any]) -> dict[str, Any]:
         "source": item.get("source"),
         "score": round(item.get("score") or 0, 4),
     }
-
     if item.get("rerank_score") is not None:
         payload["rerank_score"] = round(item.get("rerank_score") or 0, 4)
-
     if item.get("chroma_score") is not None:
         payload["chroma_score"] = round(item.get("chroma_score") or 0, 4)
-
     if item.get("id"):
         payload["id"] = item.get("id")
-
     return payload
 
 
@@ -50,10 +40,8 @@ def _is_profile_side_question(state: HRState) -> bool:
 
     if current_stage not in PROFILE_PENDING_STAGES:
         return False
-
     if route != "rag":
         return False
-
     return intent not in {"profile_answer", "candidate_interest"}
 
 
@@ -64,10 +52,8 @@ def _append_side_question_close(answer: str, state: HRState) -> str:
     cleaned = (answer or "").strip()
     if not cleaned:
         return SIDE_QUESTION_SOFT_CLOSE
-
     if SIDE_QUESTION_SOFT_CLOSE.lower() in cleaned.lower():
         return cleaned
-
     return f"{cleaned}\n\n{SIDE_QUESTION_SOFT_CLOSE}"
 
 
@@ -76,69 +62,7 @@ def _looks_like_generation_error(answer: str) -> bool:
     return any(marker in normalized for marker in GENERATION_ERROR_MARKERS)
 
 
-def _split_sentences(text: str) -> list[str]:
-    cleaned = re.sub(r"\s+", " ", (text or "").strip())
-    if not cleaned:
-        return []
-    return [item.strip() for item in re.split(r"(?<=[.!?])\s+|\n+", cleaned) if item.strip()]
-
-
-def _topic_from_question(question: str) -> str | None:
-    lowered = (question or "").lower()
-    for topic, terms in TOPIC_TERMS.items():
-        if any(term in lowered for term in terms):
-            return topic
-    return None
-
-
-def _extract_relevant_sentences(question: str, docs: list[dict[str, Any]]) -> list[str]:
-    topic = _topic_from_question(question)
-    terms = TOPIC_TERMS.get(topic or "", set())
-    selected: list[str] = []
-
-    for doc in docs:
-        text = doc.get("text") or ""
-        for sentence in _split_sentences(text):
-            sentence_lower = sentence.lower()
-            if terms and not any(term in sentence_lower for term in terms):
-                continue
-            if sentence not in selected:
-                selected.append(sentence)
-            if len(selected) >= 3:
-                return selected
-
-    if selected:
-        return selected
-
-    for doc in docs[:2]:
-        text = doc.get("text") or ""
-        for sentence in _split_sentences(text):
-            if len(sentence) < 25:
-                continue
-            if sentence not in selected:
-                selected.append(sentence)
-            if len(selected) >= 3:
-                return selected
-
-    return selected
-
-
-def _build_extractive_answer_from_docs(question: str, docs: list[dict[str, Any]], state: HRState) -> str:
-    sentences = _extract_relevant_sentences(question, docs)
-    if not sentences:
-        return ""
-
-    body = " ".join(sentences)
-    body = body.strip()
-    if not body:
-        return ""
-
-    answer = f"Según la información interna disponible, {body} Capital Humano confirma el esquema final según la vacante disponible."
-    return _append_side_question_close(answer, state)
-
-
 def normalize_input_node(state: HRState) -> dict[str, Any]:
-    """Normalize inbound fields before any routing or DB work."""
     message = (state.get("message") or "").strip()
     channel = (state.get("channel") or "chatwoot").strip().lower()
     channel_user_id = str(
@@ -148,7 +72,6 @@ def normalize_input_node(state: HRState) -> dict[str, Any]:
         or state.get("chatwoot_conversation_id")
         or "unknown"
     ).strip()
-
     return {
         "message": message,
         "question": message,
@@ -166,9 +89,7 @@ def legacy_orchestrator_node(state: HRState) -> dict[str, Any]:
         message=state["message"],
         external_message_id=state.get("external_message_id"),
     )
-
     reply = (result.get("reply") or result.get("text") or "").strip()
-
     return {
         "legacy_result": result,
         "status": result.get("status", "ok"),
@@ -186,10 +107,8 @@ def legacy_orchestrator_node(state: HRState) -> dict[str, Any]:
 
 
 def retrieve_documents_node(state: HRState) -> dict[str, Any]:
-    """Retrieve internal RH document chunks from ChromaDB."""
     question = state.get("question") or state.get("message") or ""
     docs = retrieve_context_for_guardrail(question, top_k=5)
-
     return {
         "retrieved_docs": docs,
         "sources": [_source_payload(item) for item in docs],
@@ -197,13 +116,8 @@ def retrieve_documents_node(state: HRState) -> dict[str, Any]:
 
 
 def grade_documents_node(state: HRState) -> dict[str, Any]:
-    """Filter retrieved docs by minimum score before generation."""
     docs = state.get("retrieved_docs", [])
-    relevant_docs = [
-        item for item in docs
-        if (item.get("score") or 0) >= MIN_RELEVANCE_SCORE
-    ]
-
+    relevant_docs = [item for item in docs if (item.get("score") or 0) >= MIN_RELEVANCE_SCORE]
     return {
         "relevant_docs": relevant_docs,
         "docs_are_relevant": bool(relevant_docs),
@@ -212,13 +126,11 @@ def grade_documents_node(state: HRState) -> dict[str, Any]:
 
 
 def fallback_no_context_node(state: HRState) -> dict[str, Any]:
-    """Safe fallback for RH when internal documents do not support an answer."""
     reply = (
         "No tengo información confirmada en los documentos internos para responder eso con seguridad. "
         "Capital Humano debe validarlo directamente antes de darte una respuesta final."
     )
     reply = _append_side_question_close(reply, state)
-
     return {
         "reply": reply,
         "text": reply,
@@ -237,7 +149,6 @@ def fallback_no_context_node(state: HRState) -> dict[str, Any]:
 
 
 def generate_answer_node(state: HRState) -> dict[str, Any]:
-    """Generate an answer grounded only in relevant internal documents."""
     question = state.get("question") or state.get("message") or ""
     relevant_docs = state.get("relevant_docs", [])
     context_text = "\n\n---\n\n".join(item.get("text", "") for item in relevant_docs)
@@ -288,64 +199,24 @@ RESPUESTA:
         answer = call_llm(prompt).strip()
     except Exception as exc:
         answer = ""
-        events.append(
-            {
-                "type": "rag_generation_exception",
-                "error": f"{type(exc).__name__}: {exc}",
-            }
-        )
-
-    if _looks_like_generation_error(answer):
-        extractive_answer = _build_extractive_answer_from_docs(question, relevant_docs, state)
-        if extractive_answer:
-            return {
-                "draft_answer": extractive_answer,
-                "events": events + [
-                    {
-                        "type": "rag_extractive_answer_used",
-                        "reason": "llm_generation_error",
-                    }
-                ],
-            }
+        events.append({"type": "rag_generation_exception", "error": f"{type(exc).__name__}: {exc}"})
 
     answer = _append_side_question_close(answer, state)
-
-    return {
-        "draft_answer": answer,
-        "events": events,
-    }
+    return {"draft_answer": answer, "events": events}
 
 
 def hallucination_check_node(state: HRState) -> dict[str, Any]:
-    """MVP deterministic guardrail before adding LLM graders."""
     draft = (state.get("draft_answer") or "").strip()
     relevant_docs = state.get("relevant_docs", [])
 
     if not draft or not relevant_docs:
         return {"hallucination_check": "FAIL"}
-
     if _looks_like_generation_error(draft):
         return {"hallucination_check": "FAIL"}
-
-    banned_promises = [
-        "te garantizamos",
-        "queda contratado",
-        "contratación segura",
-        "contratacion segura",
-        "sueldo garantizado",
-        "te aseguro",
-        "sin problema te contratamos",
-    ]
-
-    normalized = draft.lower()
-    if any(term in normalized for term in banned_promises):
-        return {"hallucination_check": "FAIL"}
-
     return {"hallucination_check": "PASS"}
 
 
 def answer_check_node(state: HRState) -> dict[str, Any]:
-    """Validate that the generated answer is usable enough to send."""
     draft = (state.get("draft_answer") or "").strip()
 
     if state.get("hallucination_check") != "PASS" or len(draft) < 10 or _looks_like_generation_error(draft):
@@ -387,8 +258,4 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
 
 def save_output_node(state: HRState) -> dict[str, Any]:
     reply = (state.get("reply") or state.get("text") or "").strip()
-    return {
-        "reply": reply,
-        "text": reply,
-        "status": state.get("status", "ok"),
-    }
+    return {"reply": reply, "text": reply, "status": state.get("status", "ok")}
