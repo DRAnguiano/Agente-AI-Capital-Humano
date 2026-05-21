@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from typing import Any
 
 from app.graphs.hr_state import HRState
@@ -11,10 +13,108 @@ from app.orchestrator import (
 )
 
 
+PROFILE_START_SIGNALS = {
+    "soy",
+    "vivo",
+    "radico",
+    "estoy",
+    "tengo",
+    "licencia",
+    "federal",
+    "tipo",
+    "experiencia",
+    "anos",
+    "años",
+    "quinta",
+    "rueda",
+    "apto",
+    "medico",
+    "médico",
+    "disponibilidad",
+    "viajar",
+    "ruta",
+    "foraneo",
+    "foráneo",
+    "torreon",
+    "torreón",
+    "gomez",
+    "gómez",
+    "lerdo",
+    "matamoros",
+}
+
+LOW_VALUE_NOISE = {
+    "asdf",
+    "qwer",
+    "test",
+    "prueba",
+    "hola?",
+    "???",
+    "...",
+}
+
+
+def _norm_text(message: str) -> str:
+    text = (message or "").strip().lower()
+    text = "".join(
+        ch
+        for ch in unicodedata.normalize("NFD", text)
+        if unicodedata.category(ch) != "Mn"
+    )
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _tokenize(message: str) -> set[str]:
+    return set(re.findall(r"[a-záéíóúñ0-9]+", (message or "").lower()))
+
+
 def _is_explicit_question(message: str) -> bool:
     """Keep profile-stage answers from being misrouted as RAG."""
     raw = message or ""
     return "?" in raw or "¿" in raw
+
+
+def _looks_like_noise_or_unsupported_start(message: str) -> bool:
+    """
+    Conservative fallback gate for START.
+
+    We only route to fallback when the message has no useful recruiting/profile
+    signal and looks like noise or unsupported text. Useful low-context profile
+    starts such as "Soy de Torreón" or "Tengo licencia" must keep going to
+    profile.
+    """
+    normalized = _norm_text(message)
+    if not normalized:
+        return True
+
+    if _is_explicit_question(message):
+        return False
+
+    tokens = _tokenize(message)
+    normalized_signal_tokens = {
+        _norm_text(token)
+        for token in PROFILE_START_SIGNALS
+    }
+
+    if tokens & normalized_signal_tokens:
+        return False
+
+    if normalized in LOW_VALUE_NOISE:
+        return True
+
+    if any(noise in tokens for noise in LOW_VALUE_NOISE):
+        return True
+
+    # Mostly punctuation/digits or very short unsupported fragments.
+    alnum_chars = re.findall(r"[a-z0-9]", normalized)
+    if len(alnum_chars) <= 2:
+        return True
+
+    # Several nonsense-looking tokens with no recruiting signal.
+    if len(tokens) >= 2 and all(len(token) <= 5 for token in tokens):
+        return True
+
+    return False
 
 
 def _apply_clarification_followup_detection(
@@ -85,6 +185,7 @@ def _route_from_detection(
     - human handoff wins over RAG and profile
     - clarification wins before RAG/profile
     - active profile-stage answers win over keyword-based RAG when not questions
+    - conservative START noise goes to fallback
     - RAG handles explicit document/policy questions
     - profile is the default candidate-data route
     """
@@ -96,6 +197,14 @@ def _route_from_detection(
 
     if detection.get("requires_clarification"):
         return "clarification"
+
+    if (
+        current_stage in {Stage.START.value, None, ""}
+        and not detection.get("requires_rag")
+        and detection.get("risk_level", "low") == "low"
+        and _looks_like_noise_or_unsupported_start(message)
+    ):
+        return "fallback"
 
     # When the conversation is already asking for profile data, answers such as
     # "Sí tengo licencia federal tipo B" or "tengo 5 años" may contain words
@@ -140,10 +249,16 @@ def route_message_node(state: HRState) -> dict[str, Any]:
     intent = detection.get("intent") or "candidate_answer"
     risk_level = detection.get("risk_level") or "low"
     requires_human = bool(detection.get("requires_human", False))
+    reason = detection.get("reason")
 
     if route == "profile":
         requires_rag = False
         intent = intent or "candidate_answer"
+
+    if route == "fallback":
+        requires_rag = False
+        intent = "fallback"
+        reason = reason or "noise_or_unsupported_start"
 
     return {
         "intent": intent,
@@ -151,7 +266,7 @@ def route_message_node(state: HRState) -> dict[str, Any]:
         "requires_human": requires_human,
         "requires_rag": requires_rag,
         "requires_clarification": bool(detection.get("requires_clarification", False)),
-        "reason": detection.get("reason"),
+        "reason": reason,
         "route": route,
         "route_detection": detection,
         "current_stage": effective_stage,
