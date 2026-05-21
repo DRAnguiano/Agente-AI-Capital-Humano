@@ -25,7 +25,7 @@ from app.graphs.hr_nodes_review import review_new_information_node
 from app.graphs.hr_nodes_router import route_message_node
 from app.graphs.hr_nodes_stubs import route_stub_response_node
 from app.graphs.hr_nodes_web_search import tavily_web_search_node
-from app.graphs.hr_routes import route_after_grading
+from app.graphs.hr_routes import route_after_grading, route_after_grading_or_web
 from app.graphs.hr_state import HRState
 
 
@@ -235,8 +235,12 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("retrieve_documents", "grade_documents")
     workflow.add_conditional_edges(
         "grade_documents",
-        route_after_grading,
-        {"generate_answer": "generate_answer", "fallback_no_context": "fallback_no_context"},
+        route_after_grading_or_web,
+        {
+            "generate_answer": "generate_answer",
+            "tavily_web_search": "tavily_web_search",
+            "fallback_no_context": "fallback_no_context",
+        },
     )
     workflow.add_edge("generate_answer", "hallucination_check")
     workflow.add_edge("hallucination_check", "answer_check")
