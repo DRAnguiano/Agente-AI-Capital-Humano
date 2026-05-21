@@ -1,20 +1,34 @@
+import os
+
 from app.graphs.hr_state import HRState
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def route_after_router(state: HRState) -> str:
-    """Route to the next functional branch after initial classification."""
     return state.get("route", "fallback")
 
 
 def route_after_grading(state: HRState) -> str:
-    """Generate only when the retrieved internal context is relevant."""
     if state.get("docs_are_relevant"):
         return "generate_answer"
     return "fallback_no_context"
 
 
+def route_after_grading_or_web(state: HRState) -> str:
+    if state.get("docs_are_relevant"):
+        return "generate_answer"
+    if _env_bool("WEB_SEARCH_ENABLED", False):
+        return "tavily_web_search"
+    return "fallback_no_context"
+
+
 def route_after_answer_check(state: HRState) -> str:
-    """If an answer is not safe/useful, force human handoff instead of retry loops."""
     if state.get("answer_check") == "PASS":
         return "save_output"
     return "human_handoff"
