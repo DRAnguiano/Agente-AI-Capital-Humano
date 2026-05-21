@@ -1,4 +1,5 @@
-from typing import Any, Literal
+from operator import add
+from typing import Annotated, Any, Literal
 from typing_extensions import TypedDict
 
 
@@ -48,6 +49,7 @@ class HRState(TypedDict, total=False):
     profile_snapshot: dict[str, Any]
     history_messages: list[dict[str, Any]]
     incoming_message_saved: bool
+    assistant_message_saved: bool
 
     # Routing / risk / intent
     route: RouteName
@@ -57,6 +59,7 @@ class HRState(TypedDict, total=False):
     requires_rag: bool
     requires_clarification: bool
     reason: str | None
+    route_detection: dict[str, Any]
 
     # Candidate profile
     extracted_fields: dict[str, Any]
@@ -80,7 +83,7 @@ class HRState(TypedDict, total=False):
     chunks: list[str]
     status: str
     labels: list[str]
-    events: list[dict[str, Any]]
+    events: Annotated[list[dict[str, Any]], add]
 
     # Compatibility payload returned by the legacy orchestrator node.
     legacy_result: dict[str, Any]
