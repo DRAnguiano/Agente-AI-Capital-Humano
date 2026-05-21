@@ -7,6 +7,8 @@ from app.persona_config import SYSTEM_PROMPT
 
 
 MIN_RELEVANCE_SCORE = 0.30
+PROFILE_PENDING_STAGES = {"ASK_CITY", "ASK_LICENSE", "ASK_EXPERIENCE", "ASK_APTO", "ASK_AVAILABILITY"}
+SIDE_QUESTION_SOFT_CLOSE = "Si le interesa, con gusto podemos continuar con su proceso."
 
 
 def _source_payload(item: dict[str, Any]) -> dict[str, Any]:
@@ -25,6 +27,35 @@ def _source_payload(item: dict[str, Any]) -> dict[str, Any]:
         payload["id"] = item.get("id")
 
     return payload
+
+
+def _is_profile_side_question(state: HRState) -> bool:
+    current_stage = state.get("current_stage") or "START"
+    route = state.get("route")
+    classifier = state.get("classifier") or {}
+    intent = state.get("intent") or classifier.get("classifier_intent")
+
+    if current_stage not in PROFILE_PENDING_STAGES:
+        return False
+
+    if route != "rag":
+        return False
+
+    return intent not in {"profile_answer", "candidate_interest"}
+
+
+def _append_side_question_close(answer: str, state: HRState) -> str:
+    if not _is_profile_side_question(state):
+        return answer
+
+    cleaned = (answer or "").strip()
+    if not cleaned:
+        return SIDE_QUESTION_SOFT_CLOSE
+
+    if SIDE_QUESTION_SOFT_CLOSE.lower() in cleaned.lower():
+        return cleaned
+
+    return f"{cleaned}\n\n{SIDE_QUESTION_SOFT_CLOSE}"
 
 
 def normalize_input_node(state: HRState) -> dict[str, Any]:
@@ -48,13 +79,6 @@ def normalize_input_node(state: HRState) -> dict[str, Any]:
 
 
 def legacy_orchestrator_node(state: HRState) -> dict[str, Any]:
-    """
-    Compatibility node for the first LangGraph migration.
-
-    This lets /orchestrate/message run through hr_graph.invoke() while keeping
-    the mature logic in app/orchestrator.py untouched. The following iterations
-    will progressively replace this node with smaller graph nodes.
-    """
     result = orchestrate_message(
         channel=state["channel"],
         channel_user_id=state["channel_user_id"],
@@ -109,19 +133,27 @@ def grade_documents_node(state: HRState) -> dict[str, Any]:
 
 
 def fallback_no_context_node(state: HRState) -> dict[str, Any]:
-    """Safe fallback for HR when internal documents do not support an answer."""
+    """Safe fallback for RH when internal documents do not support an answer."""
     reply = (
         "No tengo información confirmada en los documentos internos para responder eso con seguridad. "
         "Capital Humano debe validarlo directamente antes de darte una respuesta final."
     )
+    reply = _append_side_question_close(reply, state)
 
     return {
         "reply": reply,
         "text": reply,
         "requires_human": True,
         "risk_level": state.get("risk_level", "medium"),
-        "next_stage": "HUMAN_REVIEW_REQUIRED",
+        "next_stage": state.get("current_stage") or "HUMAN_REVIEW_REQUIRED",
         "labels": ["requiere_humano", "sin_contexto_confirmado"],
+        "events": [
+            {
+                "type": "rag_side_question_preserved_stage",
+                "current_stage": state.get("current_stage"),
+                "side_question": _is_profile_side_question(state),
+            }
+        ],
     }
 
 
@@ -130,6 +162,21 @@ def generate_answer_node(state: HRState) -> dict[str, Any]:
     question = state.get("question") or state.get("message") or ""
     relevant_docs = state.get("relevant_docs", [])
     context_text = "\n\n---\n\n".join(item.get("text", "") for item in relevant_docs)
+    current_stage = state.get("current_stage") or "START"
+    side_question = _is_profile_side_question(state)
+
+    side_question_instruction = ""
+    if side_question:
+        side_question_instruction = f"""
+IMPORTANTE SOBRE FLUJO DE FORMULARIO:
+- La conversación está en etapa pendiente: {current_stage}.
+- El candidato hizo una pregunta lateral, no respondió el campo pendiente.
+- Responde su pregunta con naturalidad.
+- No avances el formulario.
+- No hagas la siguiente pregunta del formulario.
+- No repitas agresivamente la pregunta pendiente.
+- Cierra suavemente con: "{SIDE_QUESTION_SOFT_CLOSE}"
+""".strip()
 
     prompt = f"""
 {SYSTEM_PROMPT}
@@ -140,17 +187,25 @@ def generate_answer_node(state: HRState) -> dict[str, Any]:
 === MENSAJE DEL CANDIDATO ===
 {question}
 
+=== ESTADO CONVERSACIONAL ===
+current_stage: {current_stage}
+side_question_during_profile: {side_question}
+
+{side_question_instruction}
+
 INSTRUCCIONES:
 1. Responde únicamente con base en el contexto interno.
 2. No inventes sueldo, prestaciones, rutas, descansos, pago por kilómetro, contratación ni condiciones.
 3. Si falta información, indica que Capital Humano debe confirmarlo.
 4. Responde breve, natural y en español.
 5. No cierres con frases genéricas como "si tienes otra duda", "puedo ayudarte" o similares.
+6. Si es una pregunta lateral durante formulario, no empujes el proceso ni hagas preguntas del formulario.
 
 RESPUESTA:
 """
 
     answer = call_llm(prompt).strip()
+    answer = _append_side_question_close(answer, state)
 
     return {
         "draft_answer": answer,
@@ -191,11 +246,13 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
             "No tengo información confirmada suficiente para responder eso con seguridad. "
             "Capital Humano debe validarlo directamente."
         )
+        reply = _append_side_question_close(reply, state)
         return {
             "answer_check": "FAIL",
             "reply": reply,
             "text": reply,
             "requires_human": True,
+            "next_stage": state.get("current_stage"),
             "labels": ["requiere_humano", "respuesta_no_validada"],
         }
 
@@ -203,16 +260,18 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
         "answer_check": "PASS",
         "reply": draft,
         "text": draft,
+        "next_stage": state.get("current_stage") if _is_profile_side_question(state) else state.get("next_stage"),
+        "events": [
+            {
+                "type": "rag_answered_side_question" if _is_profile_side_question(state) else "rag_answered",
+                "current_stage": state.get("current_stage"),
+                "stage_preserved": _is_profile_side_question(state),
+            }
+        ],
     }
 
 
 def save_output_node(state: HRState) -> dict[str, Any]:
-    """
-    Final graph node.
-
-    In this MVP, legacy_orchestrator_node already persists messages/events.
-    Once we move each responsibility into native nodes, persistence will live here.
-    """
     reply = (state.get("reply") or state.get("text") or "").strip()
     return {
         "reply": reply,
