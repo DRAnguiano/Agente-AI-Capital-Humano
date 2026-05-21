@@ -54,6 +54,8 @@ LOW_VALUE_NOISE = {
 }
 
 CLASSIFIER_ROUTE_MAP = {
+    "greeting": "greeting",
+    "intent_discovery": "greeting",
     "profile": "profile",
     "rag": "rag",
     "web_review": "web_review",
@@ -217,7 +219,7 @@ def route_message_node(state: HRState) -> dict[str, Any]:
         requires_rag = bool(classifier.get("requires_rag", False)) or route == "rag"
         reason = classifier.get("reason")
 
-        if route in {"human_handoff", "policy_boundary", "clarification", "fallback"}:
+        if route in {"greeting", "human_handoff", "policy_boundary", "clarification", "fallback"}:
             requires_rag = False
         if route == "web_review":
             requires_rag = False
