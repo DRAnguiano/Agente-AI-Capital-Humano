@@ -143,6 +143,7 @@ def classify_message_node(state: HRState) -> dict[str, Any]:
     profile_snapshot = state.get("profile_snapshot") or {}
     history_messages = state.get("history_messages") or []
     recent_history = history_messages[-6:] if isinstance(history_messages, list) else []
+    conversation_memory = state.get("conversation_memory") or {}
 
     prompt = f"""
 You are a strict JSON classifier for a Mexican trucking recruiting assistant.
@@ -155,11 +156,14 @@ Return JSON only. Do not answer the candidate.
 current_stage: {current_stage}
 profile_snapshot: {json.dumps(profile_snapshot, ensure_ascii=False, default=str)}
 recent_history: {json.dumps(recent_history, ensure_ascii=False, default=str)}
+conversation_memory: {json.dumps(conversation_memory, ensure_ascii=False, default=str)}
 
 === CANDIDATE MESSAGE ===
 {message}
 
-Classify this message according to the policy. Return exactly the JSON contract.
+Classify this message according to the policy.
+If conversation_memory.current_may_reference_previous is true, classify the current message together with conversation_memory.previous_user_message and conversation_memory.summary.
+Return exactly the JSON contract.
 """.strip()
 
     try:
