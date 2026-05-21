@@ -44,12 +44,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def build_hr_graph():
-    """
-    Production-safe compatibility graph.
-
-    Default production path still goes through the legacy orchestrator unless
-    USE_LANGGRAPH_ORCHESTRATOR=true is enabled in the environment.
-    """
     workflow = StateGraph(HRState)
     workflow.add_node("normalize_input", normalize_input_node)
     workflow.add_node("legacy_orchestrator", legacy_orchestrator_node)
@@ -205,12 +199,6 @@ def build_hr_rag_replacement_test_graph():
 
 
 def build_hr_full_router_test_graph():
-    """
-    Full LangGraph orchestrator path.
-
-    This is used by diagnostics and by production when
-    USE_LANGGRAPH_ORCHESTRATOR=true.
-    """
     workflow = StateGraph(HRState)
     workflow.add_node("normalize_input", normalize_input_node)
     workflow.add_node("load_conversation", load_conversation_node)
@@ -324,6 +312,7 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "web_search_error": final_state.get("web_search_error"),
         "new_information_review": final_state.get("new_information_review"),
         "route_stub_used": bool(final_state.get("route_stub_used", False)),
+        "greeting_real_flow_used": bool(final_state.get("greeting_real_flow_used", False)),
         "profile_real_flow_used": bool(final_state.get("profile_real_flow_used", False)),
         "human_handoff_real_flow_used": bool(final_state.get("human_handoff_real_flow_used", False)),
         "clarification_real_flow_used": bool(final_state.get("clarification_real_flow_used", False)),
@@ -460,7 +449,6 @@ def run_hr_graph_message(
     phone: str | None = None,
     external_message_id: str | None = None,
 ) -> dict[str, Any]:
-    """Invoke the HR graph using the existing /orchestrate/message contract."""
     initial_state = _initial_state(
         channel=channel,
         channel_user_id=channel_user_id,
