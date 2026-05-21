@@ -53,6 +53,16 @@ LOW_VALUE_NOISE = {
     "...",
 }
 
+CLASSIFIER_ROUTE_MAP = {
+    "profile": "profile",
+    "rag": "rag",
+    "web_review": "web_review",
+    "clarification": "clarification",
+    "human_handoff": "human_handoff",
+    "fallback": "fallback",
+    "policy_boundary": "policy_boundary",
+}
+
 
 def _norm_text(message: str) -> str:
     text = (message or "").strip().lower()
@@ -69,20 +79,11 @@ def _tokenize(message: str) -> set[str]:
 
 
 def _is_explicit_question(message: str) -> bool:
-    """Keep profile-stage answers from being misrouted as RAG."""
     raw = message or ""
     return "?" in raw or "¿" in raw
 
 
 def _looks_like_noise_or_unsupported_start(message: str) -> bool:
-    """
-    Conservative fallback gate for START.
-
-    We only route to fallback when the message has no useful recruiting/profile
-    signal and looks like noise or unsupported text. Useful low-context profile
-    starts such as "Soy de Torreón" or "Tengo licencia" must keep going to
-    profile.
-    """
     normalized = _norm_text(message)
     if not normalized:
         return True
@@ -91,10 +92,7 @@ def _looks_like_noise_or_unsupported_start(message: str) -> bool:
         return False
 
     tokens = _tokenize(message)
-    normalized_signal_tokens = {
-        _norm_text(token)
-        for token in PROFILE_START_SIGNALS
-    }
+    normalized_signal_tokens = {_norm_text(token) for token in PROFILE_START_SIGNALS}
 
     if tokens & normalized_signal_tokens:
         return False
@@ -105,12 +103,10 @@ def _looks_like_noise_or_unsupported_start(message: str) -> bool:
     if any(noise in tokens for noise in LOW_VALUE_NOISE):
         return True
 
-    # Mostly punctuation/digits or very short unsupported fragments.
     alnum_chars = re.findall(r"[a-z0-9]", normalized)
     if len(alnum_chars) <= 2:
         return True
 
-    # Several nonsense-looking tokens with no recruiting signal.
     if len(tokens) >= 2 and all(len(token) <= 5 for token in tokens):
         return True
 
@@ -123,14 +119,6 @@ def _apply_clarification_followup_detection(
     current_stage: str | None,
     message: str,
 ) -> dict[str, Any]:
-    """
-    Resolve the second half of ambiguous slang clarification.
-
-    Mirrors the legacy behavior:
-    - safe clarification goes back to profile flow
-    - risky clarification goes to human handoff
-    - meta/confused response goes back to profile flow with ASK_CITY recovery
-    """
     if current_stage != Stage.CLARIFY_AMBIGUOUS_SLANG.value:
         return detection
 
@@ -171,24 +159,19 @@ def _apply_clarification_followup_detection(
     }
 
 
+def _route_from_classifier(classifier: dict[str, Any]) -> str | None:
+    if not classifier:
+        return None
+    route = str(classifier.get("recommended_route") or "").strip().lower()
+    return CLASSIFIER_ROUTE_MAP.get(route)
+
+
 def _route_from_detection(
     detection: dict[str, Any],
     *,
     current_stage: str | None = None,
     message: str = "",
 ) -> str:
-    """
-    Convert orchestrator-style detection flags into a graph route.
-
-    Priority matters:
-    - explicit override from clarification follow-up wins first
-    - human handoff wins over RAG and profile
-    - clarification wins before RAG/profile
-    - active profile-stage answers win over keyword-based RAG when not questions
-    - conservative START noise goes to fallback
-    - RAG handles explicit document/policy questions
-    - profile is the default candidate-data route
-    """
     if detection.get("route"):
         return str(detection["route"])
 
@@ -206,9 +189,6 @@ def _route_from_detection(
     ):
         return "fallback"
 
-    # When the conversation is already asking for profile data, answers such as
-    # "Sí tengo licencia federal tipo B" or "tengo 5 años" may contain words
-    # that also appear in RAG keywords. In that case, profile flow must win.
     if (
         current_stage in PROFILE_STAGES
         and not _is_explicit_question(message)
@@ -223,14 +203,37 @@ def _route_from_detection(
 
 
 def route_message_node(state: HRState) -> dict[str, Any]:
-    """
-    Detect intent/risk and select the next high-level graph route.
-
-    This is the first extraction from app/orchestrator.py's decision logic.
-    It does not write to DB; it only updates state.
-    """
     message = state.get("message") or ""
     current_stage = state.get("current_stage") or "START"
+    classifier = state.get("classifier") or {}
+
+    classifier_route = _route_from_classifier(classifier)
+    if classifier_route:
+        route = classifier_route
+        intent = classifier.get("classifier_intent") or "candidate_answer"
+        risk_level = classifier.get("risk_level") or "low"
+        requires_human = bool(classifier.get("requires_human", False)) or route == "human_handoff"
+        requires_clarification = bool(classifier.get("requires_clarification", False)) or route == "clarification"
+        requires_rag = bool(classifier.get("requires_rag", False)) or route == "rag"
+        reason = classifier.get("reason")
+
+        if route in {"human_handoff", "policy_boundary", "clarification", "fallback"}:
+            requires_rag = False
+        if route == "web_review":
+            requires_rag = False
+
+        return {
+            "intent": intent,
+            "risk_level": risk_level,
+            "requires_human": requires_human,
+            "requires_rag": requires_rag,
+            "requires_clarification": requires_clarification,
+            "reason": reason,
+            "route": route,
+            "route_detection": {"source": "classifier", **classifier},
+            "current_stage": current_stage,
+        }
+
     detection = detect_intent_and_risk(message)
     detection = _apply_clarification_followup_detection(
         detection,
@@ -239,11 +242,7 @@ def route_message_node(state: HRState) -> dict[str, Any]:
     )
 
     effective_stage = detection.get("current_stage_override") or current_stage
-    route = _route_from_detection(
-        detection,
-        current_stage=effective_stage,
-        message=message,
-    )
+    route = _route_from_detection(detection, current_stage=effective_stage, message=message)
 
     requires_rag = bool(detection.get("requires_rag", False))
     intent = detection.get("intent") or "candidate_answer"
