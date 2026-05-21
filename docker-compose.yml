@@ -163,10 +163,12 @@ services:
       - chatwoot_redis
     restart: unless-stopped
 
-  #######################################
-  # N8N AUXILIAR / LABORATORIO / AUTOMATIZACIONES
+    #######################################
+  # N8N OPCIONAL / LABORATORIO / AUTOMATIZACIONES
   #######################################
   n8n:
+    profiles:
+      - lab
     image: n8nio/n8n:latest
     container_name: hr_n8n
     env_file:
