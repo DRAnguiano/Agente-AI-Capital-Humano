@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int
 from .orchestrator import orchestrate_message
+from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
 from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY
@@ -250,14 +251,14 @@ def orchestrate(body: OrchestrateMessageBody):
     - devuelve respuesta lista para Telegram/Chatwoot/WhatsApp
     """
     try:
-        result = orchestrate_message(
+        result = run_hr_graph_message(
             channel=body.channel,
             channel_user_id=body.channel_user_id,
             username=body.username,
             phone=body.phone,
             message=body.message,
             external_message_id=body.external_message_id,
-        )
+)
         return result
     except Exception as exc:
         traceback.print_exc()
