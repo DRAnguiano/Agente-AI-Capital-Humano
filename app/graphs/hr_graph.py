@@ -10,6 +10,7 @@ from app.graphs.hr_nodes_core import (
     save_assistant_message_node,
     save_incoming_message_node,
 )
+from app.graphs.hr_nodes_memory import build_conversation_memory_node
 from app.graphs.hr_nodes_rag import (
     answer_check_node,
     fallback_no_context_node,
@@ -202,6 +203,7 @@ def build_hr_full_router_test_graph():
     workflow = StateGraph(HRState)
     workflow.add_node("normalize_input", normalize_input_node)
     workflow.add_node("load_conversation", load_conversation_node)
+    workflow.add_node("build_conversation_memory", build_conversation_memory_node)
     workflow.add_node("save_incoming_message", save_incoming_message_node)
     workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
@@ -214,7 +216,8 @@ def build_hr_full_router_test_graph():
 
     workflow.add_edge(START, "normalize_input")
     workflow.add_edge("normalize_input", "load_conversation")
-    workflow.add_edge("load_conversation", "save_incoming_message")
+    workflow.add_edge("load_conversation", "build_conversation_memory")
+    workflow.add_edge("build_conversation_memory", "save_incoming_message")
     workflow.add_edge("save_incoming_message", "classify_message")
     workflow.add_edge("classify_message", "route_message")
     workflow.add_conditional_edges(
@@ -287,6 +290,7 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
     retrieved_docs = final_state.get("retrieved_docs", []) or []
     relevant_docs = final_state.get("relevant_docs", []) or []
     web_results = final_state.get("web_results", []) or []
+    memory = final_state.get("conversation_memory") or {}
     return {
         "status": final_state.get("status", "ok"),
         "conversation_key": final_state.get("conversation_key"),
@@ -306,6 +310,8 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "classifier_intent": final_state.get("classifier_intent"),
         "classifier_confidence": final_state.get("classifier_confidence"),
         "safe_reply_mode": final_state.get("safe_reply_mode"),
+        "conversation_memory_built": bool(memory),
+        "current_may_reference_previous": bool(memory.get("current_may_reference_previous", False)),
         "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),
         "web_search_used": bool(final_state.get("web_search_used", False)),
         "web_results_count": len(web_results),
@@ -401,6 +407,7 @@ def _run_full_router_test_graph(
         "selected_route": final_state.get("route"),
         "thread_id": config["configurable"]["thread_id"],
         "input_nodes_extracted": True,
+        "memory_node_enabled": True,
         "classifier_node_enabled": True,
         "router_node_extracted": True,
         "rag_nodes_extracted": True,
