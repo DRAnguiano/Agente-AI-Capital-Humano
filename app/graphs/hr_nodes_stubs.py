@@ -2,6 +2,7 @@ from typing import Any
 
 from app.graphs.hr_nodes_clarification import request_clarification_node
 from app.graphs.hr_nodes_fallback import fallback_response_node
+from app.graphs.hr_nodes_greeting import greeting_response_node
 from app.graphs.hr_nodes_handoff import (
     create_handoff_node,
     generate_handoff_reply_node,
@@ -28,6 +29,7 @@ def policy_boundary_response_node(state: HRState) -> dict[str, Any]:
         "text": reply,
         "next_stage": state.get("current_stage") or "START",
         "route_stub_used": False,
+        "greeting_real_flow_used": False,
         "profile_real_flow_used": False,
         "human_handoff_real_flow_used": False,
         "clarification_real_flow_used": False,
@@ -48,6 +50,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
     Produce a controlled response for non-RAG routes.
 
     Current behavior:
+    - greeting: answers first contact without advancing profile.
     - profile: runs the real profile extraction/stage update branch.
     - human_handoff: creates real handoff, updates stage, generates controlled reply.
     - clarification: updates stage and asks for a real clarification.
@@ -55,6 +58,9 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
     - fallback: generates a real safe fallback reply and logs it.
     """
     route = state.get("route") or "fallback"
+
+    if route == "greeting":
+        return greeting_response_node(state)
 
     if route == "profile":
         extracted_update = extract_profile_fields_node(state)
@@ -68,6 +74,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             **extracted_update,
             **profile_update,
             "route_stub_used": False,
+            "greeting_real_flow_used": False,
             "profile_real_flow_used": True,
             "human_handoff_real_flow_used": False,
             "clarification_real_flow_used": False,
@@ -93,6 +100,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             **stage_update,
             **reply_update,
             "route_stub_used": False,
+            "greeting_real_flow_used": False,
             "profile_real_flow_used": False,
             "human_handoff_real_flow_used": True,
             "clarification_real_flow_used": False,
@@ -106,6 +114,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
         return {
             **clarification_update,
             "route_stub_used": False,
+            "greeting_real_flow_used": False,
             "profile_real_flow_used": False,
             "human_handoff_real_flow_used": False,
             "clarification_real_flow_used": True,
@@ -121,6 +130,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
     return {
         **fallback_update,
         "route_stub_used": False,
+        "greeting_real_flow_used": False,
         "profile_real_flow_used": False,
         "human_handoff_real_flow_used": False,
         "clarification_real_flow_used": False,
