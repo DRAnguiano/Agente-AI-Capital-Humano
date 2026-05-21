@@ -61,6 +61,10 @@ class HRState(TypedDict, total=False):
     reason: str | None
     route_detection: dict[str, Any]
     route_stub_used: bool
+    profile_real_flow_used: bool
+    human_handoff_real_flow_used: bool
+    clarification_real_flow_used: bool
+    fallback_real_flow_used: bool
 
     # Candidate profile
     extracted_fields: dict[str, Any]
