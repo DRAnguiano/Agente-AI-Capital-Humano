@@ -60,6 +60,7 @@ class HRState(TypedDict, total=False):
     requires_clarification: bool
     reason: str | None
     route_detection: dict[str, Any]
+    route_stub_used: bool
 
     # Candidate profile
     extracted_fields: dict[str, Any]
