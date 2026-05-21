@@ -3,6 +3,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from app.graphs.hr_nodes_classifier import classify_message_node
 from app.graphs.hr_nodes_core import (
     load_conversation_node,
     normalize_input_node,
@@ -19,8 +20,10 @@ from app.graphs.hr_nodes_rag import (
     retrieve_documents_node,
     save_output_node,
 )
+from app.graphs.hr_nodes_review import review_new_information_node
 from app.graphs.hr_nodes_router import route_message_node
 from app.graphs.hr_nodes_stubs import route_stub_response_node
+from app.graphs.hr_nodes_web_search import tavily_web_search_node
 from app.graphs.hr_routes import route_after_grading
 from app.graphs.hr_state import HRState
 
@@ -93,7 +96,12 @@ def _route_after_rag_test_router(state: HRState) -> str:
 
 
 def _route_after_full_router(state: HRState) -> str:
-    return "retrieve_documents" if state.get("route") == "rag" else "route_stub_response"
+    route = state.get("route")
+    if route == "rag":
+        return "retrieve_documents"
+    if route == "web_review":
+        return "tavily_web_search"
+    return "route_stub_response"
 
 
 def _route_after_rag_answer_check(state: HRState) -> str:
@@ -207,8 +215,11 @@ def build_hr_full_router_test_graph():
     workflow.add_node("normalize_input", normalize_input_node)
     workflow.add_node("load_conversation", load_conversation_node)
     workflow.add_node("save_incoming_message", save_incoming_message_node)
+    workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
     workflow.add_node("route_stub_response", route_stub_response_node)
+    workflow.add_node("tavily_web_search", tavily_web_search_node)
+    workflow.add_node("review_new_information", review_new_information_node)
     _add_rag_nodes(workflow)
     workflow.add_node("save_assistant_message", save_assistant_message_node)
     workflow.add_node("save_output", save_output_node)
@@ -216,12 +227,19 @@ def build_hr_full_router_test_graph():
     workflow.add_edge(START, "normalize_input")
     workflow.add_edge("normalize_input", "load_conversation")
     workflow.add_edge("load_conversation", "save_incoming_message")
-    workflow.add_edge("save_incoming_message", "route_message")
+    workflow.add_edge("save_incoming_message", "classify_message")
+    workflow.add_edge("classify_message", "route_message")
     workflow.add_conditional_edges(
         "route_message",
         _route_after_full_router,
-        {"retrieve_documents": "retrieve_documents", "route_stub_response": "route_stub_response"},
+        {
+            "retrieve_documents": "retrieve_documents",
+            "tavily_web_search": "tavily_web_search",
+            "route_stub_response": "route_stub_response",
+        },
     )
+    workflow.add_edge("tavily_web_search", "review_new_information")
+    workflow.add_edge("review_new_information", "route_stub_response")
     workflow.add_edge("route_stub_response", "save_assistant_message")
     workflow.add_edge("retrieve_documents", "grade_documents")
     workflow.add_conditional_edges(
@@ -280,6 +298,7 @@ def _config(channel: str, channel_user_id: str) -> dict[str, Any]:
 def _base_payload(final_state: HRState) -> dict[str, Any]:
     retrieved_docs = final_state.get("retrieved_docs", []) or []
     relevant_docs = final_state.get("relevant_docs", []) or []
+    web_results = final_state.get("web_results", []) or []
     return {
         "status": final_state.get("status", "ok"),
         "conversation_key": final_state.get("conversation_key"),
@@ -296,11 +315,20 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "requires_clarification": bool(final_state.get("requires_clarification", False)),
         "reason": final_state.get("reason"),
         "selected_route": final_state.get("route"),
+        "classifier_intent": final_state.get("classifier_intent"),
+        "classifier_confidence": final_state.get("classifier_confidence"),
+        "safe_reply_mode": final_state.get("safe_reply_mode"),
+        "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),
+        "web_search_used": bool(final_state.get("web_search_used", False)),
+        "web_results_count": len(web_results),
+        "web_search_error": final_state.get("web_search_error"),
+        "new_information_review": final_state.get("new_information_review"),
         "route_stub_used": bool(final_state.get("route_stub_used", False)),
         "profile_real_flow_used": bool(final_state.get("profile_real_flow_used", False)),
         "human_handoff_real_flow_used": bool(final_state.get("human_handoff_real_flow_used", False)),
         "clarification_real_flow_used": bool(final_state.get("clarification_real_flow_used", False)),
         "fallback_real_flow_used": bool(final_state.get("fallback_real_flow_used", False)),
+        "policy_boundary_real_flow_used": bool(final_state.get("policy_boundary_real_flow_used", False)),
         "retrieved_docs_count": len(retrieved_docs),
         "relevant_docs_count": len(relevant_docs),
         "docs_are_relevant": bool(final_state.get("docs_are_relevant", False)),
@@ -384,8 +412,10 @@ def _run_full_router_test_graph(
         "selected_route": final_state.get("route"),
         "thread_id": config["configurable"]["thread_id"],
         "input_nodes_extracted": True,
+        "classifier_node_enabled": True,
         "router_node_extracted": True,
         "rag_nodes_extracted": True,
+        "web_review_enabled": True,
         "assistant_persistence_enabled": True,
         "legacy_bypassed": True,
         "feature_flag": _env_bool("USE_LANGGRAPH_ORCHESTRATOR", False),
