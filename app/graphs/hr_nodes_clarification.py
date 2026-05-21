@@ -2,24 +2,39 @@ from typing import Any
 
 from app.db import log_event, update_stage
 from app.graphs.hr_state import HRState
-from app.orchestrator import Intent, STATIC_REPLIES, Stage
+from app.orchestrator import Intent, Stage
+
+
+GENERIC_CLARIFICATION_REPLY = (
+    "Para no malinterpretarte, ¿puedes explicarme un poco más a qué te refieres "
+    "y cómo se relaciona con la vacante o el proceso?"
+)
+
+
+def _build_clarification_reply(state: HRState) -> str:
+    """
+    Build a neutral clarification prompt.
+
+    Do not assume a specific slang meaning here. The router/review layer decides
+    the risk and route; this node only asks the candidate for more context.
+    """
+    return GENERIC_CLARIFICATION_REPLY
 
 
 def request_clarification_node(state: HRState) -> dict[str, Any]:
     """
     Persist and generate a controlled clarification request.
 
-    This replaces the diagnostic clarification stub. It mirrors the legacy
-    behavior for ambiguous slang: move the conversation to
-    CLARIFY_AMBIGUOUS_SLANG and ask the candidate to clarify intent.
+    This node is intentionally generic. Specific slang/policy interpretation
+    belongs in retrieval, web review or later strict-rule layers, not here.
     """
     conversation_key = state.get("conversation_key")
     current_stage = state.get("current_stage") or Stage.START.value
     intent = state.get("intent") or Intent.AMBIGUOUS_SLANG.value
     risk_level = state.get("risk_level") or "medium"
-    reason = state.get("reason") or "jerga_ambigua"
+    reason = state.get("reason") or "needs_clarification"
     next_stage = Stage.CLARIFY_AMBIGUOUS_SLANG.value
-    reply = STATIC_REPLIES[Intent.AMBIGUOUS_SLANG.value]
+    reply = _build_clarification_reply(state)
 
     stage_updated = False
     event_logged = False
