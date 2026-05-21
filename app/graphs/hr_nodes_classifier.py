@@ -26,6 +26,7 @@ DEFAULT_CLASSIFICATION = {
 }
 
 ALLOWED_ROUTES = {
+    "greeting",
     "profile",
     "rag",
     "web_review",
@@ -34,6 +35,8 @@ ALLOWED_ROUTES = {
     "fallback",
     "policy_boundary",
 }
+
+GREETING_INTENTS = {"greeting", "initial_greeting"}
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -78,6 +81,7 @@ def _clean_route(value: Any) -> str:
 def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
     data = {**DEFAULT_CLASSIFICATION, **(payload or {})}
 
+    classifier_intent = str(data.get("classifier_intent") or "fallback").strip().lower()
     route = _clean_route(data.get("recommended_route"))
     risk_level = str(data.get("risk_level") or "low").strip().lower()
     if risk_level not in {"low", "medium", "high"}:
@@ -88,6 +92,9 @@ def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         confidence = 0.0
     confidence = max(0.0, min(1.0, confidence))
+
+    if classifier_intent in GREETING_INTENTS:
+        route = "greeting"
 
     requires_human = bool(data.get("requires_human", False)) or route == "human_handoff" or risk_level == "high"
     requires_clarification = bool(data.get("requires_clarification", False)) or route == "clarification"
@@ -100,13 +107,13 @@ def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
         requires_web_lookup = False
         requires_clarification = False
 
-    if route == "policy_boundary":
+    if route in {"greeting", "policy_boundary"}:
         requires_rag = False
         requires_web_lookup = False
         requires_clarification = False
 
     return {
-        "classifier_intent": str(data.get("classifier_intent") or "fallback").strip().lower(),
+        "classifier_intent": classifier_intent,
         "risk_level": risk_level,
         "recommended_route": route,
         "requires_rag": requires_rag,
@@ -122,13 +129,6 @@ def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def classify_message_node(state: HRState) -> dict[str, Any]:
-    """
-    LLM-backed classifier that decides intent/risk before routing.
-
-    It does not write to DB and does not generate the final candidate reply.
-    The policy file keeps semantic rules outside Python to avoid hardcoded slang
-    lists growing inside the router.
-    """
     if not _env_bool("MESSAGE_CLASSIFIER_ENABLED", True):
         return {
             "classifier": {**DEFAULT_CLASSIFICATION, "reason": "classifier_disabled"},
@@ -142,7 +142,6 @@ def classify_message_node(state: HRState) -> dict[str, Any]:
     current_stage = state.get("current_stage") or "START"
     profile_snapshot = state.get("profile_snapshot") or {}
     history_messages = state.get("history_messages") or []
-
     recent_history = history_messages[-6:] if isinstance(history_messages, list) else []
 
     prompt = f"""
