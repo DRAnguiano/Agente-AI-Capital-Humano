@@ -2,6 +2,11 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from app.graphs.hr_nodes_core import (
+    load_conversation_node,
+    normalize_input_node,
+    save_incoming_message_node,
+)
 from app.graphs.hr_nodes_rag import (
     answer_check_node,
     fallback_no_context_node,
@@ -9,7 +14,6 @@ from app.graphs.hr_nodes_rag import (
     grade_documents_node,
     hallucination_check_node,
     legacy_orchestrator_node,
-    normalize_input_node,
     retrieve_documents_node,
     save_output_node,
 )
@@ -19,23 +23,31 @@ from app.graphs.hr_state import HRState
 
 def build_hr_graph():
     """
-    Build the first LangGraph MVP for the HR agent.
+    Build the LangGraph MVP for the HR agent.
 
-    Phase 1 deliberately routes /orchestrate/message through a compatibility
-    node that wraps the existing orchestrator. This gives us a safe deployment
-    point before moving each responsibility into native LangGraph nodes.
-
-    The RAG nodes are already registered for the next migration steps, but the
-    active entry path remains conservative:
-
+    Current active route:
         START -> normalize_input -> legacy_orchestrator -> save_output -> END
+
+    The first real input nodes are already registered:
+        load_conversation
+        save_incoming_message
+
+    They are intentionally not wired into the active route yet because the
+    legacy orchestrator still performs those DB side effects internally. The
+    next cut will remove that responsibility from the legacy path and then wire:
+        normalize_input -> load_conversation -> save_incoming_message -> route_message
     """
     workflow = StateGraph(HRState)
 
+    # Core input nodes.
     workflow.add_node("normalize_input", normalize_input_node)
+    workflow.add_node("load_conversation", load_conversation_node)
+    workflow.add_node("save_incoming_message", save_incoming_message_node)
+
+    # Compatibility node.
     workflow.add_node("legacy_orchestrator", legacy_orchestrator_node)
 
-    # Native RAG nodes prepared for the next extraction step.
+    # Native RAG nodes prepared for the next extraction steps.
     workflow.add_node("retrieve_documents", retrieve_documents_node)
     workflow.add_node("grade_documents", grade_documents_node)
     workflow.add_node("fallback_no_context", fallback_no_context_node)
@@ -92,6 +104,7 @@ def run_hr_graph_message(
                 "enabled": True,
                 "route": final_state.get("route"),
                 "thread_id": config["configurable"]["thread_id"],
+                "input_nodes_extracted": True,
             },
         }
 
@@ -107,5 +120,6 @@ def run_hr_graph_message(
             "enabled": True,
             "route": final_state.get("route"),
             "thread_id": config["configurable"]["thread_id"],
+            "input_nodes_extracted": True,
         },
     }
