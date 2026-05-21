@@ -44,6 +44,10 @@ class HRState(TypedDict, total=False):
     candidate_id: int | None
     current_stage: str
     next_stage: str
+    conversation_snapshot: dict[str, Any]
+    profile_snapshot: dict[str, Any]
+    history_messages: list[dict[str, Any]]
+    incoming_message_saved: bool
 
     # Routing / risk / intent
     route: RouteName
