@@ -20,6 +20,8 @@ from app.graphs.hr_nodes_rag import (
 from app.graphs.hr_routes import route_after_answer_check, route_after_grading
 from app.graphs.hr_state import HRState
 
+INPUT_TEST_CHANNEL = "test_input_nodes"
+
 
 def build_hr_graph():
     """
@@ -32,10 +34,8 @@ def build_hr_graph():
         load_conversation
         save_incoming_message
 
-    They are intentionally not wired into the active route yet because the
-    legacy orchestrator still performs those DB side effects internally. The
-    next cut will remove that responsibility from the legacy path and then wire:
-        normalize_input -> load_conversation -> save_incoming_message -> route_message
+    They are intentionally not wired into the active production route yet because
+    the legacy orchestrator still performs those DB side effects internally.
     """
     workflow = StateGraph(HRState)
 
@@ -65,7 +65,90 @@ def build_hr_graph():
     return workflow.compile()
 
 
+def build_hr_input_test_graph():
+    """
+    Diagnostic graph for the first extracted input nodes.
+
+    This graph is intentionally separate from the production route so we can
+    test real DB side effects without duplicating writes through the legacy
+    orchestrator.
+
+    Trigger it by calling /orchestrate/message with:
+        "channel": "test_input_nodes"
+    """
+    workflow = StateGraph(HRState)
+
+    workflow.add_node("normalize_input", normalize_input_node)
+    workflow.add_node("load_conversation", load_conversation_node)
+    workflow.add_node("save_incoming_message", save_incoming_message_node)
+    workflow.add_node("save_output", save_output_node)
+
+    workflow.add_edge(START, "normalize_input")
+    workflow.add_edge("normalize_input", "load_conversation")
+    workflow.add_edge("load_conversation", "save_incoming_message")
+    workflow.add_edge("save_incoming_message", "save_output")
+    workflow.add_edge("save_output", END)
+
+    return workflow.compile()
+
+
 hr_graph = build_hr_graph()
+hr_input_test_graph = build_hr_input_test_graph()
+
+
+def _initial_state(
+    *,
+    channel: str,
+    channel_user_id: str,
+    message: str,
+    username: str | None = None,
+    phone: str | None = None,
+    external_message_id: str | None = None,
+) -> HRState:
+    return {
+        "channel": channel,
+        "channel_user_id": channel_user_id,
+        "username": username,
+        "phone": phone,
+        "message": message,
+        "external_message_id": external_message_id,
+    }
+
+
+def _config(channel: str, channel_user_id: str) -> dict[str, Any]:
+    return {
+        "configurable": {
+            "thread_id": f"{channel}:{channel_user_id}",
+        }
+    }
+
+
+def _run_input_test_graph(initial_state: HRState, config: dict[str, Any]) -> dict[str, Any]:
+    final_state = hr_input_test_graph.invoke(initial_state, config=config)
+
+    return {
+        "status": final_state.get("status", "ok"),
+        "conversation_key": final_state.get("conversation_key"),
+        "conversation_id": final_state.get("conversation_id"),
+        "candidate_id": final_state.get("candidate_id"),
+        "current_stage": final_state.get("current_stage"),
+        "next_stage": final_state.get("next_stage"),
+        "incoming_message_saved": bool(final_state.get("incoming_message_saved", False)),
+        "reply": final_state.get("reply") or final_state.get("text") or "",
+        "events": final_state.get("events", []),
+        "graph": {
+            "enabled": True,
+            "route": "input_nodes_test",
+            "thread_id": config["configurable"]["thread_id"],
+            "input_nodes_extracted": True,
+            "executed_nodes": [
+                "normalize_input",
+                "load_conversation",
+                "save_incoming_message",
+                "save_output",
+            ],
+        },
+    }
 
 
 def run_hr_graph_message(
@@ -78,20 +161,18 @@ def run_hr_graph_message(
     external_message_id: str | None = None,
 ) -> dict[str, Any]:
     """Invoke the HR graph using the existing /orchestrate/message contract."""
-    initial_state: HRState = {
-        "channel": channel,
-        "channel_user_id": channel_user_id,
-        "username": username,
-        "phone": phone,
-        "message": message,
-        "external_message_id": external_message_id,
-    }
+    initial_state = _initial_state(
+        channel=channel,
+        channel_user_id=channel_user_id,
+        username=username,
+        phone=phone,
+        message=message,
+        external_message_id=external_message_id,
+    )
+    config = _config(channel, channel_user_id)
 
-    config = {
-        "configurable": {
-            "thread_id": f"{channel}:{channel_user_id}",
-        }
-    }
+    if (channel or "").strip().lower() == INPUT_TEST_CHANNEL:
+        return _run_input_test_graph(initial_state, config)
 
     final_state = hr_graph.invoke(initial_state, config=config)
     legacy_result = final_state.get("legacy_result") or {}
