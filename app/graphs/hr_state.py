@@ -10,6 +10,8 @@ RouteName = Literal[
     "human_handoff",
     "clarification",
     "fallback",
+    "web_review",
+    "policy_boundary",
 ]
 
 CheckResult = Literal["PASS", "FAIL", "SKIP"]
@@ -51,6 +53,14 @@ class HRState(TypedDict, total=False):
     incoming_message_saved: bool
     assistant_message_saved: bool
 
+    # Classifier / semantic routing
+    classifier: dict[str, Any]
+    classifier_intent: str
+    classifier_confidence: float
+    safe_reply_mode: str
+    requires_web_lookup: bool
+    web_query: str | None
+
     # Routing / risk / intent
     route: RouteName
     intent: str
@@ -65,6 +75,7 @@ class HRState(TypedDict, total=False):
     human_handoff_real_flow_used: bool
     clarification_real_flow_used: bool
     fallback_real_flow_used: bool
+    policy_boundary_real_flow_used: bool
 
     # Candidate profile
     extracted_fields: dict[str, Any]
@@ -80,6 +91,13 @@ class HRState(TypedDict, total=False):
     relevant_docs: list[dict[str, Any]]
     docs_are_relevant: bool
     sources: list[dict[str, Any]]
+
+    # Web review state
+    web_results: list[dict[str, Any]]
+    web_answer: str | None
+    web_search_used: bool
+    web_search_error: str | None
+    new_information_review: dict[str, Any]
 
     # Generation / grading
     draft_answer: str
