@@ -51,6 +51,7 @@ class HRState(TypedDict, total=False):
     conversation_snapshot: dict[str, Any]
     profile_snapshot: dict[str, Any]
     history_messages: list[dict[str, Any]]
+    conversation_memory: dict[str, Any]
     incoming_message_saved: bool
     assistant_message_saved: bool
 
