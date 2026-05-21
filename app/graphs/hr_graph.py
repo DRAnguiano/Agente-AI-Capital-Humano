@@ -29,6 +29,7 @@ ROUTER_TEST_CHANNEL = "test_router_nodes"
 RAG_TEST_CHANNEL = "test_rag_nodes"
 RAG_REPLACEMENT_TEST_CHANNEL = "test_rag_replacement"
 FULL_ROUTER_TEST_CHANNEL = "test_full_router"
+ORCHESTRATE_GRAPH_TEST_CHANNEL = "test_orchestrate_graph"
 
 
 def build_hr_graph():
@@ -283,6 +284,7 @@ def build_hr_full_router_test_graph():
 
     Trigger:
         channel = "test_full_router"
+        channel = "test_orchestrate_graph"
 
     RAG routes execute the RAG replacement path. Non-RAG routes produce a
     controlled stub response and persist it as assistant output. This validates
@@ -530,6 +532,8 @@ def _rag_response_payload(
 def _full_router_response_payload(
     final_state: HRState,
     config: dict[str, Any],
+    *,
+    graph_route: str,
 ) -> dict[str, Any]:
     retrieved_docs = final_state.get("retrieved_docs", []) or []
     relevant_docs = final_state.get("relevant_docs", []) or []
@@ -561,7 +565,7 @@ def _full_router_response_payload(
         "events": final_state.get("events", []),
         "graph": {
             "enabled": True,
-            "route": "full_router_test",
+            "route": graph_route,
             "selected_route": final_state.get("route"),
             "thread_id": config["configurable"]["thread_id"],
             "input_nodes_extracted": True,
@@ -602,9 +606,11 @@ def _run_rag_replacement_test_graph(
 def _run_full_router_test_graph(
     initial_state: HRState,
     config: dict[str, Any],
+    *,
+    graph_route: str = "full_router_test",
 ) -> dict[str, Any]:
     final_state = hr_full_router_test_graph.invoke(initial_state, config=config)
-    return _full_router_response_payload(final_state, config)
+    return _full_router_response_payload(final_state, config, graph_route=graph_route)
 
 
 def run_hr_graph_message(
@@ -642,6 +648,13 @@ def run_hr_graph_message(
 
     if normalized_channel == FULL_ROUTER_TEST_CHANNEL:
         return _run_full_router_test_graph(initial_state, config)
+
+    if normalized_channel == ORCHESTRATE_GRAPH_TEST_CHANNEL:
+        return _run_full_router_test_graph(
+            initial_state,
+            config,
+            graph_route="orchestrate_graph_test",
+        )
 
     final_state = hr_graph.invoke(initial_state, config=config)
     legacy_result = final_state.get("legacy_result") or {}
