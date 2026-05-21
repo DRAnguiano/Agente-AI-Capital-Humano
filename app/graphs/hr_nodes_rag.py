@@ -9,6 +9,13 @@ from app.persona_config import SYSTEM_PROMPT
 MIN_RELEVANCE_SCORE = 0.30
 PROFILE_PENDING_STAGES = {"ASK_CITY", "ASK_LICENSE", "ASK_EXPERIENCE", "ASK_APTO", "ASK_AVAILABILITY"}
 SIDE_QUESTION_SOFT_CLOSE = "Si le interesa, con gusto podemos continuar con su proceso."
+GENERATION_ERROR_MARKERS = {
+    "tuve un problema al generar la respuesta",
+    "por favor intenta de nuevo",
+    "error al generar",
+    "internal_error",
+    "exception",
+}
 
 
 def _source_payload(item: dict[str, Any]) -> dict[str, Any]:
@@ -56,6 +63,11 @@ def _append_side_question_close(answer: str, state: HRState) -> str:
         return cleaned
 
     return f"{cleaned}\n\n{SIDE_QUESTION_SOFT_CLOSE}"
+
+
+def _looks_like_generation_error(answer: str) -> bool:
+    normalized = (answer or "").strip().lower()
+    return any(marker in normalized for marker in GENERATION_ERROR_MARKERS)
 
 
 def normalize_input_node(state: HRState) -> dict[str, Any]:
@@ -220,6 +232,9 @@ def hallucination_check_node(state: HRState) -> dict[str, Any]:
     if not draft or not relevant_docs:
         return {"hallucination_check": "FAIL"}
 
+    if _looks_like_generation_error(draft):
+        return {"hallucination_check": "FAIL"}
+
     banned_promises = [
         "te garantizamos",
         "queda contratado",
@@ -241,7 +256,7 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
     """Validate that the generated answer is usable enough to send."""
     draft = (state.get("draft_answer") or "").strip()
 
-    if state.get("hallucination_check") != "PASS" or len(draft) < 10:
+    if state.get("hallucination_check") != "PASS" or len(draft) < 10 or _looks_like_generation_error(draft):
         reply = (
             "No tengo información confirmada suficiente para responder eso con seguridad. "
             "Capital Humano debe validarlo directamente."
@@ -254,6 +269,13 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
             "requires_human": True,
             "next_stage": state.get("current_stage"),
             "labels": ["requiere_humano", "respuesta_no_validada"],
+            "events": [
+                {
+                    "type": "rag_answer_rejected",
+                    "reason": "generation_error_or_invalid_answer",
+                    "draft_preview": draft[:120],
+                }
+            ],
         }
 
     return {
