@@ -2,7 +2,7 @@ from typing import Any
 
 from app.db import log_event, update_candidate_profile, update_stage
 from app.graphs.hr_state import HRState
-from app.orchestrator import decide_next_stage, extract_profile_fields
+from app.orchestrator import Stage, decide_next_stage, extract_profile_fields
 
 
 PRIVATE_PROFILE_KEYS = {"_city_catalog", "_city_requires_ch_validation"}
@@ -16,6 +16,11 @@ def _public_profile_fields(fields: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_clarification_followup_safe(state: HRState) -> bool:
+    detection = state.get("route_detection") or {}
+    return detection.get("clarification_followup") in {"safe", "confused_or_meta"}
+
+
 def extract_profile_fields_node(state: HRState) -> dict[str, Any]:
     """
     Extract candidate profile fields from the inbound message.
@@ -23,6 +28,19 @@ def extract_profile_fields_node(state: HRState) -> dict[str, Any]:
     Reuses the currently validated legacy extraction logic while moving the
     orchestration responsibility to LangGraph.
     """
+    if _is_clarification_followup_safe(state):
+        return {
+            "extracted_fields": {},
+            "profile_updates": {},
+            "profile_private_context": {},
+            "events": [
+                {
+                    "type": "profile_fields_extraction_skipped",
+                    "reason": "clarification_followup_safe",
+                }
+            ],
+        }
+
     message = state.get("message") or ""
     current_stage = state.get("current_stage") or "START"
     fields = extract_profile_fields(message, current_stage)
@@ -59,7 +77,11 @@ def update_profile_and_stage_node(state: HRState) -> dict[str, Any]:
     risk_level = state.get("risk_level") or "low"
     requires_human = bool(state.get("requires_human", False))
 
-    next_stage, reply = decide_next_stage(current_stage, fields)
+    if _is_clarification_followup_safe(state):
+        next_stage = Stage.ASK_CITY.value
+        reply = "Gracias por aclararlo. Para continuar, ¿en qué ciudad te encuentras actualmente?"
+    else:
+        next_stage, reply = decide_next_stage(current_stage, fields)
 
     profile_updated = False
     stage_updated = False
@@ -90,6 +112,7 @@ def update_profile_and_stage_node(state: HRState) -> dict[str, Any]:
             metadata={
                 "field_names": sorted(fields.keys()),
                 "graph_route": "profile",
+                "clarification_followup": (state.get("route_detection") or {}).get("clarification_followup"),
             },
         )
         event_logged = True
@@ -109,6 +132,7 @@ def update_profile_and_stage_node(state: HRState) -> dict[str, Any]:
                 "stage_to": next_stage,
                 "profile_updated": profile_updated,
                 "field_names": sorted(fields.keys()),
+                "clarification_followup": (state.get("route_detection") or {}).get("clarification_followup"),
             }
         ],
     }
