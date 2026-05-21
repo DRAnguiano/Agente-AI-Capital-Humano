@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from app.graphs.hr_state import HRState
@@ -15,6 +16,11 @@ GENERATION_ERROR_MARKERS = {
     "error al generar",
     "internal_error",
     "exception",
+}
+TOPIC_TERMS = {
+    "pay": {"pago", "paga", "pagan", "sueldo", "salario", "comision", "comisión", "km", "kilometro", "kilómetro", "prestacion", "prestación"},
+    "route": {"ruta", "rutas", "viaje", "viajes", "local", "foraneo", "foráneo", "base", "patio"},
+    "document": {"documento", "documentos", "licencia", "ine", "curp", "rfc", "nss", "apto", "requisito", "requisitos"},
 }
 
 
@@ -68,6 +74,67 @@ def _append_side_question_close(answer: str, state: HRState) -> str:
 def _looks_like_generation_error(answer: str) -> bool:
     normalized = (answer or "").strip().lower()
     return any(marker in normalized for marker in GENERATION_ERROR_MARKERS)
+
+
+def _split_sentences(text: str) -> list[str]:
+    cleaned = re.sub(r"\s+", " ", (text or "").strip())
+    if not cleaned:
+        return []
+    return [item.strip() for item in re.split(r"(?<=[.!?])\s+|\n+", cleaned) if item.strip()]
+
+
+def _topic_from_question(question: str) -> str | None:
+    lowered = (question or "").lower()
+    for topic, terms in TOPIC_TERMS.items():
+        if any(term in lowered for term in terms):
+            return topic
+    return None
+
+
+def _extract_relevant_sentences(question: str, docs: list[dict[str, Any]]) -> list[str]:
+    topic = _topic_from_question(question)
+    terms = TOPIC_TERMS.get(topic or "", set())
+    selected: list[str] = []
+
+    for doc in docs:
+        text = doc.get("text") or ""
+        for sentence in _split_sentences(text):
+            sentence_lower = sentence.lower()
+            if terms and not any(term in sentence_lower for term in terms):
+                continue
+            if sentence not in selected:
+                selected.append(sentence)
+            if len(selected) >= 3:
+                return selected
+
+    if selected:
+        return selected
+
+    for doc in docs[:2]:
+        text = doc.get("text") or ""
+        for sentence in _split_sentences(text):
+            if len(sentence) < 25:
+                continue
+            if sentence not in selected:
+                selected.append(sentence)
+            if len(selected) >= 3:
+                return selected
+
+    return selected
+
+
+def _build_extractive_answer_from_docs(question: str, docs: list[dict[str, Any]], state: HRState) -> str:
+    sentences = _extract_relevant_sentences(question, docs)
+    if not sentences:
+        return ""
+
+    body = " ".join(sentences)
+    body = body.strip()
+    if not body:
+        return ""
+
+    answer = f"Según la información interna disponible, {body} Capital Humano confirma el esquema final según la vacante disponible."
+    return _append_side_question_close(answer, state)
 
 
 def normalize_input_node(state: HRState) -> dict[str, Any]:
@@ -216,11 +283,36 @@ INSTRUCCIONES:
 RESPUESTA:
 """
 
-    answer = call_llm(prompt).strip()
+    events = []
+    try:
+        answer = call_llm(prompt).strip()
+    except Exception as exc:
+        answer = ""
+        events.append(
+            {
+                "type": "rag_generation_exception",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+
+    if _looks_like_generation_error(answer):
+        extractive_answer = _build_extractive_answer_from_docs(question, relevant_docs, state)
+        if extractive_answer:
+            return {
+                "draft_answer": extractive_answer,
+                "events": events + [
+                    {
+                        "type": "rag_extractive_answer_used",
+                        "reason": "llm_generation_error",
+                    }
+                ],
+            }
+
     answer = _append_side_question_close(answer, state)
 
     return {
         "draft_answer": answer,
+        "events": events,
     }
 
 
