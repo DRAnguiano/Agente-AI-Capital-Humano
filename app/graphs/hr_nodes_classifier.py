@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -11,18 +10,15 @@ from app.indexer import call_llm
 
 POLICY_PATH = Path(__file__).resolve().parents[1] / "policies" / "conversation_policy.md"
 
-DEFAULT_CLASSIFICATION = {
-    "classifier_intent": "fallback",
-    "risk_level": "low",
-    "recommended_route": "fallback",
-    "requires_rag": False,
+DEFAULT_ROUTE = {
+    "datasource": "vectorstore",
+    "recommended_route": "rag",
+    "requires_rag": True,
     "requires_web_lookup": False,
     "requires_human": False,
     "requires_clarification": False,
-    "should_continue_profile": False,
-    "safe_reply_mode": "fallback",
-    "web_query": None,
-    "reason": "classifier_default_fallback",
+    "risk_level": "low",
+    "reason": "default_vectorstore_route",
     "confidence": 0.0,
 }
 
@@ -37,7 +33,14 @@ ALLOWED_ROUTES = {
     "policy_boundary",
 }
 
-GREETING_INTENTS = {"greeting", "initial_greeting"}
+DATASOURCE_TO_ROUTE = {
+    "vectorstore": "rag",
+    "websearch": "web_review",
+    "web_search": "web_review",
+    "direct": "greeting",
+    "profile": "profile",
+    "fallback": "fallback",
+}
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -52,16 +55,6 @@ def _load_policy() -> str:
         return POLICY_PATH.read_text(encoding="utf-8")
     except Exception:
         return ""
-
-
-def _norm_text(message: str) -> str:
-    text = (message or "").strip().lower()
-    text = "".join(
-        ch
-        for ch in unicodedata.normalize("NFD", text)
-        if unicodedata.category(ch) != "Mn"
-    )
-    return re.sub(r"\s+", " ", text).strip()
 
 
 def _json_from_text(text: str) -> dict[str, Any]:
@@ -85,83 +78,17 @@ def _json_from_text(text: str) -> dict[str, Any]:
 
 
 def _clean_route(value: Any) -> str:
-    route = str(value or "fallback").strip().lower()
-    return route if route in ALLOWED_ROUTES else "fallback"
+    route = str(value or "rag").strip().lower()
+    return route if route in ALLOWED_ROUTES else "rag"
 
 
-def _fallback_repair(message: str, conversation_memory: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    """
-    Conservative repair for obvious classifier misses.
+def _normalize_route(payload: dict[str, Any]) -> dict[str, Any]:
+    data = {**DEFAULT_ROUTE, **(payload or {})}
 
-    This is not a slang dictionary. It only catches broad, stable categories
-    that should never become a generic fallback: greeting, pay question and
-    explicit substance/safety admission. The LLM classifier remains the main
-    decision maker.
-    """
-    text = _norm_text(message)
-    memory = conversation_memory or {}
-    previous_user = _norm_text(str(memory.get("previous_user_message") or ""))
+    datasource = str(data.get("datasource") or "").strip().lower()
+    recommended_route = data.get("recommended_route")
+    route = _clean_route(recommended_route or DATASOURCE_TO_ROUTE.get(datasource, "rag"))
 
-    if text in {"hola", "buenas", "buen dia", "buenos dias", "buenas tardes", "buenas noches", "que tal"}:
-        return {
-            "classifier_intent": "greeting",
-            "risk_level": "low",
-            "recommended_route": "greeting",
-            "requires_rag": False,
-            "requires_web_lookup": False,
-            "requires_human": False,
-            "requires_clarification": False,
-            "should_continue_profile": False,
-            "safe_reply_mode": "greeting",
-            "web_query": None,
-            "reason": "fallback_repaired_greeting",
-            "confidence": 0.95,
-        }
-
-    if any(term in text for term in {"cuanto pagan", "cuanto paga", "pago", "sueldo", "salario", "kilometro", "km"}):
-        return {
-            "classifier_intent": "pay_question",
-            "risk_level": "low",
-            "recommended_route": "rag",
-            "requires_rag": True,
-            "requires_web_lookup": False,
-            "requires_human": False,
-            "requires_clarification": False,
-            "should_continue_profile": False,
-            "safe_reply_mode": "answer_then_resume",
-            "web_query": None,
-            "reason": "fallback_repaired_pay_question",
-            "confidence": 0.85,
-        }
-
-    explicit_substance = any(term in text for term in {"mota", "droga", "perico", "periquito", "cocaina", "cristal", "meto", "me meto"})
-    previous_substance = any(term in previous_user for term in {"mota", "droga", "perico", "periquito", "cocaina", "cristal", "me meto"})
-    followup_reference = bool(memory.get("current_may_reference_previous"))
-
-    if explicit_substance or (followup_reference and previous_substance):
-        return {
-            "classifier_intent": "direct_safety_admission" if explicit_substance else "safety_sensitive_question",
-            "risk_level": "high" if explicit_substance else "medium",
-            "recommended_route": "human_handoff" if explicit_substance else "policy_boundary",
-            "requires_rag": False,
-            "requires_web_lookup": False,
-            "requires_human": bool(explicit_substance),
-            "requires_clarification": False,
-            "should_continue_profile": False,
-            "safe_reply_mode": "handoff_boundary" if explicit_substance else "policy_boundary",
-            "web_query": None,
-            "reason": "fallback_repaired_safety_sensitive_context",
-            "confidence": 0.9,
-        }
-
-    return None
-
-
-def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
-    data = {**DEFAULT_CLASSIFICATION, **(payload or {})}
-
-    classifier_intent = str(data.get("classifier_intent") or "fallback").strip().lower()
-    route = _clean_route(data.get("recommended_route"))
     risk_level = str(data.get("risk_level") or "low").strip().lower()
     if risk_level not in {"low", "medium", "high"}:
         risk_level = "low"
@@ -172,27 +99,20 @@ def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
         confidence = 0.0
     confidence = max(0.0, min(1.0, confidence))
 
-    if classifier_intent in GREETING_INTENTS:
-        route = "greeting"
-
-    requires_human = bool(data.get("requires_human", False)) or route == "human_handoff" or risk_level == "high"
+    requires_human = bool(data.get("requires_human", False)) or route == "human_handoff"
     requires_clarification = bool(data.get("requires_clarification", False)) or route == "clarification"
     requires_web_lookup = bool(data.get("requires_web_lookup", False)) or route == "web_review"
     requires_rag = bool(data.get("requires_rag", False)) or route == "rag"
 
-    if requires_human:
-        route = "human_handoff"
+    if route in {"greeting", "profile", "human_handoff", "clarification", "fallback", "policy_boundary"}:
         requires_rag = False
-        requires_web_lookup = False
-        requires_clarification = False
-
-    if route in {"greeting", "policy_boundary"}:
+    if route == "web_review":
         requires_rag = False
-        requires_web_lookup = False
-        requires_clarification = False
+        requires_web_lookup = True
 
     return {
-        "classifier_intent": classifier_intent,
+        "datasource": datasource or "vectorstore",
+        "classifier_intent": str(data.get("classifier_intent") or "route_question").strip().lower(),
         "risk_level": risk_level,
         "recommended_route": route,
         "requires_rag": requires_rag,
@@ -200,94 +120,105 @@ def _normalize_classification(payload: dict[str, Any]) -> dict[str, Any]:
         "requires_human": requires_human,
         "requires_clarification": requires_clarification,
         "should_continue_profile": bool(data.get("should_continue_profile", False)),
-        "safe_reply_mode": str(data.get("safe_reply_mode") or "fallback").strip().lower(),
+        "safe_reply_mode": str(data.get("safe_reply_mode") or "none").strip().lower(),
         "web_query": data.get("web_query") or None,
-        "reason": str(data.get("reason") or "classifier_no_reason").strip().lower(),
+        "reason": str(data.get("reason") or "route_question").strip().lower(),
         "confidence": confidence,
     }
 
 
 def classify_message_node(state: HRState) -> dict[str, Any]:
+    """
+    Plaban-style question router.
+
+    This node does not try to maintain a hand-written intent taxonomy. It only
+    decides the next datasource/route for the graph: vectorstore, websearch,
+    direct greeting, profile, fallback or review paths.
+    """
     if not _env_bool("MESSAGE_CLASSIFIER_ENABLED", True):
+        route = {**DEFAULT_ROUTE, "reason": "router_disabled"}
         return {
-            "classifier": {**DEFAULT_CLASSIFICATION, "reason": "classifier_disabled"},
-            "classifier_intent": "fallback",
+            "classifier": route,
+            "classifier_intent": "route_question",
             "classifier_confidence": 0.0,
-            "events": [{"type": "message_classifier_skipped", "reason": "disabled"}],
+            "events": [{"type": "question_router_skipped", "reason": "disabled"}],
         }
 
     policy = _load_policy()
     message = state.get("message") or ""
     current_stage = state.get("current_stage") or "START"
     profile_snapshot = state.get("profile_snapshot") or {}
-    history_messages = state.get("history_messages") or []
-    recent_history = history_messages[-6:] if isinstance(history_messages, list) else []
     conversation_memory = state.get("conversation_memory") or {}
 
     prompt = f"""
-You are a strict JSON classifier for a Mexican trucking recruiting assistant.
-Return JSON only. Do not answer the candidate.
+You are a routing node for a Mexican trucking recruiting assistant.
+Do not answer the candidate. Return JSON only.
 
-=== POLICY ===
+Your job is only to choose the next graph route, similar to a RAG router:
+- vectorstore: use internal documents/RAG
+- websearch: use web search when internal context is likely insufficient or the term is external/unknown
+- direct: use a direct non-RAG node for greetings or first-contact intent discovery
+- profile: use profile flow only when the candidate clearly answers the pending profile field or asks to continue the process
+- clarification: ask a clarification when the message cannot be safely interpreted
+- human_handoff: human review is needed
+- fallback: unsupported/no actionable message
+- policy_boundary: controlled safety boundary
+
+Avoid rigid keyword matching. Use the conversation memory and current stage.
+Do not force the profile flow when the candidate is asking a side question.
+
+=== POLICY CONTEXT ===
 {policy}
 
 === CURRENT STATE ===
 current_stage: {current_stage}
 profile_snapshot: {json.dumps(profile_snapshot, ensure_ascii=False, default=str)}
-recent_history: {json.dumps(recent_history, ensure_ascii=False, default=str)}
 conversation_memory: {json.dumps(conversation_memory, ensure_ascii=False, default=str)}
 
 === CANDIDATE MESSAGE ===
 {message}
 
-Classify this message according to the policy.
-If conversation_memory.current_may_reference_previous is true, classify the current message together with conversation_memory.previous_user_message and conversation_memory.summary.
-Return exactly the JSON contract.
+Return JSON:
+{{
+  "datasource": "vectorstore | websearch | direct | profile | clarification | human_handoff | fallback | policy_boundary",
+  "recommended_route": "rag | web_review | greeting | profile | clarification | human_handoff | fallback | policy_boundary",
+  "requires_rag": true,
+  "requires_web_lookup": false,
+  "requires_human": false,
+  "requires_clarification": false,
+  "risk_level": "low | medium | high",
+  "reason": "short_reason",
+  "confidence": 0.0,
+  "web_query": null
+}}
 """.strip()
 
     try:
         raw = call_llm(prompt)
         parsed = _json_from_text(raw)
-        classification = _normalize_classification(parsed)
+        route = _normalize_route(parsed)
     except Exception as exc:
-        classification = {
-            **DEFAULT_CLASSIFICATION,
-            "reason": "classifier_exception",
+        route = {
+            **DEFAULT_ROUTE,
+            "reason": "router_exception",
             "error": f"{type(exc).__name__}: {exc}",
         }
 
-    repair = None
-    if classification.get("recommended_route") == "fallback":
-        repair = _fallback_repair(message, conversation_memory)
-        if repair:
-            classification = repair
-
-    events = [
-        {
-            "type": "message_classified",
-            "classifier_intent": classification["classifier_intent"],
-            "recommended_route": classification["recommended_route"],
-            "risk_level": classification["risk_level"],
-            "reason": classification["reason"],
-            "confidence": classification["confidence"],
-        }
-    ]
-    if repair:
-        events.append(
-            {
-                "type": "classifier_fallback_repaired",
-                "classifier_intent": classification["classifier_intent"],
-                "recommended_route": classification["recommended_route"],
-                "reason": classification["reason"],
-            }
-        )
-
     return {
-        "classifier": classification,
-        "classifier_intent": classification["classifier_intent"],
-        "classifier_confidence": classification["confidence"],
-        "safe_reply_mode": classification["safe_reply_mode"],
-        "requires_web_lookup": classification["requires_web_lookup"],
-        "web_query": classification.get("web_query"),
-        "events": events,
+        "classifier": route,
+        "classifier_intent": route.get("classifier_intent") or "route_question",
+        "classifier_confidence": route["confidence"],
+        "safe_reply_mode": route.get("safe_reply_mode") or "none",
+        "requires_web_lookup": route["requires_web_lookup"],
+        "web_query": route.get("web_query"),
+        "events": [
+            {
+                "type": "question_routed",
+                "datasource": route.get("datasource"),
+                "recommended_route": route["recommended_route"],
+                "risk_level": route["risk_level"],
+                "reason": route["reason"],
+                "confidence": route["confidence"],
+            }
+        ],
     }
