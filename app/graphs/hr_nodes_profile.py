@@ -2,6 +2,7 @@ from typing import Any
 
 from app.db import log_event, update_candidate_profile, update_stage
 from app.graphs.hr_state import HRState
+from app.indexer import call_llm
 from app.orchestrator import Stage, decide_next_stage, extract_profile_fields
 
 
@@ -58,6 +59,97 @@ def extract_profile_fields_node(state: HRState) -> dict[str, Any]:
             {
                 "type": "profile_fields_extracted",
                 "field_names": sorted(public_fields.keys()),
+            }
+        ],
+    }
+
+
+def _natural_profile_prompt(state: HRState) -> str:
+    lead = state.get("lead_ingestion") or {}
+    profile = state.get("profile_snapshot") or {}
+    message = state.get("message") or ""
+    current_stage = state.get("current_stage") or "START"
+
+    return f"""
+Eres Mundo, asistente de Capital Humano de Transmontes.
+Responde como asesor de reclutamiento, no como formulario.
+
+Objetivo:
+- Reconoce la información útil que el candidato acaba de compartir.
+- Si hay datos que requieren revisión, dilo con calma.
+- No repitas preguntas ya contestadas.
+- No reinicies el proceso.
+- Si falta un dato importante, pregunta solo uno y de forma natural.
+- Invita a continuar sin hostigar.
+- Responde breve, claro y en español mexicano natural.
+
+Contexto de etapa actual: {current_stage}
+Mensaje del candidato: {message}
+Perfil actualizado: {profile}
+Extracción de lead: {lead}
+
+Reglas:
+- Si la licencia o apto vencen pronto, indica que Capital Humano debe revisar vigencia.
+- Si no hay ciudad en el perfil, pregunta ciudad al final, pero reconoce antes lo ya capturado.
+- No digas que ya está contratado.
+- No inventes requisitos ni pagos.
+
+Respuesta:
+""".strip()
+
+
+def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
+    """
+    Respond naturally after non-blocking lead ingestion.
+
+    This avoids forcing the legacy profile form when the candidate already shared
+    useful facts in a free-form message.
+    """
+    conversation_key = state.get("conversation_key")
+    current_stage = state.get("current_stage") or "START"
+    lead = state.get("lead_ingestion") or {}
+
+    try:
+        reply = call_llm(_natural_profile_prompt(state)).strip()
+    except Exception:
+        profile = state.get("profile_snapshot") or {}
+        name = profile.get("nombre_completo") or ""
+        city = profile.get("ciudad")
+        prefix = f"Gracias, {name}." if name else "Gracias por la información."
+        review = " Si la licencia o el apto vencen pronto, Capital Humano debe revisar la vigencia antes de avanzar."
+        missing_city = " ¿De qué ciudad nos escribes?" if not city else " Si gustas, seguimos revisando tu perfil para ver cómo avanzar."
+        reply = f"{prefix}{review}{missing_city}"
+
+    if conversation_key:
+        log_event(
+            conversation_key=conversation_key,
+            event_type="natural_profile_reply_generated",
+            stage_from=current_stage,
+            stage_to=current_stage,
+            intent=state.get("intent") or "profile_natural_capture",
+            risk_level=state.get("risk_level") or "low",
+            requires_human=bool((state.get("profile_snapshot") or {}).get("requires_human", False)),
+            metadata={
+                "lead_updated": bool(lead.get("updated", False)),
+                "updated_fields": lead.get("updated_fields", []),
+                "graph_route": "profile",
+            },
+        )
+
+    return {
+        "next_stage": current_stage,
+        "reply": reply,
+        "text": reply,
+        "profile_updated": bool(lead.get("updated", False)),
+        "stage_updated": False,
+        "profile_event_logged": True,
+        "route_stub_used": False,
+        "events": [
+            {
+                "type": "natural_profile_reply_generated",
+                "stage_preserved": True,
+                "lead_updated": bool(lead.get("updated", False)),
+                "updated_fields": lead.get("updated_fields", []),
             }
         ],
     }
