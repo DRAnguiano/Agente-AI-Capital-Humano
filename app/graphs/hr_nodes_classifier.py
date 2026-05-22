@@ -9,6 +9,7 @@ from app.indexer import call_llm
 
 
 POLICY_PATH = Path(__file__).resolve().parents[1] / "policies" / "conversation_policy.md"
+MIN_REWRITE_CONFIDENCE = 0.75
 
 DEFAULT_ROUTE = {
     "datasource": "vectorstore",
@@ -79,6 +80,31 @@ def _json_from_text(text: str) -> dict[str, Any]:
         return {}
 
 
+def _clean_text(value: Any, max_len: int = 600) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text[:max_len]
+
+
+def _clean_float(value: Any, default: float = 0.0) -> float:
+    try:
+        score = float(value)
+    except Exception:
+        score = default
+    return max(0.0, min(1.0, score))
+
+
+def _clean_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "si", "sí", "y", "on"}
+    return bool(value)
+
+
 def _clean_route(value: Any) -> str:
     route = str(value or "rag").strip().lower()
     return route if route in ALLOWED_ROUTES else "rag"
@@ -106,6 +132,150 @@ def _message_has_explicit_question(message: str) -> bool:
         "quiero saber",
     )
     return any(term in text for term in question_starters)
+
+
+def _conversation_tail(state: HRState, max_items: int = 8) -> list[dict[str, Any]]:
+    memory = state.get("conversation_memory") or {}
+    turns = memory.get("turns") or memory.get("messages") or state.get("history_messages") or []
+    if not isinstance(turns, list):
+        return []
+    return turns[-max_items:]
+
+
+def _default_rewrite(message: str, reason: str = "no_rewrite_needed") -> dict[str, Any]:
+    return {
+        "original": message,
+        "rewritten": message,
+        "corrections": [],
+        "intent_preserved": True,
+        "confidence": 0.0,
+        "should_use_rewrite": False,
+        "should_retry_routing": False,
+        "reason": reason,
+    }
+
+
+def _rewrite_prompt(state: HRState) -> str:
+    message = state.get("message") or ""
+    current_stage = state.get("current_stage") or "START"
+    profile = state.get("profile_snapshot") or {}
+    lead = state.get("lead_ingestion") or {}
+    substance = state.get("substance_disclosure_analysis") or {}
+    history = _conversation_tail(state)
+
+    return f"""
+You are a contextual rewrite node for a Mexican trucking recruiting graph.
+Do not answer the candidate. Return JSON only.
+
+Task:
+- Rewrite the candidate's current message into clear Spanish if spelling, slang, or missing context makes it ambiguous.
+- Use conversation memory to infer the intended meaning.
+- Keep the meaning and intent; do not add facts.
+- The context is recruitment for operador/trailero de tractocamión / quinta rueda.
+- Candidate spelling may be informal or incorrect: e.g. "save" can mean "sabe" if the conversation context supports it.
+- Do not use a fixed dictionary as truth. Use context and confidence.
+- If the message is already clear, return the same text and should_use_rewrite=false.
+- If the current message is a follow-up to the previous candidate question, preserve that link.
+- If the candidate asks about pay, routes, requirements, documents, toxicology process, bases, schedule, or travel, rewrite as a clear question suitable for RAG/router.
+- Never answer whether a test would be positive/negative or provide evasion guidance; only rewrite the intent.
+
+CURRENT_STAGE: {current_stage}
+PROFILE_SNAPSHOT:
+{json.dumps(profile, ensure_ascii=False, default=str)}
+
+LEAD_INGESTION:
+{json.dumps(lead, ensure_ascii=False, default=str)}
+
+SUBSTANCE_ANALYSIS:
+{json.dumps(substance, ensure_ascii=False, default=str)}
+
+CONVERSATION_TAIL:
+{json.dumps(history, ensure_ascii=False, default=str)}
+
+CURRENT_MESSAGE:
+{message}
+
+Return JSON:
+{{
+  "original": "current message",
+  "rewritten": "clear Spanish rewrite",
+  "corrections": [
+    {{"from": "token", "to": "correction", "reason": "brief reason"}}
+  ],
+  "intent_preserved": true,
+  "confidence": 0.0,
+  "should_use_rewrite": false,
+  "should_retry_routing": false,
+  "reason": "short internal reason"
+}}
+""".strip()
+
+
+def _normalize_rewrite(payload: dict[str, Any], message: str) -> dict[str, Any]:
+    data = payload.get("contextual_rewrite") if isinstance(payload.get("contextual_rewrite"), dict) else payload
+    rewritten = _clean_text(data.get("rewritten"), 600) or message
+    confidence = _clean_float(data.get("confidence"), 0.0)
+    intent_preserved = _clean_bool(data.get("intent_preserved", True))
+    should_use = _clean_bool(data.get("should_use_rewrite", False))
+
+    if rewritten.strip() != (message or "").strip() and confidence >= MIN_REWRITE_CONFIDENCE and intent_preserved:
+        should_use = True
+
+    corrections = data.get("corrections") if isinstance(data.get("corrections"), list) else []
+    clean_corrections: list[dict[str, str]] = []
+    for item in corrections[:8]:
+        if not isinstance(item, dict):
+            continue
+        clean_corrections.append(
+            {
+                "from": _clean_text(item.get("from"), 80) or "",
+                "to": _clean_text(item.get("to"), 80) or "",
+                "reason": _clean_text(item.get("reason"), 180) or "",
+            }
+        )
+
+    return {
+        "original": _clean_text(data.get("original"), 600) or message,
+        "rewritten": rewritten,
+        "corrections": clean_corrections,
+        "intent_preserved": intent_preserved,
+        "confidence": confidence,
+        "should_use_rewrite": bool(should_use and confidence >= MIN_REWRITE_CONFIDENCE and intent_preserved),
+        "should_retry_routing": bool(_clean_bool(data.get("should_retry_routing", should_use)) and confidence >= MIN_REWRITE_CONFIDENCE),
+        "reason": _clean_text(data.get("reason"), 300) or "contextual_rewrite_checked",
+    }
+
+
+def contextual_rewrite_node(state: HRState) -> dict[str, Any]:
+    message = state.get("message") or ""
+    if not message.strip():
+        rewrite = _default_rewrite(message, "empty_message")
+        return {"contextual_rewrite": rewrite, "events": [{"type": "contextual_rewrite_skipped", "reason": "empty_message"}]}
+
+    try:
+        raw = call_llm(_rewrite_prompt(state))
+        parsed = _json_from_text(raw)
+        rewrite = _normalize_rewrite(parsed, message)
+    except Exception as exc:
+        rewrite = _default_rewrite(message, f"rewrite_exception:{type(exc).__name__}")
+
+    update: dict[str, Any] = {
+        "contextual_rewrite": rewrite,
+        "events": [
+            {
+                "type": "contextual_rewrite_checked",
+                "should_use_rewrite": rewrite.get("should_use_rewrite"),
+                "confidence": rewrite.get("confidence"),
+                "rewritten": rewrite.get("rewritten"),
+                "reason": rewrite.get("reason"),
+            }
+        ],
+    }
+
+    if rewrite.get("should_use_rewrite"):
+        update["question"] = rewrite.get("rewritten") or message
+
+    return update
 
 
 def _lead_requested_callback(state: HRState) -> bool:
@@ -173,6 +343,15 @@ def _has_analytics_only_substance_signal(state: HRState | None) -> bool:
     )
 
 
+def _effective_message_for_routing(state: HRState | None, fallback_message: str) -> str:
+    if state is None:
+        return fallback_message
+    rewrite = state.get("contextual_rewrite") or {}
+    if rewrite.get("should_use_rewrite") and rewrite.get("rewritten"):
+        return str(rewrite.get("rewritten"))
+    return fallback_message
+
+
 def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> dict[str, Any]:
     data = {**DEFAULT_ROUTE, **(payload or {})}
 
@@ -191,8 +370,6 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
         data["requires_human"] = True
         data["requires_clarification"] = False
     elif _has_analytics_only_substance_signal(state):
-        # Past-use / medication / ambiguous non-restrictive signals are valuable for analytics,
-        # but they must not stop the recruiting flow. We also avoid answering test-outcome questions.
         route = "profile"
         datasource = "profile"
         data["reason"] = "substance_analytics_signal_captured"
@@ -208,7 +385,7 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
     elif (
         state is not None
         and _lead_has_expiring_document_facts(state)
-        and not _message_has_explicit_question(state.get("message") or "")
+        and not _message_has_explicit_question(_effective_message_for_routing(state, state.get("message") or ""))
     ):
         route = "profile"
         datasource = "profile"
@@ -216,21 +393,26 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
         data["risk_level"] = "medium"
         data["requires_human"] = True
     elif state is not None and route == "profile":
-        message = state.get("message") or ""
+        message = _effective_message_for_routing(state, state.get("message") or "")
         if _lead_has_profile_facts(state) and _message_has_explicit_question(message):
             route = "rag"
             datasource = "vectorstore"
             data["reason"] = "profile_facts_with_side_question"
 
+    if state is not None:
+        rewrite = state.get("contextual_rewrite") or {}
+        if route == "clarification" and rewrite.get("should_use_rewrite") and rewrite.get("confidence", 0) >= MIN_REWRITE_CONFIDENCE:
+            route = "rag"
+            datasource = "vectorstore"
+            data["reason"] = "contextual_rewrite_resolved_ambiguity"
+            data["requires_clarification"] = False
+            data["requires_rag"] = True
+
     risk_level = str(data.get("risk_level") or "low").strip().lower()
     if risk_level not in {"low", "medium", "high"}:
         risk_level = "low"
 
-    try:
-        confidence = float(data.get("confidence", 0.0))
-    except Exception:
-        confidence = 0.0
-    confidence = max(0.0, min(1.0, confidence))
+    confidence = _clean_float(data.get("confidence", 0.0), 0.0)
 
     requires_human = bool(data.get("requires_human", False)) or route == "human_handoff"
     requires_clarification = bool(data.get("requires_clarification", False)) and route != "web_review"
@@ -262,13 +444,6 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
 
 
 def classify_message_node(state: HRState) -> dict[str, Any]:
-    """
-    Plaban-style question router.
-
-    This node does not try to maintain a hand-written intent taxonomy. It only
-    decides the next datasource/route for the graph using upstream structured
-    analyses such as lead_ingestion and substance_disclosure_analysis.
-    """
     if not _env_bool("MESSAGE_CLASSIFIER_ENABLED", True):
         route = {**DEFAULT_ROUTE, "reason": "router_disabled"}
         return {
@@ -279,7 +454,9 @@ def classify_message_node(state: HRState) -> dict[str, Any]:
         }
 
     policy = _load_policy()
-    message = state.get("message") or ""
+    original_message = state.get("message") or ""
+    contextual_rewrite = state.get("contextual_rewrite") or {}
+    message = _effective_message_for_routing(state, original_message)
     current_stage = state.get("current_stage") or "START"
     profile_snapshot = state.get("profile_snapshot") or {}
     conversation_memory = state.get("conversation_memory") or {}
@@ -295,14 +472,15 @@ Your job is only to choose the next graph route, similar to a RAG router:
 - websearch: use web search when internal context is likely insufficient or the term is external/unknown
 - direct: use a direct non-RAG node for greetings or first-contact intent discovery
 - profile: use profile flow only when the candidate clearly answers the pending profile field, asks to continue the process, or requests callback/contact from Capital Humano
-- clarification: ask a clarification when the message cannot be safely interpreted
+- clarification: ask a clarification only when ambiguity remains after contextual rewrite
 - human_handoff: human review is needed
 - fallback: unsupported/no actionable message
 - policy_boundary: controlled safety boundary
 
 If datasource is websearch, set recommended_route to web_review.
 Do not choose clarification before websearch for unknown terms; web review can decide later if clarification is needed.
-Avoid rigid keyword matching. Use the conversation memory and current stage.
+Avoid rigid keyword matching. Use the conversation memory, contextual rewrite, and current stage.
+If contextual_rewrite.should_use_rewrite=true, route based on the rewritten message.
 Do not force the profile flow when the candidate is asking a side question.
 If the current message contains both profile facts and an explicit question about pay, benefits, bases, requirements, schedule, routes or policy, choose vectorstore/RAG for the response. Lead ingestion already saved the facts.
 If lead_ingestion shows callback_requested=true, choose profile/natural lead response, not RAG.
@@ -319,8 +497,12 @@ profile_snapshot: {json.dumps(profile_snapshot, ensure_ascii=False, default=str)
 conversation_memory: {json.dumps(conversation_memory, ensure_ascii=False, default=str)}
 lead_ingestion: {json.dumps(lead_ingestion, ensure_ascii=False, default=str)}
 substance_disclosure_analysis: {json.dumps(substance_disclosure_analysis, ensure_ascii=False, default=str)}
+contextual_rewrite: {json.dumps(contextual_rewrite, ensure_ascii=False, default=str)}
 
-=== CANDIDATE MESSAGE ===
+=== ORIGINAL CANDIDATE MESSAGE ===
+{original_message}
+
+=== ROUTING MESSAGE ===
 {message}
 
 Return JSON:
@@ -364,6 +546,9 @@ Return JSON:
                 "risk_level": route["risk_level"],
                 "reason": route["reason"],
                 "confidence": route["confidence"],
+                "original_message": original_message,
+                "routing_message": message,
+                "contextual_rewrite_used": bool(contextual_rewrite.get("should_use_rewrite")),
                 "substance_status": substance_disclosure_analysis.get("status"),
                 "substance_operational_risk": substance_disclosure_analysis.get("operational_risk"),
             }
