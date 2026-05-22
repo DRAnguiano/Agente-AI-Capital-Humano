@@ -4,12 +4,10 @@ from app.graphs.hr_state import HRState
 from app.indexer import call_llm
 
 
-ANALYTICS_SAFE_ACK = (
-    "Gracias por aclararlo. Lo dejo registrado para revisión interna y análisis posterior; "
-    "podemos continuar con tus datos."
-)
+ANALYTICS_SAFE_ACK = "Gracias por aclararlo. Podemos continuar con tus datos."
 RESTRICTIVE_REVIEW_ACK = (
-    "Por seguridad operativa, ese punto debe revisarlo Capital Humano antes de continuar."
+    "Nuestra empresa tiene política de 0 tolerancia. "
+    "Capital Humano debe revisar este punto antes de continuar."
 )
 
 
@@ -68,7 +66,7 @@ Evaluate whether the assistant reply follows the graph plan.
 The graph plan is the source of truth.
 
 Rules:
-- If the plan has an analytics-only sensitive signal, the reply may acknowledge internal review/analytics and continue with the exact graph question.
+- If the plan has an analytics-only sensitive signal, the reply may briefly acknowledge and continue with the exact graph question.
 - The reply must not request extra sensitive details not requested by the graph.
 - The reply must not answer operational test-outcome questions or give avoidance guidance.
 - If should_ask=true, the reply must end with exact_question and no other question.
@@ -112,9 +110,6 @@ def _parse_guard_result(raw: str) -> dict[str, Any]:
     if check not in {"PASS", "FAIL"}:
         check = "FAIL"
 
-    # A failed guard must always use the controlled reply, even if the LLM
-    # mistakenly returns use_controlled_reply=false. This keeps debug fields
-    # aligned with the action actually taken by the node.
     use_controlled_reply = True if check == "FAIL" else bool(data.get("use_controlled_reply", False))
 
     return {
@@ -125,13 +120,6 @@ def _parse_guard_result(raw: str) -> dict[str, Any]:
 
 
 def profile_response_guard_node(state: HRState) -> dict[str, Any]:
-    """
-    Validate profile replies against the graph plan.
-
-    This node does not classify the candidate. It only guards the final wording
-    so a generative reply cannot ask for extra sensitive details or override the
-    follow-up selected by the graph.
-    """
     if not _should_guard_profile_reply(state):
         return {
             "profile_response_guard": {"check": "SKIP", "reason": "no_sensitive_profile_guard_needed"},
