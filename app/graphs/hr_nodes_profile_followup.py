@@ -78,11 +78,11 @@ def plan_profile_followup_node(state: HRState) -> dict[str, Any]:
 
     review_message = None
     if restrictive_substance:
-        review_message = "Por seguridad operativa, Capital Humano debe revisar este punto antes de continuar."
+        review_message = "Capital Humano debe revisar este punto antes de continuar."
     elif has_expiring_documents:
         review_message = "Capital Humano debe revisar la vigencia de tus documentos antes de avanzar."
     elif analytics_substance:
-        review_message = "Queda registrada una señal para revisión interna y análisis posterior; podemos continuar con tus datos."
+        review_message = "Gracias por aclararlo. Podemos continuar con tus datos."
 
     plan = {
         "should_ask": should_ask,
