@@ -3,7 +3,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from app.graphs.hr_nodes_classifier import classify_message_node
+from app.graphs.hr_nodes_classifier import classify_message_node, contextual_rewrite_node
 from app.graphs.hr_nodes_core import (
     load_conversation_node,
     normalize_input_node,
@@ -210,6 +210,7 @@ def build_hr_full_router_test_graph():
     workflow.add_node("save_incoming_message", save_incoming_message_node)
     workflow.add_node("ingest_lead", ingest_lead_node)
     workflow.add_node("substance_disclosure_analysis", substance_disclosure_analysis_node)
+    workflow.add_node("contextual_rewrite", contextual_rewrite_node)
     workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
     workflow.add_node("route_stub_response", route_stub_response_node)
@@ -226,7 +227,8 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("build_conversation_memory", "save_incoming_message")
     workflow.add_edge("save_incoming_message", "ingest_lead")
     workflow.add_edge("ingest_lead", "substance_disclosure_analysis")
-    workflow.add_edge("substance_disclosure_analysis", "classify_message")
+    workflow.add_edge("substance_disclosure_analysis", "contextual_rewrite")
+    workflow.add_edge("contextual_rewrite", "classify_message")
     workflow.add_edge("classify_message", "route_message")
     workflow.add_conditional_edges(
         "route_message",
@@ -327,6 +329,7 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "current_may_reference_previous": bool(memory.get("current_may_reference_previous", False)),
         "lead_ingestion": final_state.get("lead_ingestion"),
         "substance_disclosure_analysis": final_state.get("substance_disclosure_analysis"),
+        "contextual_rewrite": final_state.get("contextual_rewrite"),
         "profile_followup_plan": final_state.get("profile_followup_plan"),
         "profile_response_guard": final_state.get("profile_response_guard"),
         "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),
@@ -427,6 +430,7 @@ def _run_full_router_test_graph(
         "memory_node_enabled": True,
         "lead_ingestion_node_enabled": True,
         "substance_analysis_node_enabled": True,
+        "contextual_rewrite_enabled": True,
         "profile_response_guard_enabled": True,
         "classifier_node_enabled": True,
         "router_node_extracted": True,
