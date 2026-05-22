@@ -10,6 +10,7 @@ from app.graphs.hr_nodes_handoff import (
 )
 from app.graphs.hr_nodes_profile import (
     extract_profile_fields_node,
+    natural_lead_profile_response_node,
     update_profile_and_stage_node,
 )
 from app.graphs.hr_state import HRState
@@ -45,17 +46,25 @@ def policy_boundary_response_node(state: HRState) -> dict[str, Any]:
     }
 
 
+def _flow_flags(*, profile: bool = False, handoff: bool = False, clarification: bool = False, fallback: bool = False, policy: bool = False, greeting: bool = False) -> dict[str, bool]:
+    return {
+        "route_stub_used": False,
+        "greeting_real_flow_used": greeting,
+        "profile_real_flow_used": profile,
+        "human_handoff_real_flow_used": handoff,
+        "clarification_real_flow_used": clarification,
+        "fallback_real_flow_used": fallback,
+        "policy_boundary_real_flow_used": policy,
+    }
+
+
 def route_stub_response_node(state: HRState) -> dict[str, Any]:
     """
     Produce a controlled response for non-RAG routes.
 
-    Current behavior:
-    - greeting: answers first contact without advancing profile.
-    - profile: runs the real profile extraction/stage update branch.
-    - human_handoff: creates real handoff, updates stage, generates controlled reply.
-    - clarification: updates stage and asks for a real clarification.
-    - policy_boundary: responds with a safety boundary and does not advance profile.
-    - fallback: generates a real safe fallback reply and logs it.
+    For profile-like messages, prefer natural lead capture when lead_ingestion
+    already extracted useful facts. Fall back to the legacy stage form only when
+    no lead facts were captured.
     """
     route = state.get("route") or "fallback"
 
@@ -63,77 +72,54 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
         return greeting_response_node(state)
 
     if route == "profile":
+        lead = state.get("lead_ingestion") or {}
+        if lead.get("updated"):
+            natural_update = natural_lead_profile_response_node(state)
+            return {
+                **natural_update,
+                **_flow_flags(profile=True),
+            }
+
         extracted_update = extract_profile_fields_node(state)
-        merged_state: HRState = {
-            **state,
-            **extracted_update,
-        }
+        merged_state: HRState = {**state, **extracted_update}
         profile_update = update_profile_and_stage_node(merged_state)
 
         return {
             **extracted_update,
             **profile_update,
-            "route_stub_used": False,
-            "greeting_real_flow_used": False,
-            "profile_real_flow_used": True,
-            "human_handoff_real_flow_used": False,
-            "clarification_real_flow_used": False,
-            "fallback_real_flow_used": False,
-            "policy_boundary_real_flow_used": False,
+            **_flow_flags(profile=True),
         }
 
     if route == "human_handoff":
         handoff_update = create_handoff_node(state)
-        stage_state: HRState = {
-            **state,
-            **handoff_update,
-        }
+        stage_state: HRState = {**state, **handoff_update}
         stage_update = update_handoff_stage_node(stage_state)
-        reply_state: HRState = {
-            **stage_state,
-            **stage_update,
-        }
+        reply_state: HRState = {**stage_state, **stage_update}
         reply_update = generate_handoff_reply_node(reply_state)
 
         return {
             **handoff_update,
             **stage_update,
             **reply_update,
-            "route_stub_used": False,
-            "greeting_real_flow_used": False,
-            "profile_real_flow_used": False,
-            "human_handoff_real_flow_used": True,
-            "clarification_real_flow_used": False,
-            "fallback_real_flow_used": False,
-            "policy_boundary_real_flow_used": False,
+            **_flow_flags(handoff=True),
         }
 
     if route == "clarification":
         clarification_update = request_clarification_node(state)
-
         return {
             **clarification_update,
-            "route_stub_used": False,
-            "greeting_real_flow_used": False,
-            "profile_real_flow_used": False,
-            "human_handoff_real_flow_used": False,
-            "clarification_real_flow_used": True,
-            "fallback_real_flow_used": False,
-            "policy_boundary_real_flow_used": False,
+            **_flow_flags(clarification=True),
         }
 
     if route == "policy_boundary":
-        return policy_boundary_response_node(state)
+        policy_update = policy_boundary_response_node(state)
+        return {
+            **policy_update,
+            **_flow_flags(policy=True),
+        }
 
     fallback_update = fallback_response_node(state)
-
     return {
         **fallback_update,
-        "route_stub_used": False,
-        "greeting_real_flow_used": False,
-        "profile_real_flow_used": False,
-        "human_handoff_real_flow_used": False,
-        "clarification_real_flow_used": False,
-        "fallback_real_flow_used": True,
-        "policy_boundary_real_flow_used": False,
+        **_flow_flags(fallback=True),
     }
