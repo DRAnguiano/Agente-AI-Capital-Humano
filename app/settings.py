@@ -47,7 +47,7 @@ def _env_list(name: str, default: str) -> list[str]:
 
 EMBEDDING_MODEL = os.getenv(
     "EMBEDDING_MODEL",
-    "sentence-transformers/all-MiniLM-L6-v2",
+    "BAAI/bge-m3",
 )
 
 # Provider principal:
@@ -56,7 +56,7 @@ EMBEDDING_MODEL = os.getenv(
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
 
 # Groq fallback / provider alterno
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
 GROQ_MAX_TOKENS = _env_int("GROQ_MAX_TOKENS", 900)
 
 # Cohere generación
@@ -83,11 +83,11 @@ INDEX_EXTENSIONS = _env_list(
 
 # Rutas internas del contenedor
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
-DB_DIR = os.getenv("DB_DIR", "/app/chroma_db")
+DB_DIR = os.getenv("DB_DIR", "/app/chroma_db_bge_m3")
 
 # Alias usado por indexer.py
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", DB_DIR)
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "rh_rag_docs")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "rh_rag_docs_bge_m3")
 
 
 # =========================
