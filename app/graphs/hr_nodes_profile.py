@@ -22,6 +22,22 @@ def _is_clarification_followup_safe(state: HRState) -> bool:
     return detection.get("clarification_followup") in {"safe", "confused_or_meta"}
 
 
+def _next_missing_profile_field(profile: dict[str, Any]) -> dict[str, str | None]:
+    """Return the single most important missing field to ask next."""
+    checks = [
+        ("nombre_completo", "nombre completo", "¿Me confirmas tu nombre completo?"),
+        ("ciudad", "ciudad", "¿De qué ciudad nos escribes?"),
+        ("telefono", "teléfono", "¿Me compartes tu número de teléfono?"),
+        ("licencia_federal", "licencia federal", "¿Cuentas con licencia federal vigente y qué tipo es?"),
+        ("disponibilidad_viajar", "disponibilidad para viajar", "¿Tienes disponibilidad para viajar?"),
+        ("experiencia_quinta_rueda", "experiencia", "¿Cuánta experiencia tienes manejando quinta rueda?"),
+    ]
+    for key, label, question in checks:
+        if not profile.get(key):
+            return {"key": key, "label": label, "question": question}
+    return {"key": None, "label": None, "question": None}
+
+
 def extract_profile_fields_node(state: HRState) -> dict[str, Any]:
     """
     Extract candidate profile fields from the inbound message.
@@ -72,6 +88,7 @@ def _natural_profile_prompt(state: HRState) -> str:
     callback_schedule = lead.get("callback_schedule") or {}
     callback_due_time = callback_schedule.get("callback_due_local_time")
     callback_due_label = callback_schedule.get("callback_due_label")
+    next_missing = _next_missing_profile_field(profile)
 
     return f"""
 Eres Mundo, asistente de Capital Humano de Transmontes.
@@ -86,6 +103,11 @@ Objetivo:
 - Haz máximo UNA pregunta al final.
 - Si faltan varios datos, pregunta solo el dato más importante para continuar.
 
+Dato faltante permitido para preguntar ahora:
+- key: {next_missing.get('key')}
+- label: {next_missing.get('label')}
+- pregunta sugerida: {next_missing.get('question')}
+
 Prioridad para pedir datos faltantes:
 1. nombre completo
 2. ciudad
@@ -98,6 +120,9 @@ Reglas especiales:
 - Si callback_requested=true, confirma que la solicitud de llamada/contacto quedó anotada.
 - Si callback_due_local_time existe, menciona que queda solicitado seguimiento alrededor de esa hora.
 - No prometas llamada exacta ni confirmes agenda cerrada; usa frases como "queda solicitado" o "lo dejo registrado para seguimiento".
+- Si vas a hacer una pregunta, pregunta SOLO por el dato faltante permitido arriba.
+- Prohibido pedir dos datos en la misma pregunta. No escribas frases como "nombre completo y ciudad" o "nombre y teléfono".
+- Si el dato faltante permitido es null, no hagas preguntas; solo confirma seguimiento.
 - Si la licencia o apto vencen pronto, indica que Capital Humano debe revisar la vigencia antes de avanzar.
 - Si el teléfono ya está capturado, no vuelvas a pedir teléfono.
 - Si la disponibilidad ya está capturada, no vuelvas a pedir disponibilidad.
@@ -128,14 +153,14 @@ def _fallback_natural_reply(state: HRState) -> str:
     callback_schedule = lead.get("callback_schedule") or {}
 
     name = profile.get("nombre_completo") or ""
-    city = profile.get("ciudad")
-    phone = profile.get("telefono")
     due_time = callback_schedule.get("callback_due_local_time")
     has_expiring_docs = bool(
         extracted.get("license_expiry_text")
         or extracted.get("medical_expiry_text")
         or profile.get("requires_human")
     )
+    next_missing = _next_missing_profile_field(profile)
+    question = next_missing.get("question") or ""
 
     prefix = f"Gracias, {name}." if name else "Gracias por la información."
 
@@ -152,16 +177,7 @@ def _fallback_natural_reply(state: HRState) -> str:
     else:
         review = " Si tienes tu documentación vigente y en regla, puedes subirla para que Capital Humano revise tu perfil más rápido."
 
-    if not name:
-        question = " ¿Me confirmas tu nombre completo?"
-    elif not city:
-        question = " ¿De qué ciudad nos escribes?"
-    elif not phone:
-        question = " ¿Me compartes tu número de teléfono?"
-    else:
-        question = ""
-
-    return f"{prefix}{callback_text}{review}{question}".strip()
+    return f"{prefix}{callback_text}{review} {question}".strip()
 
 
 def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
@@ -174,6 +190,7 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
     conversation_key = state.get("conversation_key")
     current_stage = state.get("current_stage") or "START"
     lead = state.get("lead_ingestion") or {}
+    next_missing = _next_missing_profile_field(state.get("profile_snapshot") or {})
 
     try:
         reply = call_llm(_natural_profile_prompt(state)).strip()
@@ -193,6 +210,7 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
                 "lead_updated": bool(lead.get("updated", False)),
                 "updated_fields": lead.get("updated_fields", []),
                 "callback_schedule": lead.get("callback_schedule") or {},
+                "next_missing_field": next_missing,
                 "graph_route": "profile",
             },
         )
@@ -212,6 +230,7 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
                 "lead_updated": bool(lead.get("updated", False)),
                 "updated_fields": lead.get("updated_fields", []),
                 "callback_due_local_time": (lead.get("callback_schedule") or {}).get("callback_due_local_time"),
+                "next_missing_field": next_missing,
             }
         ],
     }
