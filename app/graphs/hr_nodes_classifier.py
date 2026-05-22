@@ -42,6 +42,8 @@ DATASOURCE_TO_ROUTE = {
     "fallback": "fallback",
 }
 
+WEB_DATASOURCES = {"websearch", "web_search"}
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -89,6 +91,9 @@ def _normalize_route(payload: dict[str, Any]) -> dict[str, Any]:
     recommended_route = data.get("recommended_route")
     route = _clean_route(recommended_route or DATASOURCE_TO_ROUTE.get(datasource, "rag"))
 
+    if datasource in WEB_DATASOURCES:
+        route = "web_review"
+
     risk_level = str(data.get("risk_level") or "low").strip().lower()
     if risk_level not in {"low", "medium", "high"}:
         risk_level = "low"
@@ -100,7 +105,7 @@ def _normalize_route(payload: dict[str, Any]) -> dict[str, Any]:
     confidence = max(0.0, min(1.0, confidence))
 
     requires_human = bool(data.get("requires_human", False)) or route == "human_handoff"
-    requires_clarification = bool(data.get("requires_clarification", False)) or route == "clarification"
+    requires_clarification = bool(data.get("requires_clarification", False)) and route != "web_review"
     requires_web_lookup = bool(data.get("requires_web_lookup", False)) or route == "web_review"
     requires_rag = bool(data.get("requires_rag", False)) or route == "rag"
 
@@ -109,6 +114,7 @@ def _normalize_route(payload: dict[str, Any]) -> dict[str, Any]:
     if route == "web_review":
         requires_rag = False
         requires_web_lookup = True
+        requires_clarification = False
 
     return {
         "datasource": datasource or "vectorstore",
@@ -164,6 +170,8 @@ Your job is only to choose the next graph route, similar to a RAG router:
 - fallback: unsupported/no actionable message
 - policy_boundary: controlled safety boundary
 
+If datasource is websearch, set recommended_route to web_review.
+Do not choose clarification before websearch for unknown terms; web review can decide later if clarification is needed.
 Avoid rigid keyword matching. Use the conversation memory and current stage.
 Do not force the profile flow when the candidate is asking a side question.
 
