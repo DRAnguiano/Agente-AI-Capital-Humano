@@ -58,6 +58,9 @@ class HRState(TypedDict, total=False):
     # Natural lead ingestion
     lead_ingestion: dict[str, Any]
 
+    # Contextual safety/analytics analysis
+    substance_disclosure_analysis: dict[str, Any]
+
     # Classifier / semantic routing
     classifier: dict[str, Any]
     classifier_intent: str
