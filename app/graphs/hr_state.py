@@ -61,6 +61,9 @@ class HRState(TypedDict, total=False):
     # Contextual safety/analytics analysis
     substance_disclosure_analysis: dict[str, Any]
 
+    # Response guard / quality control
+    profile_response_guard: dict[str, Any]
+
     # Classifier / semantic routing
     classifier: dict[str, Any]
     classifier_intent: str
