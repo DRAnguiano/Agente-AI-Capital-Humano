@@ -20,6 +20,31 @@ def _next_missing_profile_field(profile: dict[str, Any]) -> dict[str, str | None
     return {"key": None, "label": None, "question": None}
 
 
+def _substance_analysis(state: HRState) -> dict[str, Any]:
+    return state.get("substance_disclosure_analysis") or {}
+
+
+def _has_restrictive_substance_signal(state: HRState) -> bool:
+    analysis = _substance_analysis(state)
+    return bool(
+        analysis.get("detected")
+        and (
+            analysis.get("status") == "ACTIVE_OR_INTENDED_USE"
+            or analysis.get("operational_risk") == "high"
+            or analysis.get("requires_review") is True
+        )
+    )
+
+
+def _has_analytics_substance_signal(state: HRState) -> bool:
+    analysis = _substance_analysis(state)
+    return bool(
+        analysis.get("detected")
+        and analysis.get("analytics_flag") is True
+        and not _has_restrictive_substance_signal(state)
+    )
+
+
 def _has_expiring_documents(state: HRState) -> bool:
     lead = state.get("lead_ingestion") or {}
     extracted = lead.get("extracted") or {}
@@ -29,7 +54,7 @@ def _has_expiring_documents(state: HRState) -> bool:
         or extracted.get("medical_expiry_text")
         or profile.get("requires_human")
         or state.get("requires_human")
-    )
+    ) and not _has_analytics_substance_signal(state)
 
 
 def plan_profile_followup_node(state: HRState) -> dict[str, Any]:
@@ -42,24 +67,35 @@ def plan_profile_followup_node(state: HRState) -> dict[str, Any]:
     """
     profile = state.get("profile_snapshot") or {}
     lead = state.get("lead_ingestion") or {}
+    substance = _substance_analysis(state)
+    restrictive_substance = _has_restrictive_substance_signal(state)
+    analytics_substance = _has_analytics_substance_signal(state)
+
     next_missing = _next_missing_profile_field(profile)
     exact_question = next_missing.get("question")
-    should_ask = bool(exact_question)
+    should_ask = bool(exact_question) and not restrictive_substance
     has_expiring_documents = _has_expiring_documents(state)
 
     review_message = None
-    if has_expiring_documents:
+    if restrictive_substance:
+        review_message = "Por seguridad operativa, Capital Humano debe revisar este punto antes de continuar."
+    elif has_expiring_documents:
         review_message = "Capital Humano debe revisar la vigencia de tus documentos antes de avanzar."
+    elif analytics_substance:
+        review_message = "Queda registrada una señal para revisión interna y análisis posterior; podemos continuar con tus datos."
 
     plan = {
         "should_ask": should_ask,
-        "field_key": next_missing.get("key"),
-        "field_label": next_missing.get("label"),
-        "exact_question": exact_question,
+        "field_key": next_missing.get("key") if should_ask else None,
+        "field_label": next_missing.get("label") if should_ask else None,
+        "exact_question": exact_question if should_ask else None,
         "max_questions": 1 if should_ask else 0,
         "has_expiring_documents": has_expiring_documents,
+        "has_restrictive_substance_signal": restrictive_substance,
+        "has_substance_analytics_signal": analytics_substance,
+        "substance_disclosure_analysis": substance,
         "review_message": review_message,
-        "can_suggest_upload_documents": not has_expiring_documents,
+        "can_suggest_upload_documents": not has_expiring_documents and not restrictive_substance,
         "lead_updated": bool(lead.get("updated", False)),
         "updated_fields": lead.get("updated_fields", []),
         "callback_schedule": lead.get("callback_schedule") or {},
@@ -73,6 +109,8 @@ def plan_profile_followup_node(state: HRState) -> dict[str, Any]:
                 "should_ask": should_ask,
                 "field_key": plan["field_key"],
                 "has_expiring_documents": has_expiring_documents,
+                "has_restrictive_substance_signal": restrictive_substance,
+                "has_substance_analytics_signal": analytics_substance,
             }
         ],
     }
