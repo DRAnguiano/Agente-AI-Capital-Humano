@@ -1,4 +1,3 @@
-import re
 from typing import Any
 
 from app.db import log_event, update_candidate_profile, update_stage
@@ -8,14 +7,6 @@ from app.orchestrator import Stage, decide_next_stage, extract_profile_fields
 
 
 PRIVATE_PROFILE_KEYS = {"_city_catalog", "_city_requires_ch_validation"}
-
-GENERIC_CLOSING_PATTERNS = [
-    r"\n*¿Hay algo más en lo que pueda ayudarte(?: en este momento)?\??\s*$",
-    r"\n*¿Puedo ayudarte con algo más\??\s*$",
-    r"\n*¿Te puedo ayudar con algo más\??\s*$",
-    r"\n*Si tienes otra duda.*$",
-    r"\n*Quedo atento a cualquier duda.*$",
-]
 
 
 def _public_profile_fields(fields: dict[str, Any]) -> dict[str, Any]:
@@ -29,52 +20,6 @@ def _public_profile_fields(fields: dict[str, Any]) -> dict[str, Any]:
 def _is_clarification_followup_safe(state: HRState) -> bool:
     detection = state.get("route_detection") or {}
     return detection.get("clarification_followup") in {"safe", "confused_or_meta"}
-
-
-def _next_missing_profile_field(profile: dict[str, Any]) -> dict[str, str | None]:
-    """Return the single most important missing field to ask next."""
-    checks = [
-        ("nombre_completo", "nombre completo", "¿Me confirmas tu nombre completo?"),
-        ("ciudad", "ciudad", "¿De qué ciudad nos escribes?"),
-        ("telefono", "teléfono", "¿Me compartes tu número de teléfono?"),
-        ("licencia_federal", "licencia federal", "¿Cuentas con licencia federal vigente y qué tipo es?"),
-        ("disponibilidad_viajar", "disponibilidad para viajar", "¿Tienes disponibilidad para viajar?"),
-        ("experiencia_quinta_rueda", "experiencia", "¿Cuánta experiencia tienes manejando quinta rueda?"),
-    ]
-    for key, label, question in checks:
-        if not profile.get(key):
-            return {"key": key, "label": label, "question": question}
-    return {"key": None, "label": None, "question": None}
-
-
-def _strip_generic_closings(reply: str) -> str:
-    cleaned = (reply or "").strip()
-    for pattern in GENERIC_CLOSING_PATTERNS:
-        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
-    return cleaned
-
-
-def _force_next_profile_question(reply: str, next_missing: dict[str, str | None]) -> str:
-    """
-    Keep the LLM conversational, but enforce the graph's single next-field policy.
-
-    If the model already ended with a question, replace that final question with
-    the canonical question selected by the graph. This avoids duplicate endings.
-    """
-    cleaned = _strip_generic_closings(reply)
-    question = (next_missing.get("question") or "").strip()
-
-    if not question:
-        return cleaned
-
-    cleaned = re.sub(
-        r"(\n*\s*¿[^?]*\?\s*)+$",
-        "",
-        cleaned,
-        flags=re.IGNORECASE | re.DOTALL,
-    ).strip()
-
-    return f"{cleaned}\n\n{question}".strip()
 
 
 def extract_profile_fields_node(state: HRState) -> dict[str, Any]:
@@ -124,10 +69,11 @@ def _natural_profile_prompt(state: HRState) -> str:
     profile = state.get("profile_snapshot") or {}
     message = state.get("message") or ""
     current_stage = state.get("current_stage") or "START"
-    callback_schedule = lead.get("callback_schedule") or {}
+    followup_plan = state.get("profile_followup_plan") or {}
+    callback_schedule = followup_plan.get("callback_schedule") or lead.get("callback_schedule") or {}
     callback_due_time = callback_schedule.get("callback_due_local_time")
     callback_due_label = callback_schedule.get("callback_due_label")
-    next_missing = _next_missing_profile_field(profile)
+    exact_question = followup_plan.get("exact_question")
 
     return f"""
 Eres Mundo, asistente de Capital Humano de Transmontes.
@@ -139,40 +85,25 @@ Objetivo:
 - No repitas preguntas ya contestadas.
 - No reinicies el proceso.
 - No hagas checklist largo.
-- Haz máximo UNA pregunta al final.
-- Si faltan varios datos, pregunta solo el dato más importante para continuar.
 
-Dato faltante permitido para preguntar ahora:
-- key: {next_missing.get('key')}
-- label: {next_missing.get('label')}
-- pregunta sugerida: {next_missing.get('question')}
-
-Prioridad para pedir datos faltantes:
-1. nombre completo
-2. ciudad
-3. teléfono
-4. licencia/tipo de licencia
-5. disponibilidad
-6. experiencia
+PLAN DE SEGUIMIENTO DEL GRAFO:
+{followup_plan}
 
 Reglas especiales:
 - Si callback_requested=true, confirma que la solicitud de llamada/contacto quedó anotada.
 - Si callback_due_local_time existe, menciona que queda solicitado seguimiento alrededor de esa hora.
 - No prometas llamada exacta ni confirmes agenda cerrada; usa frases como "queda solicitado" o "lo dejo registrado para seguimiento".
-- Si vas a hacer una pregunta, pregunta SOLO por el dato faltante permitido arriba.
-- Prohibido pedir dos datos en la misma pregunta. No escribas frases como "nombre completo y ciudad" o "nombre y teléfono".
-- Si el dato faltante permitido es null, no hagas preguntas; solo confirma seguimiento.
-- Si la licencia o apto vencen pronto, indica que Capital Humano debe revisar la vigencia antes de avanzar.
-- Aunque Capital Humano deba revisar vigencias, continúa la captura natural del siguiente dato faltante permitido.
+- Si review_message existe, incluye esa idea de forma natural y breve.
+- Si should_ask=true, termina con exactamente esta pregunta y ninguna otra: {exact_question}
+- Si should_ask=false, no hagas preguntas al final.
+- No escribas una pregunta equivalente distinta a exact_question.
+- Prohibido pedir dos datos en la misma pregunta.
 - No cierres con frases genéricas como "¿Hay algo más en lo que pueda ayudarte?".
-- Si el teléfono ya está capturado, no vuelvas a pedir teléfono.
-- Si la disponibilidad ya está capturada, no vuelvas a pedir disponibilidad.
-- Si nombre completo ya está capturado, no vuelvas a pedir nombre.
-- Si ciudad ya está capturada, no vuelvas a pedir ciudad.
+- Si la licencia o apto vencen pronto, indica que Capital Humano debe revisar la vigencia antes de avanzar.
+- No sugieras subir documentos si can_suggest_upload_documents=false.
+- Solo sugiere subir documentación para agilizar revisión si can_suggest_upload_documents=true y el perfil parece en regla.
 - No digas que ya está contratado.
 - No inventes requisitos, pagos ni horarios.
-- No sugieras subir documentos si el candidato dijo que licencia o apto vencen pronto.
-- Solo sugiere subir documentación para agilizar revisión si el perfil parece en regla y sin vigencias próximas a vencer.
 - Máximo 2 párrafos cortos.
 
 Contexto de etapa actual: {current_stage}
@@ -191,17 +122,17 @@ def _fallback_natural_reply(state: HRState) -> str:
     profile = state.get("profile_snapshot") or {}
     lead = state.get("lead_ingestion") or {}
     extracted = lead.get("extracted") or {}
-    callback_schedule = lead.get("callback_schedule") or {}
+    followup_plan = state.get("profile_followup_plan") or {}
+    callback_schedule = followup_plan.get("callback_schedule") or lead.get("callback_schedule") or {}
 
     name = profile.get("nombre_completo") or ""
     due_time = callback_schedule.get("callback_due_local_time")
-    has_expiring_docs = bool(
+    exact_question = followup_plan.get("exact_question") or ""
+    has_expiring_docs = bool(followup_plan.get("has_expiring_documents")) or bool(
         extracted.get("license_expiry_text")
         or extracted.get("medical_expiry_text")
         or profile.get("requires_human")
     )
-    next_missing = _next_missing_profile_field(profile)
-    question = next_missing.get("question") or ""
 
     prefix = f"Gracias, {name}." if name else "Gracias por la información."
 
@@ -217,31 +148,33 @@ def _fallback_natural_reply(state: HRState) -> str:
         callback_text = ""
 
     if has_expiring_docs:
-        review = " Como mencionas vigencias por revisar, Capital Humano debe validar tus documentos antes de avanzar."
-    else:
+        review = " Capital Humano debe revisar la vigencia de tus documentos antes de avanzar."
+    elif followup_plan.get("can_suggest_upload_documents"):
         review = " Si tienes tu documentación vigente y en regla, puedes subirla para que Capital Humano revise tu perfil más rápido."
+    else:
+        review = ""
 
-    return f"{prefix}{callback_text}{review} {question}".strip()
+    if followup_plan.get("should_ask") and exact_question:
+        return f"{prefix}{callback_text}{review}\n\n{exact_question}".strip()
+    return f"{prefix}{callback_text}{review}".strip()
 
 
 def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
     """
     Respond naturally after non-blocking lead ingestion.
 
-    This avoids forcing the legacy profile form when the candidate already shared
-    useful facts in a free-form message.
+    The follow-up decision is planned by profile_followup_plan_node. This node is
+    responsible only for wording the acknowledgement and using the graph plan.
     """
     conversation_key = state.get("conversation_key")
     current_stage = state.get("current_stage") or "START"
     lead = state.get("lead_ingestion") or {}
-    next_missing = _next_missing_profile_field(state.get("profile_snapshot") or {})
+    followup_plan = state.get("profile_followup_plan") or {}
 
     try:
         reply = call_llm(_natural_profile_prompt(state)).strip()
     except Exception:
         reply = _fallback_natural_reply(state)
-
-    reply = _force_next_profile_question(reply, next_missing)
 
     if conversation_key:
         log_event(
@@ -255,8 +188,8 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
             metadata={
                 "lead_updated": bool(lead.get("updated", False)),
                 "updated_fields": lead.get("updated_fields", []),
-                "callback_schedule": lead.get("callback_schedule") or {},
-                "next_missing_field": next_missing,
+                "callback_schedule": followup_plan.get("callback_schedule") or lead.get("callback_schedule") or {},
+                "profile_followup_plan": followup_plan,
                 "graph_route": "profile",
             },
         )
@@ -275,8 +208,8 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
                 "stage_preserved": True,
                 "lead_updated": bool(lead.get("updated", False)),
                 "updated_fields": lead.get("updated_fields", []),
-                "callback_due_local_time": (lead.get("callback_schedule") or {}).get("callback_due_local_time"),
-                "next_missing_field": next_missing,
+                "callback_due_local_time": (followup_plan.get("callback_schedule") or {}).get("callback_due_local_time"),
+                "profile_followup_plan": followup_plan,
             }
         ],
     }
