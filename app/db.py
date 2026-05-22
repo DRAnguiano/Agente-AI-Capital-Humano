@@ -7,6 +7,9 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 
+RISK_RANK = {"low": 1, "medium": 2, "high": 3}
+
+
 def _db_config() -> dict[str, Any]:
     return {
         "host": os.getenv("POSTGRES_HOST", "postgres"),
@@ -34,6 +37,17 @@ def make_conversation_key(channel: str, channel_user_id: str) -> str:
     channel = (channel or "unknown").strip().lower()
     channel_user_id = (channel_user_id or "unknown").strip()
     return f"{channel}:{channel_user_id}"
+
+
+def _normalize_risk_level(value: str | None, default: str = "low") -> str:
+    risk = (value or default or "low").strip().lower()
+    return risk if risk in RISK_RANK else default
+
+
+def _max_risk_level(left: str | None, right: str | None) -> str:
+    left_norm = _normalize_risk_level(left)
+    right_norm = _normalize_risk_level(right)
+    return left_norm if RISK_RANK[left_norm] >= RISK_RANK[right_norm] else right_norm
 
 
 def upsert_conversation(
@@ -311,6 +325,66 @@ def update_stage(
                     "requires_human": requires_human,
                 },
             )
+
+
+def sync_conversation_risk_from_profile(
+    conversation_key: str,
+    *,
+    risk_level: str | None = None,
+    requires_human: bool | None = None,
+    intent: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Synchronize aggregate conversation risk from candidate profile facts.
+
+    This helper never downgrades risk or clears requires_human. It only promotes
+    the conversation aggregate state when lead/profile ingestion discovers a
+    higher-risk condition such as expiring documents or callback/handoff needs.
+    """
+    if not conversation_key:
+        return None
+
+    requested_risk = _normalize_risk_level(risk_level, default="low")
+    requested_requires_human = bool(requires_human)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT risk_level, requires_human
+                FROM rh_conversations
+                WHERE conversation_key = %(conversation_key)s;
+                """,
+                {"conversation_key": conversation_key},
+            )
+            current = cur.fetchone()
+            if not current:
+                return None
+
+            next_risk = _max_risk_level(current.get("risk_level"), requested_risk)
+            next_requires_human = bool(current.get("requires_human", False)) or requested_requires_human
+
+            cur.execute(
+                """
+                UPDATE rh_conversations
+                SET
+                    risk_level = %(risk_level)s,
+                    requires_human = %(requires_human)s,
+                    last_intent = COALESCE(%(intent)s, last_intent),
+                    updated_at = now()
+                WHERE conversation_key = %(conversation_key)s
+                RETURNING conversation_key, risk_level, requires_human, last_intent;
+                """,
+                {
+                    "conversation_key": conversation_key,
+                    "risk_level": next_risk,
+                    "requires_human": next_requires_human,
+                    "intent": intent,
+                },
+            )
+            row = cur.fetchone()
+
+    return dict(row) if row else None
 
 
 def update_candidate_profile(conversation_key: str, fields: dict[str, Any]) -> None:
