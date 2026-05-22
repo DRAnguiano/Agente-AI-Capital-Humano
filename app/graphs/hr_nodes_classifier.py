@@ -84,7 +84,51 @@ def _clean_route(value: Any) -> str:
     return route if route in ALLOWED_ROUTES else "rag"
 
 
-def _normalize_route(payload: dict[str, Any]) -> dict[str, Any]:
+def _message_has_explicit_question(message: str) -> bool:
+    text = (message or "").strip().lower()
+    if "?" in text or "¿" in text:
+        return True
+    question_starters = (
+        "cuanto",
+        "cuánto",
+        "cuales",
+        "cuáles",
+        "donde",
+        "dónde",
+        "que ",
+        "qué ",
+        "como ",
+        "cómo ",
+        "sabe ",
+        "me podria decir",
+        "me podría decir",
+        "quisiera saber",
+        "quiero saber",
+    )
+    return any(term in text for term in question_starters)
+
+
+def _lead_has_profile_facts(state: HRState) -> bool:
+    lead = state.get("lead_ingestion") or {}
+    if not lead.get("updated"):
+        return False
+    updated_fields = set(lead.get("updated_fields") or [])
+    profile_fields = {
+        "nombre_completo",
+        "edad",
+        "telefono",
+        "ciudad",
+        "ciudad_raw",
+        "licencia_federal",
+        "tipo_licencia",
+        "experiencia_quinta_rueda",
+        "apto_medico",
+        "disponibilidad_viajar",
+    }
+    return bool(updated_fields & profile_fields)
+
+
+def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> dict[str, Any]:
     data = {**DEFAULT_ROUTE, **(payload or {})}
 
     datasource = str(data.get("datasource") or "").strip().lower()
@@ -93,6 +137,13 @@ def _normalize_route(payload: dict[str, Any]) -> dict[str, Any]:
 
     if datasource in WEB_DATASOURCES:
         route = "web_review"
+
+    if state is not None and route == "profile":
+        message = state.get("message") or ""
+        if _lead_has_profile_facts(state) and _message_has_explicit_question(message):
+            route = "rag"
+            datasource = "vectorstore"
+            data["reason"] = "profile_facts_with_side_question"
 
     risk_level = str(data.get("risk_level") or "low").strip().lower()
     if risk_level not in {"low", "medium", "high"}:
@@ -155,6 +206,7 @@ def classify_message_node(state: HRState) -> dict[str, Any]:
     current_stage = state.get("current_stage") or "START"
     profile_snapshot = state.get("profile_snapshot") or {}
     conversation_memory = state.get("conversation_memory") or {}
+    lead_ingestion = state.get("lead_ingestion") or {}
 
     prompt = f"""
 You are a routing node for a Mexican trucking recruiting assistant.
@@ -174,6 +226,7 @@ If datasource is websearch, set recommended_route to web_review.
 Do not choose clarification before websearch for unknown terms; web review can decide later if clarification is needed.
 Avoid rigid keyword matching. Use the conversation memory and current stage.
 Do not force the profile flow when the candidate is asking a side question.
+If the current message contains both profile facts and an explicit question about pay, benefits, bases, requirements, schedule, routes or policy, choose vectorstore/RAG for the response. Lead ingestion already saved the facts.
 
 === POLICY CONTEXT ===
 {policy}
@@ -182,6 +235,7 @@ Do not force the profile flow when the candidate is asking a side question.
 current_stage: {current_stage}
 profile_snapshot: {json.dumps(profile_snapshot, ensure_ascii=False, default=str)}
 conversation_memory: {json.dumps(conversation_memory, ensure_ascii=False, default=str)}
+lead_ingestion: {json.dumps(lead_ingestion, ensure_ascii=False, default=str)}
 
 === CANDIDATE MESSAGE ===
 {message}
@@ -204,7 +258,7 @@ Return JSON:
     try:
         raw = call_llm(prompt)
         parsed = _json_from_text(raw)
-        route = _normalize_route(parsed)
+        route = _normalize_route(parsed, state)
     except Exception as exc:
         route = {
             **DEFAULT_ROUTE,
