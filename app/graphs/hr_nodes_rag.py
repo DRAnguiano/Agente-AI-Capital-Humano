@@ -32,52 +32,6 @@ def _source_payload(item: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _effective_question(state: HRState) -> str:
-    rewrite = state.get("contextual_rewrite") or {}
-    if rewrite.get("should_use_rewrite") and rewrite.get("rewritten"):
-        return str(rewrite.get("rewritten") or "").strip()
-    return str(state.get("question") or state.get("message") or "").strip()
-
-
-def _expand_retrieval_query(question: str) -> str:
-    """
-    Make short candidate side-questions more retrievable in HR documents.
-
-    This does not change the candidate-facing question. It only expands the
-    vector search query with domain terms so Chroma can find the right internal
-    policy chunk for terse messages like "¿Cómo pagan el viaje?".
-    """
-    text = (question or "").strip()
-    lower = text.lower()
-    if not text:
-        return ""
-
-    pay_terms = ("pagan", "pago", "sueldo", "salario", "kilometro", "kilómetro", "viaje", "compensación")
-    route_terms = ("ruta", "rutas", "base", "bases", "foráneo", "foraneo")
-    requirement_terms = ("requisito", "requisitos", "licencia", "apto", "documento", "documentos")
-
-    if any(term in lower for term in pay_terms):
-        return (
-            f"{text}\n"
-            "esquema de pago operador quinta rueda tractocamión viaje sueldo base pago variable por kilómetro "
-            "prestaciones bonos full semanal neto Capital Humano"
-        )
-
-    if any(term in lower for term in route_terms):
-        return (
-            f"{text}\n"
-            "rutas bases operación operador quinta rueda tractocamión foráneo local base trabajo Transmontes"
-        )
-
-    if any(term in lower for term in requirement_terms):
-        return (
-            f"{text}\n"
-            "requisitos operador quinta rueda licencia federal apto médico documentos experiencia disponibilidad viaje"
-        )
-
-    return text
-
-
 def _is_profile_side_question(state: HRState) -> bool:
     current_stage = state.get("current_stage") or "START"
     route = state.get("route")
@@ -106,6 +60,31 @@ def _append_side_question_close(answer: str, state: HRState) -> str:
 def _looks_like_generation_error(answer: str) -> bool:
     normalized = (answer or "").strip().lower()
     return any(marker in normalized for marker in GENERATION_ERROR_MARKERS)
+
+
+def _is_memory_followup_question(state: HRState) -> bool:
+    """
+    Detects when the current question was made standalone using conversation
+    memory. This lets the answer sound natural, e.g. "Como le comentaba...",
+    without changing routing or retrieval behavior.
+    """
+    rewrite = state.get("contextual_rewrite") or {}
+    memory = state.get("conversation_memory") or {}
+
+    if not rewrite.get("should_use_rewrite"):
+        return False
+
+    original = str(rewrite.get("original") or state.get("message") or "").strip()
+    rewritten = str(rewrite.get("rewritten") or state.get("question") or "").strip()
+
+    if not original or not rewritten or original == rewritten:
+        return False
+
+    if memory.get("current_may_reference_previous") is True:
+        return True
+
+    # Short candidate follow-ups expanded into a fuller searchable question.
+    return len(original.split()) <= 5 and len(rewritten.split()) > len(original.split())
 
 
 def normalize_input_node(state: HRState) -> dict[str, Any]:
@@ -153,22 +132,11 @@ def legacy_orchestrator_node(state: HRState) -> dict[str, Any]:
 
 
 def retrieve_documents_node(state: HRState) -> dict[str, Any]:
-    question = _effective_question(state)
-    retrieval_query = _expand_retrieval_query(question)
-    docs = retrieve_context_for_guardrail(retrieval_query or question, top_k=5)
+    question = state.get("question") or state.get("message") or ""
+    docs = retrieve_context_for_guardrail(question, top_k=5)
     return {
-        "question": question,
-        "retrieval_query": retrieval_query,
         "retrieved_docs": docs,
         "sources": [_source_payload(item) for item in docs],
-        "events": [
-            {
-                "type": "rag_documents_retrieved",
-                "question": question,
-                "retrieval_query": retrieval_query,
-                "retrieved_docs_count": len(docs),
-            }
-        ],
     }
 
 
@@ -211,6 +179,7 @@ def generate_answer_node(state: HRState) -> dict[str, Any]:
     context_text = "\n\n---\n\n".join(item.get("text", "") for item in relevant_docs)
     current_stage = state.get("current_stage") or "START"
     side_question = _is_profile_side_question(state)
+    memory_followup = _is_memory_followup_question(state)
 
     side_question_instruction = ""
     if side_question:
@@ -240,6 +209,9 @@ side_question_during_profile: {side_question}
 
 {side_question_instruction}
 
+=== SEGUIMIENTO CON MEMORIA ===
+memory_followup_question: {memory_followup}
+
 INSTRUCCIONES:
 1. Responde únicamente con base en el contexto interno.
 2. No inventes sueldo, prestaciones, rutas, descansos, pago por kilómetro, contratación ni condiciones.
@@ -247,6 +219,7 @@ INSTRUCCIONES:
 4. Responde breve, natural y en español.
 5. No cierres con frases genéricas como "si tienes otra duda", "puedo ayudarte" o similares.
 6. Si es una pregunta lateral durante formulario, no empujes el proceso ni hagas preguntas del formulario.
+7. Si memory_followup_question=true, responde como seguimiento natural de una pregunta ya contestada. Puedes iniciar con "Como le comentaba," o "Sí, como le comentaba," y repetir la información confirmada sin sonar molesto.
 
 RESPUESTA:
 """
@@ -308,6 +281,7 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
                 "type": "rag_answered_side_question" if _is_profile_side_question(state) else "rag_answered",
                 "current_stage": state.get("current_stage"),
                 "stage_preserved": _is_profile_side_question(state),
+                "memory_followup_question": _is_memory_followup_question(state),
             }
         ],
     }

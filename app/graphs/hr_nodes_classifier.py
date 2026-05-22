@@ -489,12 +489,27 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
     if state is not None:
         rewrite = state.get("contextual_rewrite") or {}
         message = _effective_message_for_routing(state, state.get("message") or "")
-        if route == "clarification" and rewrite.get("should_use_rewrite") and rewrite.get("confidence", 0) >= MIN_REWRITE_CONFIDENCE:
+
+        if (
+            rewrite.get("should_use_rewrite")
+            and rewrite.get("confidence", 0) >= MIN_REWRITE_CONFIDENCE
+            and _is_side_question(message)
+            and route in {"clarification", "web_review", "fallback", "profile"}
+        ):
+            route = "rag"
+            datasource = "vectorstore"
+            data["reason"] = "contextual_rewrite_resolved_internal_question"
+            data["requires_clarification"] = False
+            data["requires_web_lookup"] = False
+            data["requires_rag"] = True
+
+        elif route == "clarification" and rewrite.get("should_use_rewrite") and rewrite.get("confidence", 0) >= MIN_REWRITE_CONFIDENCE:
             route = "rag"
             datasource = "vectorstore"
             data["reason"] = "contextual_rewrite_resolved_ambiguity"
             data["requires_clarification"] = False
             data["requires_rag"] = True
+
         elif route == "profile" and rewrite.get("should_use_rewrite") and _message_has_explicit_question(message):
             route = "rag"
             datasource = "vectorstore"
