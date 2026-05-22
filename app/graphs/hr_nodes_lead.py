@@ -55,6 +55,27 @@ def _clean_choice(value: Any, allowed: set[str]) -> str | None:
     return text if text in allowed else None
 
 
+def _clean_phone(value: Any) -> str | None:
+    if value is None:
+        return None
+    digits = re.sub(r"\D+", "", str(value))
+    if 8 <= len(digits) <= 15:
+        return digits
+    return None
+
+
+def _clean_age(value: Any) -> int | None:
+    if value is None:
+        return None
+    match = re.search(r"\d{1,2}", str(value))
+    if not match:
+        return None
+    age = int(match.group(0))
+    if 18 <= age <= 75:
+        return age
+    return None
+
+
 def _compact_list(items: Any, max_items: int = 8) -> list[str]:
     if not isinstance(items, list):
         return []
@@ -126,15 +147,26 @@ def _normalize_extraction(payload: dict[str, Any]) -> dict[str, Any]:
         license_status = "SI_PROBABLE"
         license_needs_review = True
 
+    medical_status = _clean_choice(facts.get("medical_status") or facts.get("apto_medico"), {"SI", "NO", "INCIERTO", "SI_PROBABLE"})
+    medical_expiry_text = _clean_text(facts.get("medical_expiry_text") or facts.get("apto_vencimiento"), 120)
+    if medical_expiry_text and medical_status in {None, "INCIERTO"}:
+        medical_status = "SI_PROBABLE"
+
     extracted = {
+        "full_name": _clean_text(facts.get("full_name") or facts.get("nombre_completo"), 120),
+        "age": _clean_age(facts.get("age") or facts.get("edad")),
+        "phone": _clean_phone(facts.get("phone") or facts.get("telefono")),
         "city_raw": city_raw,
         "license_status": license_status,
         "license_type": _clean_text(facts.get("license_type") or facts.get("tipo_licencia"), 40),
         "license_expiry_text": license_expiry_text,
         "license_needs_review": license_needs_review,
         "experience_text": _clean_text(facts.get("experience_text") or facts.get("experiencia_quinta_rueda"), 120),
-        "medical_status": _clean_choice(facts.get("medical_status") or facts.get("apto_medico"), {"SI", "NO", "INCIERTO"}),
+        "medical_status": medical_status,
+        "medical_expiry_text": medical_expiry_text,
         "availability_travel": _clean_choice(facts.get("availability_travel") or facts.get("disponibilidad_viajar"), {"SI", "NO", "INCIERTO"}),
+        "callback_requested": bool(facts.get("callback_requested", False)),
+        "callback_window": _clean_text(facts.get("callback_window") or facts.get("horario_llamada"), 120),
         "candidate_questions": _compact_list(facts.get("candidate_questions") or facts.get("dudas")),
         "objections": _compact_list(facts.get("objections") or facts.get("objeciones")),
         "risk_notes": _compact_list(facts.get("risk_notes") or facts.get("riesgos")),
@@ -151,6 +183,12 @@ def _fields_from_extraction(extracted: dict[str, Any], profile_snapshot: dict[st
     city_fields = _city_fields(extracted.get("city_raw"))
     fields.update(city_fields)
 
+    if extracted.get("full_name"):
+        fields["nombre_completo"] = extracted["full_name"]
+    if extracted.get("age"):
+        fields["edad"] = extracted["age"]
+    if extracted.get("phone"):
+        fields["telefono"] = extracted["phone"]
     if extracted.get("license_status"):
         status = extracted["license_status"]
         fields["licencia_federal"] = "SI" if status == "SI_PROBABLE" else status
@@ -159,7 +197,8 @@ def _fields_from_extraction(extracted: dict[str, Any], profile_snapshot: dict[st
     if extracted.get("experience_text"):
         fields["experiencia_quinta_rueda"] = extracted["experience_text"]
     if extracted.get("medical_status"):
-        fields["apto_medico"] = extracted["medical_status"]
+        status = extracted["medical_status"]
+        fields["apto_medico"] = "SI" if status == "SI_PROBABLE" else status
     if extracted.get("availability_travel"):
         fields["disponibilidad_viajar"] = extracted["availability_travel"]
 
@@ -169,6 +208,13 @@ def _fields_from_extraction(extracted: dict[str, Any], profile_snapshot: dict[st
         notes.append("Requiere revisión CH por vigencia o condición de licencia")
         fields["requires_human"] = True
         fields["risk_level"] = "medium"
+    if extracted.get("medical_expiry_text"):
+        notes.append(f"Apto médico/vigencia mencionada: {extracted['medical_expiry_text']}")
+        fields["requires_human"] = True
+        fields["risk_level"] = "medium"
+    if extracted.get("callback_requested"):
+        window = extracted.get("callback_window") or "sin horario específico"
+        notes.append(f"Solicita llamada/contacto de Capital Humano: {window}")
     for question in extracted.get("candidate_questions") or []:
         notes.append(f"Duda del candidato: {question}")
     for objection in extracted.get("objections") or []:
@@ -207,15 +253,19 @@ Do not answer the candidate. Return JSON only.
 The candidate may write fragmented messages, informal spelling, short follow-ups,
 regional expressions, or multiple ideas in one message.
 Extract facts that are useful for a recruiter lead note. Do not force a form flow.
+Only extract facts from the current message and clear conversation context.
 
 Allowed values:
 - license_status: SI, NO, SI_PROBABLE, INCIERTO
-- medical_status: SI, NO, INCIERTO
+- medical_status: SI, NO, SI_PROBABLE, INCIERTO
 - availability_travel: SI, NO, INCIERTO
 
 If the candidate says a license expires soon or gives a future expiration window,
 that usually implies they have a license. Use license_status=SI_PROBABLE and
 license_needs_review=true unless they clearly say they do not have one.
+If the candidate says their medical certificate/card expires soon, use
+medical_status=SI_PROBABLE and medical_expiry_text with the mentioned timing.
+If the candidate asks for a call, set callback_requested=true and capture the requested time window.
 
 === CURRENT PROFILE ===
 {json.dumps(profile_snapshot, ensure_ascii=False, default=str)}
@@ -229,6 +279,9 @@ license_needs_review=true unless they clearly say they do not have one.
 Return JSON:
 {{
   "facts": {{
+    "full_name": null,
+    "age": null,
+    "phone": null,
     "city_raw": null,
     "license_status": null,
     "license_type": null,
@@ -236,7 +289,10 @@ Return JSON:
     "license_needs_review": false,
     "experience_text": null,
     "medical_status": null,
+    "medical_expiry_text": null,
     "availability_travel": null,
+    "callback_requested": false,
+    "callback_window": null,
     "candidate_questions": [],
     "objections": [],
     "risk_notes": [],
