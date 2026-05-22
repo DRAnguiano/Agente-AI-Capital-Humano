@@ -108,6 +108,12 @@ def _message_has_explicit_question(message: str) -> bool:
     return any(term in text for term in question_starters)
 
 
+def _lead_requested_callback(state: HRState) -> bool:
+    lead = state.get("lead_ingestion") or {}
+    extracted = lead.get("extracted") or {}
+    return bool(extracted.get("callback_requested", False))
+
+
 def _lead_has_profile_facts(state: HRState) -> bool:
     lead = state.get("lead_ingestion") or {}
     if not lead.get("updated"):
@@ -138,7 +144,11 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
     if datasource in WEB_DATASOURCES:
         route = "web_review"
 
-    if state is not None and route == "profile":
+    if state is not None and _lead_requested_callback(state):
+        route = "profile"
+        datasource = "profile"
+        data["reason"] = "callback_request_captured"
+    elif state is not None and route == "profile":
         message = state.get("message") or ""
         if _lead_has_profile_facts(state) and _message_has_explicit_question(message):
             route = "rag"
@@ -216,7 +226,7 @@ Your job is only to choose the next graph route, similar to a RAG router:
 - vectorstore: use internal documents/RAG
 - websearch: use web search when internal context is likely insufficient or the term is external/unknown
 - direct: use a direct non-RAG node for greetings or first-contact intent discovery
-- profile: use profile flow only when the candidate clearly answers the pending profile field or asks to continue the process
+- profile: use profile flow only when the candidate clearly answers the pending profile field, asks to continue the process, or requests callback/contact from Capital Humano
 - clarification: ask a clarification when the message cannot be safely interpreted
 - human_handoff: human review is needed
 - fallback: unsupported/no actionable message
@@ -227,6 +237,7 @@ Do not choose clarification before websearch for unknown terms; web review can d
 Avoid rigid keyword matching. Use the conversation memory and current stage.
 Do not force the profile flow when the candidate is asking a side question.
 If the current message contains both profile facts and an explicit question about pay, benefits, bases, requirements, schedule, routes or policy, choose vectorstore/RAG for the response. Lead ingestion already saved the facts.
+If lead_ingestion shows callback_requested=true, choose profile/natural lead response, not RAG.
 
 === POLICY CONTEXT ===
 {policy}
