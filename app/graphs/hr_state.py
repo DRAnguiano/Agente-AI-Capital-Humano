@@ -55,6 +55,9 @@ class HRState(TypedDict, total=False):
     incoming_message_saved: bool
     assistant_message_saved: bool
 
+    # Natural lead ingestion
+    lead_ingestion: dict[str, Any]
+
     # Classifier / semantic routing
     classifier: dict[str, Any]
     classifier_intent: str
