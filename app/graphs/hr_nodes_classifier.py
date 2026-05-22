@@ -190,6 +190,17 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
         data["risk_level"] = "high"
         data["requires_human"] = True
         data["requires_clarification"] = False
+    elif _has_analytics_only_substance_signal(state):
+        # Past-use / medication / ambiguous non-restrictive signals are valuable for analytics,
+        # but they must not stop the recruiting flow. We also avoid answering test-outcome questions.
+        route = "profile"
+        datasource = "profile"
+        data["reason"] = "substance_analytics_signal_captured"
+        data["risk_level"] = "medium"
+        data["requires_human"] = False
+        data["requires_clarification"] = False
+        data["requires_rag"] = False
+        data["requires_web_lookup"] = False
     elif state is not None and _lead_requested_callback(state):
         route = "profile"
         datasource = "profile"
@@ -210,13 +221,6 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
             route = "rag"
             datasource = "vectorstore"
             data["reason"] = "profile_facts_with_side_question"
-
-    if _has_analytics_only_substance_signal(state):
-        current_reason = str(data.get("reason") or "route_question").strip().lower()
-        if current_reason == "route_question":
-            data["reason"] = "substance_analytics_signal_captured"
-        if str(data.get("risk_level") or "low").lower() == "low":
-            data["risk_level"] = "medium"
 
     risk_level = str(data.get("risk_level") or "low").strip().lower()
     if risk_level not in {"low", "medium", "high"}:
@@ -304,7 +308,7 @@ If the current message contains both profile facts and an explicit question abou
 If lead_ingestion shows callback_requested=true, choose profile/natural lead response, not RAG.
 If lead_ingestion captured license or medical-expiry facts and the current message is not an explicit question, choose profile/natural lead response, not RAG. The facts were already saved and Capital Humano must review them.
 If substance_disclosure_analysis has ACTIVE_OR_INTENDED_USE or operational_risk=high, choose policy_boundary.
-If substance_disclosure_analysis is RECENT_PAST_USE or PAST_USE with medium risk, do not block the profile flow only for that reason; it is an analytics signal.
+If substance_disclosure_analysis is RECENT_PAST_USE or PAST_USE with medium risk, choose profile and continue the capture flow; it is an analytics signal and must not block the process by itself.
 
 === POLICY CONTEXT ===
 {policy}
