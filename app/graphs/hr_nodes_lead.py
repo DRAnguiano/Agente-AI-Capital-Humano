@@ -119,13 +119,19 @@ def _normalize_extraction(payload: dict[str, Any]) -> dict[str, Any]:
         facts.get("license_status") or facts.get("licencia_federal"),
         {"SI", "NO", "INCIERTO", "SI_PROBABLE"},
     )
+    license_expiry_text = _clean_text(facts.get("license_expiry_text") or facts.get("licencia_vencimiento"), 120)
+    license_needs_review = bool(facts.get("license_needs_review", False))
+
+    if license_expiry_text and license_status in {None, "INCIERTO"}:
+        license_status = "SI_PROBABLE"
+        license_needs_review = True
 
     extracted = {
         "city_raw": city_raw,
         "license_status": license_status,
         "license_type": _clean_text(facts.get("license_type") or facts.get("tipo_licencia"), 40),
-        "license_expiry_text": _clean_text(facts.get("license_expiry_text") or facts.get("licencia_vencimiento"), 120),
-        "license_needs_review": bool(facts.get("license_needs_review", False)),
+        "license_expiry_text": license_expiry_text,
+        "license_needs_review": license_needs_review,
         "experience_text": _clean_text(facts.get("experience_text") or facts.get("experiencia_quinta_rueda"), 120),
         "medical_status": _clean_choice(facts.get("medical_status") or facts.get("apto_medico"), {"SI", "NO", "INCIERTO"}),
         "availability_travel": _clean_choice(facts.get("availability_travel") or facts.get("disponibilidad_viajar"), {"SI", "NO", "INCIERTO"}),
@@ -207,8 +213,9 @@ Allowed values:
 - medical_status: SI, NO, INCIERTO
 - availability_travel: SI, NO, INCIERTO
 
-Mark license_needs_review=true when the candidate says the license expires soon,
-is about to expire, is not fully current, or needs renewal/validation.
+If the candidate says a license expires soon or gives a future expiration window,
+that usually implies they have a license. Use license_status=SI_PROBABLE and
+license_needs_review=true unless they clearly say they do not have one.
 
 === CURRENT PROFILE ===
 {json.dumps(profile_snapshot, ensure_ascii=False, default=str)}
