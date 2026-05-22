@@ -319,6 +319,8 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "safe_reply_mode": final_state.get("safe_reply_mode"),
         "conversation_memory_built": bool(memory),
         "current_may_reference_previous": bool(memory.get("current_may_reference_previous", False)),
+        "lead_ingestion": final_state.get("lead_ingestion"),
+        "profile_followup_plan": final_state.get("profile_followup_plan"),
         "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),
         "web_search_used": bool(final_state.get("web_search_used", False)),
         "web_results_count": len(web_results),
