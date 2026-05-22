@@ -10,6 +10,7 @@ from app.graphs.hr_nodes_core import (
     save_assistant_message_node,
     save_incoming_message_node,
 )
+from app.graphs.hr_nodes_lead import ingest_lead_node
 from app.graphs.hr_nodes_memory import build_conversation_memory_node
 from app.graphs.hr_nodes_rag import (
     answer_check_node,
@@ -205,6 +206,7 @@ def build_hr_full_router_test_graph():
     workflow.add_node("load_conversation", load_conversation_node)
     workflow.add_node("build_conversation_memory", build_conversation_memory_node)
     workflow.add_node("save_incoming_message", save_incoming_message_node)
+    workflow.add_node("ingest_lead", ingest_lead_node)
     workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
     workflow.add_node("route_stub_response", route_stub_response_node)
@@ -218,7 +220,8 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("normalize_input", "load_conversation")
     workflow.add_edge("load_conversation", "build_conversation_memory")
     workflow.add_edge("build_conversation_memory", "save_incoming_message")
-    workflow.add_edge("save_incoming_message", "classify_message")
+    workflow.add_edge("save_incoming_message", "ingest_lead")
+    workflow.add_edge("ingest_lead", "classify_message")
     workflow.add_edge("classify_message", "route_message")
     workflow.add_conditional_edges(
         "route_message",
@@ -412,6 +415,7 @@ def _run_full_router_test_graph(
         "thread_id": config["configurable"]["thread_id"],
         "input_nodes_extracted": True,
         "memory_node_enabled": True,
+        "lead_ingestion_node_enabled": True,
         "classifier_node_enabled": True,
         "router_node_extracted": True,
         "rag_nodes_extracted": True,
