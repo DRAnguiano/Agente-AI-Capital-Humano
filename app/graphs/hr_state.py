@@ -61,6 +61,9 @@ class HRState(TypedDict, total=False):
     # Contextual safety/analytics analysis
     substance_disclosure_analysis: dict[str, Any]
 
+    # Contextual typo/slang rewrite before routing/RAG
+    contextual_rewrite: dict[str, Any]
+
     # Response guard / quality control
     profile_response_guard: dict[str, Any]
 
