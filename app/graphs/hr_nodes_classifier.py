@@ -134,6 +134,18 @@ def _lead_has_profile_facts(state: HRState) -> bool:
     return bool(updated_fields & profile_fields)
 
 
+def _lead_has_expiring_document_facts(state: HRState) -> bool:
+    lead = state.get("lead_ingestion") or {}
+    extracted = lead.get("extracted") or {}
+    if not lead.get("updated"):
+        return False
+    return bool(
+        extracted.get("license_expiry_text")
+        or extracted.get("license_needs_review")
+        or extracted.get("medical_expiry_text")
+    )
+
+
 def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> dict[str, Any]:
     data = {**DEFAULT_ROUTE, **(payload or {})}
 
@@ -148,6 +160,16 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
         route = "profile"
         datasource = "profile"
         data["reason"] = "callback_request_captured"
+    elif (
+        state is not None
+        and _lead_has_expiring_document_facts(state)
+        and not _message_has_explicit_question(state.get("message") or "")
+    ):
+        route = "profile"
+        datasource = "profile"
+        data["reason"] = "profile_facts_expiring_documents_captured"
+        data["risk_level"] = "medium"
+        data["requires_human"] = True
     elif state is not None and route == "profile":
         message = state.get("message") or ""
         if _lead_has_profile_facts(state) and _message_has_explicit_question(message):
@@ -238,6 +260,7 @@ Avoid rigid keyword matching. Use the conversation memory and current stage.
 Do not force the profile flow when the candidate is asking a side question.
 If the current message contains both profile facts and an explicit question about pay, benefits, bases, requirements, schedule, routes or policy, choose vectorstore/RAG for the response. Lead ingestion already saved the facts.
 If lead_ingestion shows callback_requested=true, choose profile/natural lead response, not RAG.
+If lead_ingestion captured license or medical-expiry facts and the current message is not an explicit question, choose profile/natural lead response, not RAG. The facts were already saved and Capital Humano must review them.
 
 === POLICY CONTEXT ===
 {policy}
