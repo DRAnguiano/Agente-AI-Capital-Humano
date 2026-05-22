@@ -32,6 +32,52 @@ def _source_payload(item: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _effective_question(state: HRState) -> str:
+    rewrite = state.get("contextual_rewrite") or {}
+    if rewrite.get("should_use_rewrite") and rewrite.get("rewritten"):
+        return str(rewrite.get("rewritten") or "").strip()
+    return str(state.get("question") or state.get("message") or "").strip()
+
+
+def _expand_retrieval_query(question: str) -> str:
+    """
+    Make short candidate side-questions more retrievable in HR documents.
+
+    This does not change the candidate-facing question. It only expands the
+    vector search query with domain terms so Chroma can find the right internal
+    policy chunk for terse messages like "¿Cómo pagan el viaje?".
+    """
+    text = (question or "").strip()
+    lower = text.lower()
+    if not text:
+        return ""
+
+    pay_terms = ("pagan", "pago", "sueldo", "salario", "kilometro", "kilómetro", "viaje", "compensación")
+    route_terms = ("ruta", "rutas", "base", "bases", "foráneo", "foraneo")
+    requirement_terms = ("requisito", "requisitos", "licencia", "apto", "documento", "documentos")
+
+    if any(term in lower for term in pay_terms):
+        return (
+            f"{text}\n"
+            "esquema de pago operador quinta rueda tractocamión viaje sueldo base pago variable por kilómetro "
+            "prestaciones bonos full semanal neto Capital Humano"
+        )
+
+    if any(term in lower for term in route_terms):
+        return (
+            f"{text}\n"
+            "rutas bases operación operador quinta rueda tractocamión foráneo local base trabajo Transmontes"
+        )
+
+    if any(term in lower for term in requirement_terms):
+        return (
+            f"{text}\n"
+            "requisitos operador quinta rueda licencia federal apto médico documentos experiencia disponibilidad viaje"
+        )
+
+    return text
+
+
 def _is_profile_side_question(state: HRState) -> bool:
     current_stage = state.get("current_stage") or "START"
     route = state.get("route")
@@ -107,11 +153,22 @@ def legacy_orchestrator_node(state: HRState) -> dict[str, Any]:
 
 
 def retrieve_documents_node(state: HRState) -> dict[str, Any]:
-    question = state.get("question") or state.get("message") or ""
-    docs = retrieve_context_for_guardrail(question, top_k=5)
+    question = _effective_question(state)
+    retrieval_query = _expand_retrieval_query(question)
+    docs = retrieve_context_for_guardrail(retrieval_query or question, top_k=5)
     return {
+        "question": question,
+        "retrieval_query": retrieval_query,
         "retrieved_docs": docs,
         "sources": [_source_payload(item) for item in docs],
+        "events": [
+            {
+                "type": "rag_documents_retrieved",
+                "question": question,
+                "retrieval_query": retrieval_query,
+                "retrieved_docs_count": len(docs),
+            }
+        ],
     }
 
 
