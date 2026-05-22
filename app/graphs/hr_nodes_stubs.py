@@ -59,6 +59,13 @@ def _flow_flags(*, profile: bool = False, handoff: bool = False, clarification: 
     }
 
 
+def _merge_events(*updates: dict[str, Any]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for update in updates:
+        events.extend(update.get("events") or [])
+    return events
+
+
 def route_stub_response_node(state: HRState) -> dict[str, Any]:
     """
     Produce a controlled response for non-RAG routes.
@@ -82,6 +89,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
                 **followup_plan_update,
                 **natural_update,
                 **_flow_flags(profile=True),
+                "events": _merge_events(followup_plan_update, natural_update),
             }
 
         extracted_update = extract_profile_fields_node(state)
@@ -92,6 +100,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             **extracted_update,
             **profile_update,
             **_flow_flags(profile=True),
+            "events": _merge_events(extracted_update, profile_update),
         }
 
     if route == "human_handoff":
@@ -106,6 +115,7 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
             **stage_update,
             **reply_update,
             **_flow_flags(handoff=True),
+            "events": _merge_events(handoff_update, stage_update, reply_update),
         }
 
     if route == "clarification":
