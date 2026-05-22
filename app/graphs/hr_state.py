@@ -87,6 +87,7 @@ class HRState(TypedDict, total=False):
     extracted_fields: dict[str, Any]
     profile_updates: dict[str, Any]
     profile_private_context: dict[str, Any]
+    profile_followup_plan: dict[str, Any]
     profile_updated: bool
     stage_updated: bool
     profile_event_logged: bool
