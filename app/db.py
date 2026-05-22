@@ -420,6 +420,15 @@ def update_candidate_profile(conversation_key: str, fields: dict[str, Any]) -> N
         "last_detected_intent",
         "risk_level",
         "requires_human",
+        "substance_disclosure",
+        "substance_disclosure_status",
+        "substance_disclosure_context",
+        "substance_last_use_text",
+        "substance_operational_risk",
+        "substance_requires_review",
+        "substance_analytics_flag",
+        "substance_analytics_category",
+        "substance_raw_mention",
     }
 
     clean_fields = {k: v for k, v in fields.items() if k in allowed and v is not None}
@@ -428,6 +437,8 @@ def update_candidate_profile(conversation_key: str, fields: dict[str, Any]) -> N
 
     set_sql = ", ".join([f"{key} = %({key})s" for key in clean_fields])
     params = {"conversation_key": conversation_key, **clean_fields}
+    if "substance_disclosure" in params and isinstance(params["substance_disclosure"], (dict, list)):
+        params["substance_disclosure"] = Jsonb(params["substance_disclosure"])
 
     with get_conn() as conn:
         with conn.cursor() as cur:
