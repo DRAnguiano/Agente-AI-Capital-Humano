@@ -1,8 +1,9 @@
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.db import find_city_catalog_match, log_event, update_candidate_profile
 from app.graphs.hr_state import HRState
@@ -10,6 +11,8 @@ from app.indexer import call_llm
 
 
 MAX_NOTE_CHARS = 3500
+CALLBACK_LOCAL_TZ = ZoneInfo(os.getenv("CALLBACK_LOCAL_TIMEZONE", "America/Monterrey"))
+CALLBACK_STATUS_REQUESTED = "REQUESTED"
 
 
 def _env_bool(name: str, default: bool = True) -> bool:
@@ -107,6 +110,87 @@ def _merge_notes(existing: Any, new_notes: list[str]) -> str | None:
     return merged
 
 
+def _normalize_callback_text(value: str | None) -> str:
+    return (value or "").strip().lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
+
+
+def _callback_schedule(callback_window: str | None) -> dict[str, Any]:
+    """
+    Convert a natural callback request into an operational local follow-up time.
+
+    This intentionally uses server time + configured local timezone instead of web search.
+    Web search is nondeterministic for a simple clock calculation and can create noisy
+    behavior in production chats.
+    """
+    now = datetime.now(CALLBACK_LOCAL_TZ)
+    window = _clean_text(callback_window, 120)
+    text = _normalize_callback_text(window)
+
+    schedule: dict[str, Any] = {
+        "callback_requested_at": now.isoformat(),
+        "callback_requested_at_utc": now.astimezone(timezone.utc).isoformat(),
+        "callback_status": CALLBACK_STATUS_REQUESTED,
+        "callback_timezone": str(CALLBACK_LOCAL_TZ),
+    }
+
+    if window:
+        schedule["callback_window"] = window
+
+    relative_minutes = None
+    minute_match = re.search(r"\b(\d{1,3})\s*(?:min|mins|minuto|minutos)\b", text)
+    hour_match_relative = re.search(r"\b(\d{1,2})\s*(?:h|hr|hrs|hora|horas)\b", text)
+
+    if "media hora" in text:
+        relative_minutes = 30
+    elif "un cuarto" in text or "15 minutos" in text:
+        relative_minutes = 15
+    elif minute_match:
+        relative_minutes = int(minute_match.group(1))
+    elif hour_match_relative and "a las" not in text:
+        relative_minutes = int(hour_match_relative.group(1)) * 60
+
+    due = None
+    source = None
+
+    if relative_minutes is not None:
+        due = now + timedelta(minutes=relative_minutes)
+        source = "relative_window"
+    else:
+        explicit_match = re.search(
+            r"(?:a\s+las\s+)?\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.?m\.?|p\.?m\.?)?\b",
+            text,
+        )
+        if explicit_match:
+            hour = int(explicit_match.group(1))
+            minute = int(explicit_match.group(2) or 0)
+            meridian = (explicit_match.group(3) or "").replace(".", "")
+
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                if meridian == "pm" and hour < 12:
+                    hour += 12
+                elif meridian == "am" and hour == 12:
+                    hour = 0
+
+                due = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if due < now:
+                    due += timedelta(days=1)
+                source = "explicit_time"
+
+    if due:
+        schedule.update(
+            {
+                "callback_due_at": due.isoformat(),
+                "callback_due_at_utc": due.astimezone(timezone.utc).isoformat(),
+                "callback_due_local_date": due.strftime("%Y-%m-%d"),
+                "callback_due_local_time": due.strftime("%H:%M hrs"),
+                "callback_due_label": due.strftime("%Y-%m-%d %H:%M hrs"),
+                "callback_schedule_source": source,
+            }
+        )
+
+    return schedule
+
+
 def _city_fields(city_raw: str | None) -> dict[str, Any]:
     if not city_raw:
         return {}
@@ -176,9 +260,14 @@ def _normalize_extraction(payload: dict[str, Any]) -> dict[str, Any]:
     return extracted
 
 
-def _fields_from_extraction(extracted: dict[str, Any], profile_snapshot: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def _fields_from_extraction(
+    extracted: dict[str, Any],
+    profile_snapshot: dict[str, Any],
+    callback_schedule: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
     fields: dict[str, Any] = {}
     notes: list[str] = []
+    callback_schedule = callback_schedule or {}
 
     city_fields = _city_fields(extracted.get("city_raw"))
     fields.update(city_fields)
@@ -214,7 +303,18 @@ def _fields_from_extraction(extracted: dict[str, Any], profile_snapshot: dict[st
         fields["risk_level"] = "medium"
     if extracted.get("callback_requested"):
         window = extracted.get("callback_window") or "sin horario específico"
-        notes.append(f"Solicita llamada/contacto de Capital Humano: {window}")
+        due_time = callback_schedule.get("callback_due_local_time")
+        due_label = callback_schedule.get("callback_due_label")
+        if due_time:
+            notes.append(
+                f"Solicita llamada/contacto de Capital Humano: {window}. "
+                f"Hora sugerida de contacto: {due_time} ({callback_schedule.get('callback_timezone')})"
+            )
+        else:
+            notes.append(f"Solicita llamada/contacto de Capital Humano: {window}")
+        if due_label:
+            notes.append(f"Callback operativo agendable: {due_label}")
+        fields["requires_human"] = True
     for question in extracted.get("candidate_questions") or []:
         notes.append(f"Duda del candidato: {question}")
     for objection in extracted.get("objections") or []:
@@ -316,7 +416,8 @@ Return JSON:
             "events": [{"type": "lead_ingestion_failed", "error": f"{type(exc).__name__}: {exc}"}],
         }
 
-    fields, notes = _fields_from_extraction(extracted, profile_snapshot)
+    callback_schedule = _callback_schedule(extracted.get("callback_window")) if extracted.get("callback_requested") else {}
+    fields, notes = _fields_from_extraction(extracted, profile_snapshot, callback_schedule)
     updated = bool(fields)
 
     if conversation_key and fields:
@@ -329,7 +430,12 @@ Return JSON:
             intent=state.get("intent"),
             risk_level=fields.get("risk_level") or state.get("risk_level") or "low",
             requires_human=bool(fields.get("requires_human", False)),
-            metadata={"extracted": extracted, "updated_fields": sorted(fields.keys()), "notes": notes},
+            metadata={
+                "extracted": extracted,
+                "callback_schedule": callback_schedule,
+                "updated_fields": sorted(fields.keys()),
+                "notes": notes,
+            },
         )
 
     merged_profile = {**profile_snapshot, **fields}
@@ -340,6 +446,7 @@ Return JSON:
             "enabled": True,
             "updated": updated,
             "extracted": extracted,
+            "callback_schedule": callback_schedule,
             "updated_fields": sorted(fields.keys()),
             "notes": notes,
         },
@@ -349,6 +456,7 @@ Return JSON:
                 "updated": updated,
                 "updated_fields": sorted(fields.keys()),
                 "notes_count": len(notes),
+                "callback_due_local_time": callback_schedule.get("callback_due_local_time"),
             }
         ],
     }
