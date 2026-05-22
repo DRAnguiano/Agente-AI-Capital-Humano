@@ -3,11 +3,51 @@ import os
 from app.graphs.hr_state import HRState
 
 
+INTERNAL_SIDE_QUESTION_TERMS = (
+    "pagan",
+    "pago",
+    "sueldo",
+    "salario",
+    "kilometro",
+    "kilómetro",
+    "viaje",
+    "ruta",
+    "rutas",
+    "base",
+    "prestaciones",
+    "beneficios",
+    "requisito",
+    "requisitos",
+    "licencia",
+    "apto",
+    "horario",
+    "turno",
+)
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _effective_question(state: HRState) -> str:
+    rewrite = state.get("contextual_rewrite") or {}
+    if rewrite.get("should_use_rewrite") and rewrite.get("rewritten"):
+        return str(rewrite.get("rewritten") or "")
+    return str(state.get("question") or state.get("message") or "")
+
+
+def _is_internal_side_question(state: HRState) -> bool:
+    text = _effective_question(state).strip().lower()
+    if not text:
+        return False
+    has_question_shape = "?" in text or "¿" in text or any(
+        term in text
+        for term in ("cuanto", "cuánto", "como", "cómo", "cuales", "cuáles", "donde", "dónde", "sabe")
+    )
+    return has_question_shape and any(term in text for term in INTERNAL_SIDE_QUESTION_TERMS)
 
 
 def route_after_router(state: HRState) -> str:
@@ -23,6 +63,14 @@ def route_after_grading(state: HRState) -> str:
 def route_after_grading_or_web(state: HRState) -> str:
     if state.get("docs_are_relevant"):
         return "generate_answer"
+
+    # Pay, route, benefits, requirements and similar questions are internal HR
+    # knowledge. If Chroma misses them, do not jump to web/handoff; keep the
+    # flow in the internal RAG fallback so the candidate does not get an
+    # unnecessary escalation for a normal recruiting question.
+    if _is_internal_side_question(state):
+        return "fallback_no_context"
+
     if _env_bool("WEB_SEARCH_ENABLED", False):
         return "tavily_web_search"
     return "fallback_no_context"
