@@ -69,6 +69,9 @@ def _natural_profile_prompt(state: HRState) -> str:
     profile = state.get("profile_snapshot") or {}
     message = state.get("message") or ""
     current_stage = state.get("current_stage") or "START"
+    callback_schedule = lead.get("callback_schedule") or {}
+    callback_due_time = callback_schedule.get("callback_due_local_time")
+    callback_due_label = callback_schedule.get("callback_due_label")
 
     return f"""
 Eres Mundo, asistente de Capital Humano de Transmontes.
@@ -93,23 +96,72 @@ Prioridad para pedir datos faltantes:
 
 Reglas especiales:
 - Si callback_requested=true, confirma que la solicitud de llamada/contacto quedó anotada.
-- No prometas llamada en una hora exacta; di que Capital Humano lo revisará o lo contactará en cuanto sea posible.
-- Si la licencia o apto vencen pronto, indica que Capital Humano debe revisar la vigencia.
+- Si callback_due_local_time existe, menciona que queda solicitado seguimiento alrededor de esa hora.
+- No prometas llamada exacta ni confirmes agenda cerrada; usa frases como "queda solicitado" o "lo dejo registrado para seguimiento".
+- Si la licencia o apto vencen pronto, indica que Capital Humano debe revisar la vigencia antes de avanzar.
 - Si el teléfono ya está capturado, no vuelvas a pedir teléfono.
 - Si la disponibilidad ya está capturada, no vuelvas a pedir disponibilidad.
 - Si nombre completo ya está capturado, no vuelvas a pedir nombre.
 - Si ciudad ya está capturada, no vuelvas a pedir ciudad.
 - No digas que ya está contratado.
 - No inventes requisitos, pagos ni horarios.
+- No sugieras subir documentos si el candidato dijo que licencia o apto vencen pronto.
+- Solo sugiere subir documentación para agilizar revisión si el perfil parece en regla y sin vigencias próximas a vencer.
 - Máximo 2 párrafos cortos.
 
 Contexto de etapa actual: {current_stage}
 Mensaje del candidato: {message}
 Perfil actualizado: {profile}
 Extracción de lead: {lead}
+Callback calculado, si aplica:
+- callback_due_local_time: {callback_due_time}
+- callback_due_label: {callback_due_label}
 
 Respuesta:
 """.strip()
+
+
+def _fallback_natural_reply(state: HRState) -> str:
+    profile = state.get("profile_snapshot") or {}
+    lead = state.get("lead_ingestion") or {}
+    extracted = lead.get("extracted") or {}
+    callback_schedule = lead.get("callback_schedule") or {}
+
+    name = profile.get("nombre_completo") or ""
+    city = profile.get("ciudad")
+    phone = profile.get("telefono")
+    due_time = callback_schedule.get("callback_due_local_time")
+    has_expiring_docs = bool(
+        extracted.get("license_expiry_text")
+        or extracted.get("medical_expiry_text")
+        or profile.get("requires_human")
+    )
+
+    prefix = f"Gracias, {name}." if name else "Gracias por la información."
+
+    if extracted.get("callback_requested"):
+        if due_time:
+            callback_text = f" Dejo solicitada tu llamada para seguimiento alrededor de las {due_time}; Capital Humano lo validará según disponibilidad."
+        else:
+            callback_text = " Dejo solicitada tu llamada para seguimiento de Capital Humano."
+    else:
+        callback_text = ""
+
+    if has_expiring_docs:
+        review = " Como mencionas vigencias por revisar, Capital Humano debe validar tus documentos antes de avanzar."
+    else:
+        review = " Si tienes tu documentación vigente y en regla, puedes subirla para que Capital Humano revise tu perfil más rápido."
+
+    if not name:
+        question = " ¿Me confirmas tu nombre completo?"
+    elif not city:
+        question = " ¿De qué ciudad nos escribes?"
+    elif not phone:
+        question = " ¿Me compartes tu número de teléfono?"
+    else:
+        question = ""
+
+    return f"{prefix}{callback_text}{review}{question}".strip()
 
 
 def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
@@ -126,21 +178,7 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
     try:
         reply = call_llm(_natural_profile_prompt(state)).strip()
     except Exception:
-        profile = state.get("profile_snapshot") or {}
-        name = profile.get("nombre_completo") or ""
-        city = profile.get("ciudad")
-        phone = profile.get("telefono")
-        prefix = f"Gracias, {name}." if name else "Gracias por la información."
-        review = " Si algún documento está por vencer, Capital Humano debe revisar la vigencia antes de avanzar."
-        if not name:
-            question = " ¿Me confirmas tu nombre completo?"
-        elif not city:
-            question = " ¿De qué ciudad nos escribes?"
-        elif not phone:
-            question = " ¿Me compartes tu número de teléfono?"
-        else:
-            question = " Ya quedó anotado para seguimiento de Capital Humano."
-        reply = f"{prefix}{review}{question}"
+        reply = _fallback_natural_reply(state)
 
     if conversation_key:
         log_event(
@@ -154,6 +192,7 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
             metadata={
                 "lead_updated": bool(lead.get("updated", False)),
                 "updated_fields": lead.get("updated_fields", []),
+                "callback_schedule": lead.get("callback_schedule") or {},
                 "graph_route": "profile",
             },
         )
@@ -172,6 +211,7 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
                 "stage_preserved": True,
                 "lead_updated": bool(lead.get("updated", False)),
                 "updated_fields": lead.get("updated_fields", []),
+                "callback_due_local_time": (lead.get("callback_schedule") or {}).get("callback_due_local_time"),
             }
         ],
     }
