@@ -25,6 +25,7 @@ from app.graphs.hr_nodes_rag import (
 from app.graphs.hr_nodes_review import review_new_information_node
 from app.graphs.hr_nodes_router import route_message_node
 from app.graphs.hr_nodes_stubs import route_stub_response_node
+from app.graphs.hr_nodes_substance import substance_disclosure_analysis_node
 from app.graphs.hr_nodes_web_search import tavily_web_search_node
 from app.graphs.hr_routes import route_after_grading, route_after_grading_or_web
 from app.graphs.hr_state import HRState
@@ -207,6 +208,7 @@ def build_hr_full_router_test_graph():
     workflow.add_node("build_conversation_memory", build_conversation_memory_node)
     workflow.add_node("save_incoming_message", save_incoming_message_node)
     workflow.add_node("ingest_lead", ingest_lead_node)
+    workflow.add_node("substance_disclosure_analysis", substance_disclosure_analysis_node)
     workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
     workflow.add_node("route_stub_response", route_stub_response_node)
@@ -221,7 +223,8 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("load_conversation", "build_conversation_memory")
     workflow.add_edge("build_conversation_memory", "save_incoming_message")
     workflow.add_edge("save_incoming_message", "ingest_lead")
-    workflow.add_edge("ingest_lead", "classify_message")
+    workflow.add_edge("ingest_lead", "substance_disclosure_analysis")
+    workflow.add_edge("substance_disclosure_analysis", "classify_message")
     workflow.add_edge("classify_message", "route_message")
     workflow.add_conditional_edges(
         "route_message",
@@ -320,6 +323,7 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "conversation_memory_built": bool(memory),
         "current_may_reference_previous": bool(memory.get("current_may_reference_previous", False)),
         "lead_ingestion": final_state.get("lead_ingestion"),
+        "substance_disclosure_analysis": final_state.get("substance_disclosure_analysis"),
         "profile_followup_plan": final_state.get("profile_followup_plan"),
         "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),
         "web_search_used": bool(final_state.get("web_search_used", False)),
@@ -418,6 +422,7 @@ def _run_full_router_test_graph(
         "input_nodes_extracted": True,
         "memory_node_enabled": True,
         "lead_ingestion_node_enabled": True,
+        "substance_analysis_node_enabled": True,
         "classifier_node_enabled": True,
         "router_node_extracted": True,
         "rag_nodes_extracted": True,
