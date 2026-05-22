@@ -90,6 +90,7 @@ class HRState(TypedDict, total=False):
 
     # RAG state
     question: str
+    question_rewrite: dict[str, Any]
     retrieved_docs: list[dict[str, Any]]
     relevant_docs: list[dict[str, Any]]
     docs_are_relevant: bool
