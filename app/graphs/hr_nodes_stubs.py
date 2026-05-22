@@ -13,6 +13,7 @@ from app.graphs.hr_nodes_profile import (
     natural_lead_profile_response_node,
     update_profile_and_stage_node,
 )
+from app.graphs.hr_nodes_profile_followup import plan_profile_followup_node
 from app.graphs.hr_state import HRState
 
 
@@ -74,8 +75,11 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
     if route == "profile":
         lead = state.get("lead_ingestion") or {}
         if lead.get("updated"):
-            natural_update = natural_lead_profile_response_node(state)
+            followup_plan_update = plan_profile_followup_node(state)
+            planned_state: HRState = {**state, **followup_plan_update}
+            natural_update = natural_lead_profile_response_node(planned_state)
             return {
+                **followup_plan_update,
                 **natural_update,
                 **_flow_flags(profile=True),
             }
