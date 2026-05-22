@@ -111,10 +111,16 @@ def _parse_guard_result(raw: str) -> dict[str, Any]:
     check = str(data.get("check") or "FAIL").strip().upper()
     if check not in {"PASS", "FAIL"}:
         check = "FAIL"
+
+    # A failed guard must always use the controlled reply, even if the LLM
+    # mistakenly returns use_controlled_reply=false. This keeps debug fields
+    # aligned with the action actually taken by the node.
+    use_controlled_reply = True if check == "FAIL" else bool(data.get("use_controlled_reply", False))
+
     return {
         "check": check,
         "reason": _clean_text(data.get("reason"), 240) or "guard_checked",
-        "use_controlled_reply": bool(data.get("use_controlled_reply", check == "FAIL")),
+        "use_controlled_reply": use_controlled_reply,
     }
 
 
@@ -138,7 +144,7 @@ def profile_response_guard_node(state: HRState) -> dict[str, Any]:
         guard = {"check": "FAIL", "reason": f"guard_exception:{type(exc).__name__}", "use_controlled_reply": True}
 
     reply = state.get("reply") or state.get("text") or ""
-    if guard.get("check") == "FAIL" or guard.get("use_controlled_reply"):
+    if guard.get("use_controlled_reply"):
         reply = _controlled_reply_from_plan(state)
         guard["controlled_reply_used"] = True
     else:
