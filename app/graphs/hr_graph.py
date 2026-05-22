@@ -22,6 +22,7 @@ from app.graphs.hr_nodes_rag import (
     retrieve_documents_node,
     save_output_node,
 )
+from app.graphs.hr_nodes_response_guard import profile_response_guard_node
 from app.graphs.hr_nodes_review import review_new_information_node
 from app.graphs.hr_nodes_router import route_message_node
 from app.graphs.hr_nodes_stubs import route_stub_response_node
@@ -212,6 +213,7 @@ def build_hr_full_router_test_graph():
     workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
     workflow.add_node("route_stub_response", route_stub_response_node)
+    workflow.add_node("profile_response_guard", profile_response_guard_node)
     workflow.add_node("tavily_web_search", tavily_web_search_node)
     workflow.add_node("review_new_information", review_new_information_node)
     _add_rag_nodes(workflow)
@@ -237,7 +239,8 @@ def build_hr_full_router_test_graph():
     )
     workflow.add_edge("tavily_web_search", "review_new_information")
     workflow.add_edge("review_new_information", "route_stub_response")
-    workflow.add_edge("route_stub_response", "save_assistant_message")
+    workflow.add_edge("route_stub_response", "profile_response_guard")
+    workflow.add_edge("profile_response_guard", "save_assistant_message")
     workflow.add_edge("retrieve_documents", "grade_documents")
     workflow.add_conditional_edges(
         "grade_documents",
@@ -325,6 +328,7 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "lead_ingestion": final_state.get("lead_ingestion"),
         "substance_disclosure_analysis": final_state.get("substance_disclosure_analysis"),
         "profile_followup_plan": final_state.get("profile_followup_plan"),
+        "profile_response_guard": final_state.get("profile_response_guard"),
         "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),
         "web_search_used": bool(final_state.get("web_search_used", False)),
         "web_results_count": len(web_results),
@@ -423,6 +427,7 @@ def _run_full_router_test_graph(
         "memory_node_enabled": True,
         "lead_ingestion_node_enabled": True,
         "substance_analysis_node_enabled": True,
+        "profile_response_guard_enabled": True,
         "classifier_node_enabled": True,
         "router_node_extracted": True,
         "rag_nodes_extracted": True,
