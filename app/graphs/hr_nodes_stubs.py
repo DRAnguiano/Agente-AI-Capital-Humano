@@ -18,8 +18,8 @@ from app.graphs.hr_state import HRState
 
 
 POLICY_BOUNDARY_FALLBACK_REPLY = (
-    "Por seguridad operativa, ese punto debe revisarlo Capital Humano antes de continuar. "
-    "No puedo confirmarlo por aquí ni avanzar el proceso con ese tema abierto."
+    "Nuestra empresa tiene política de 0 tolerancia. "
+    "Por seguridad, Capital Humano debe revisar este punto antes de continuar con el proceso."
 )
 
 
