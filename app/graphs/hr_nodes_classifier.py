@@ -146,6 +146,33 @@ def _lead_has_expiring_document_facts(state: HRState) -> bool:
     )
 
 
+def _substance_analysis(state: HRState | None) -> dict[str, Any]:
+    if state is None:
+        return {}
+    return state.get("substance_disclosure_analysis") or {}
+
+
+def _has_restrictive_substance_signal(state: HRState | None) -> bool:
+    analysis = _substance_analysis(state)
+    return bool(
+        analysis.get("detected")
+        and (
+            analysis.get("status") == "ACTIVE_OR_INTENDED_USE"
+            or analysis.get("operational_risk") == "high"
+            or analysis.get("requires_review") is True
+        )
+    )
+
+
+def _has_analytics_only_substance_signal(state: HRState | None) -> bool:
+    analysis = _substance_analysis(state)
+    return bool(
+        analysis.get("detected")
+        and analysis.get("analytics_flag") is True
+        and not _has_restrictive_substance_signal(state)
+    )
+
+
 def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> dict[str, Any]:
     data = {**DEFAULT_ROUTE, **(payload or {})}
 
@@ -156,7 +183,14 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
     if datasource in WEB_DATASOURCES:
         route = "web_review"
 
-    if state is not None and _lead_requested_callback(state):
+    if _has_restrictive_substance_signal(state):
+        route = "policy_boundary"
+        datasource = "profile"
+        data["reason"] = "substance_operational_safety_boundary"
+        data["risk_level"] = "high"
+        data["requires_human"] = True
+        data["requires_clarification"] = False
+    elif state is not None and _lead_requested_callback(state):
         route = "profile"
         datasource = "profile"
         data["reason"] = "callback_request_captured"
@@ -176,6 +210,13 @@ def _normalize_route(payload: dict[str, Any], state: HRState | None = None) -> d
             route = "rag"
             datasource = "vectorstore"
             data["reason"] = "profile_facts_with_side_question"
+
+    if _has_analytics_only_substance_signal(state):
+        current_reason = str(data.get("reason") or "route_question").strip().lower()
+        if current_reason == "route_question":
+            data["reason"] = "substance_analytics_signal_captured"
+        if str(data.get("risk_level") or "low").lower() == "low":
+            data["risk_level"] = "medium"
 
     risk_level = str(data.get("risk_level") or "low").strip().lower()
     if risk_level not in {"low", "medium", "high"}:
@@ -221,8 +262,8 @@ def classify_message_node(state: HRState) -> dict[str, Any]:
     Plaban-style question router.
 
     This node does not try to maintain a hand-written intent taxonomy. It only
-    decides the next datasource/route for the graph: vectorstore, websearch,
-    direct greeting, profile, fallback or review paths.
+    decides the next datasource/route for the graph using upstream structured
+    analyses such as lead_ingestion and substance_disclosure_analysis.
     """
     if not _env_bool("MESSAGE_CLASSIFIER_ENABLED", True):
         route = {**DEFAULT_ROUTE, "reason": "router_disabled"}
@@ -239,6 +280,7 @@ def classify_message_node(state: HRState) -> dict[str, Any]:
     profile_snapshot = state.get("profile_snapshot") or {}
     conversation_memory = state.get("conversation_memory") or {}
     lead_ingestion = state.get("lead_ingestion") or {}
+    substance_disclosure_analysis = state.get("substance_disclosure_analysis") or {}
 
     prompt = f"""
 You are a routing node for a Mexican trucking recruiting assistant.
@@ -261,6 +303,8 @@ Do not force the profile flow when the candidate is asking a side question.
 If the current message contains both profile facts and an explicit question about pay, benefits, bases, requirements, schedule, routes or policy, choose vectorstore/RAG for the response. Lead ingestion already saved the facts.
 If lead_ingestion shows callback_requested=true, choose profile/natural lead response, not RAG.
 If lead_ingestion captured license or medical-expiry facts and the current message is not an explicit question, choose profile/natural lead response, not RAG. The facts were already saved and Capital Humano must review them.
+If substance_disclosure_analysis has ACTIVE_OR_INTENDED_USE or operational_risk=high, choose policy_boundary.
+If substance_disclosure_analysis is RECENT_PAST_USE or PAST_USE with medium risk, do not block the profile flow only for that reason; it is an analytics signal.
 
 === POLICY CONTEXT ===
 {policy}
@@ -270,6 +314,7 @@ current_stage: {current_stage}
 profile_snapshot: {json.dumps(profile_snapshot, ensure_ascii=False, default=str)}
 conversation_memory: {json.dumps(conversation_memory, ensure_ascii=False, default=str)}
 lead_ingestion: {json.dumps(lead_ingestion, ensure_ascii=False, default=str)}
+substance_disclosure_analysis: {json.dumps(substance_disclosure_analysis, ensure_ascii=False, default=str)}
 
 === CANDIDATE MESSAGE ===
 {message}
@@ -315,6 +360,8 @@ Return JSON:
                 "risk_level": route["risk_level"],
                 "reason": route["reason"],
                 "confidence": route["confidence"],
+                "substance_status": substance_disclosure_analysis.get("status"),
+                "substance_operational_risk": substance_disclosure_analysis.get("operational_risk"),
             }
         ],
     }
