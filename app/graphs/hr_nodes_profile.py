@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from app.db import log_event, update_candidate_profile, update_stage
@@ -7,6 +8,14 @@ from app.orchestrator import Stage, decide_next_stage, extract_profile_fields
 
 
 PRIVATE_PROFILE_KEYS = {"_city_catalog", "_city_requires_ch_validation"}
+
+GENERIC_CLOSING_PATTERNS = [
+    r"\n*¿Hay algo más en lo que pueda ayudarte(?: en este momento)?\??\s*$",
+    r"\n*¿Puedo ayudarte con algo más\??\s*$",
+    r"\n*¿Te puedo ayudar con algo más\??\s*$",
+    r"\n*Si tienes otra duda.*$",
+    r"\n*Quedo atento a cualquier duda.*$",
+]
 
 
 def _public_profile_fields(fields: dict[str, Any]) -> dict[str, Any]:
@@ -36,6 +45,36 @@ def _next_missing_profile_field(profile: dict[str, Any]) -> dict[str, str | None
         if not profile.get(key):
             return {"key": key, "label": label, "question": question}
     return {"key": None, "label": None, "question": None}
+
+
+def _strip_generic_closings(reply: str) -> str:
+    cleaned = (reply or "").strip()
+    for pattern in GENERIC_CLOSING_PATTERNS:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+    return cleaned
+
+
+def _force_next_profile_question(reply: str, next_missing: dict[str, str | None]) -> str:
+    """
+    Keep the LLM conversational, but enforce the graph's single next-field policy.
+
+    If the model already ended with a question, replace that final question with
+    the canonical question selected by the graph. This avoids duplicate endings.
+    """
+    cleaned = _strip_generic_closings(reply)
+    question = (next_missing.get("question") or "").strip()
+
+    if not question:
+        return cleaned
+
+    cleaned = re.sub(
+        r"(\n*\s*¿[^?]*\?\s*)+$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    ).strip()
+
+    return f"{cleaned}\n\n{question}".strip()
 
 
 def extract_profile_fields_node(state: HRState) -> dict[str, Any]:
@@ -124,6 +163,8 @@ Reglas especiales:
 - Prohibido pedir dos datos en la misma pregunta. No escribas frases como "nombre completo y ciudad" o "nombre y teléfono".
 - Si el dato faltante permitido es null, no hagas preguntas; solo confirma seguimiento.
 - Si la licencia o apto vencen pronto, indica que Capital Humano debe revisar la vigencia antes de avanzar.
+- Aunque Capital Humano deba revisar vigencias, continúa la captura natural del siguiente dato faltante permitido.
+- No cierres con frases genéricas como "¿Hay algo más en lo que pueda ayudarte?".
 - Si el teléfono ya está capturado, no vuelvas a pedir teléfono.
 - Si la disponibilidad ya está capturada, no vuelvas a pedir disponibilidad.
 - Si nombre completo ya está capturado, no vuelvas a pedir nombre.
@@ -166,7 +207,10 @@ def _fallback_natural_reply(state: HRState) -> str:
 
     if extracted.get("callback_requested"):
         if due_time:
-            callback_text = f" Dejo solicitada tu llamada para seguimiento alrededor de las {due_time}; Capital Humano lo validará según disponibilidad."
+            callback_text = (
+                f" Dejo solicitada tu llamada para seguimiento alrededor de las {due_time}; "
+                "Capital Humano lo validará según disponibilidad."
+            )
         else:
             callback_text = " Dejo solicitada tu llamada para seguimiento de Capital Humano."
     else:
@@ -196,6 +240,8 @@ def natural_lead_profile_response_node(state: HRState) -> dict[str, Any]:
         reply = call_llm(_natural_profile_prompt(state)).strip()
     except Exception:
         reply = _fallback_natural_reply(state)
+
+    reply = _force_next_profile_question(reply, next_missing)
 
     if conversation_key:
         log_event(
