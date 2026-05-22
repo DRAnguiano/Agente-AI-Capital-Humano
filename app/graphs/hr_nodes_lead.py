@@ -5,7 +5,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.db import find_city_catalog_match, log_event, update_candidate_profile
+from app.db import (
+    find_city_catalog_match,
+    log_event,
+    sync_conversation_risk_from_profile,
+    update_candidate_profile,
+)
 from app.graphs.hr_state import HRState
 from app.indexer import call_llm
 
@@ -419,9 +424,16 @@ Return JSON:
     callback_schedule = _callback_schedule(extracted.get("callback_window")) if extracted.get("callback_requested") else {}
     fields, notes = _fields_from_extraction(extracted, profile_snapshot, callback_schedule)
     updated = bool(fields)
+    aggregate_risk_sync = None
 
     if conversation_key and fields:
         update_candidate_profile(conversation_key, fields)
+        aggregate_risk_sync = sync_conversation_risk_from_profile(
+            conversation_key,
+            risk_level=fields.get("risk_level") or state.get("risk_level") or "low",
+            requires_human=bool(fields.get("requires_human", False)),
+            intent=state.get("intent"),
+        )
         log_event(
             conversation_key=conversation_key,
             event_type="lead_ingested",
@@ -435,13 +447,22 @@ Return JSON:
                 "callback_schedule": callback_schedule,
                 "updated_fields": sorted(fields.keys()),
                 "notes": notes,
+                "aggregate_risk_sync": aggregate_risk_sync,
             },
         )
 
     merged_profile = {**profile_snapshot, **fields}
+    state_risk = aggregate_risk_sync.get("risk_level") if aggregate_risk_sync else state.get("risk_level")
+    state_requires_human = (
+        bool(aggregate_risk_sync.get("requires_human"))
+        if aggregate_risk_sync
+        else bool(state.get("requires_human", False)) or bool(fields.get("requires_human", False))
+    )
 
     return {
         "profile_snapshot": merged_profile,
+        "risk_level": state_risk,
+        "requires_human": state_requires_human,
         "lead_ingestion": {
             "enabled": True,
             "updated": updated,
@@ -449,6 +470,7 @@ Return JSON:
             "callback_schedule": callback_schedule,
             "updated_fields": sorted(fields.keys()),
             "notes": notes,
+            "aggregate_risk_sync": aggregate_risk_sync,
         },
         "events": [
             {
@@ -457,6 +479,7 @@ Return JSON:
                 "updated_fields": sorted(fields.keys()),
                 "notes_count": len(notes),
                 "callback_due_local_time": callback_schedule.get("callback_due_local_time"),
+                "aggregate_risk_sync": aggregate_risk_sync,
             }
         ],
     }
