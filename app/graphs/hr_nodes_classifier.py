@@ -314,7 +314,7 @@ def _normalize_rewrite(payload: dict[str, Any], message: str, state: HRState | N
 
     return {
         "original": _clean_text(data.get("original"), 600) or message,
-        "rewritten": rewritten,
+        "rewritten": _protect_ambiguous_slang_rewrite(message, rewritten),
         "corrections": clean_corrections,
         "intent_preserved": intent_preserved,
         "confidence": confidence,
@@ -322,6 +322,48 @@ def _normalize_rewrite(payload: dict[str, Any], message: str, state: HRState | N
         "should_retry_routing": bool(_clean_bool(data.get("should_retry_routing", should_use)) and confidence >= MIN_REWRITE_CONFIDENCE),
         "reason": _clean_text(data.get("reason"), 300) or "contextual_rewrite_checked",
     }
+
+
+
+def _protect_ambiguous_slang_rewrite(original: str, rewritten: str) -> str:
+    """
+    Prevent contextual rewrite from turning ambiguous trucking slang into an
+    explicit substance confession.
+
+    Example:
+    BAD: "cachimbr" -> "marihuana"
+    GOOD: keep "cachimbear" and let substance_disclosure_analysis/RAG answer both possibilities.
+    """
+    original_l = (original or "").lower()
+    rewritten_l = (rewritten or "").lower()
+
+    has_cachimba = any(
+        term in original_l
+        for term in ("cachimba", "cachimbear", "cachimbr", "cachimb")
+    )
+
+    if not has_cachimba:
+        return rewritten
+
+    explicit_substance_terms = (
+        "marihuana",
+        "mariguana",
+        "droga",
+        "drogas",
+        "cocaína",
+        "cocaina",
+        "cristal",
+        "perico",
+        "metanfetamina",
+        "sustancias",
+        "alcohol",
+    )
+
+    if not any(term in rewritten_l for term in explicit_substance_terms):
+        return rewritten
+
+    # Preserve the candidate's actual ambiguity instead of creating a confession.
+    return "¿Sabe si puedo continuar el proceso si antes me gustaba cachimbear, pero ya cambié?"
 
 
 def contextual_rewrite_node(state: HRState) -> dict[str, Any]:

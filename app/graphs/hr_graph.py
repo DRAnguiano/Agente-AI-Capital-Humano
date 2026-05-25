@@ -23,12 +23,18 @@ from app.graphs.hr_nodes_rag import (
     save_output_node,
 )
 from app.graphs.hr_nodes_response_guard import profile_response_guard_node
+from app.graphs.hr_nodes_rewrite import rewrite_question_node
+from app.graphs.hr_nodes_rewrite_guard import rewrite_safety_guard_node
 from app.graphs.hr_nodes_review import review_new_information_node
 from app.graphs.hr_nodes_router import route_message_node
 from app.graphs.hr_nodes_stubs import route_stub_response_node
 from app.graphs.hr_nodes_substance import substance_disclosure_analysis_node
 from app.graphs.hr_nodes_web_search import tavily_web_search_node
-from app.graphs.hr_routes import route_after_grading, route_after_grading_or_web
+from app.graphs.hr_routes import (
+    route_after_full_router,
+    route_after_grading,
+    route_after_grading_or_web,
+)
 from app.graphs.hr_state import HRState
 
 
@@ -90,16 +96,7 @@ def build_hr_router_test_graph():
 
 
 def _route_after_rag_test_router(state: HRState) -> str:
-    return "retrieve_documents" if state.get("route") == "rag" else "save_output"
-
-
-def _route_after_full_router(state: HRState) -> str:
-    route = state.get("route")
-    if route == "rag":
-        return "retrieve_documents"
-    if route == "web_review":
-        return "tavily_web_search"
-    return "route_stub_response"
+    return "rewrite_question" if state.get("route") == "rag" else "save_output"
 
 
 def _route_after_rag_answer_check(state: HRState) -> str:
@@ -116,6 +113,7 @@ def _route_after_rag_replacement_fallback(state: HRState) -> str:
 
 
 def _add_rag_nodes(workflow: StateGraph):
+    workflow.add_node("rewrite_question", rewrite_question_node)
     workflow.add_node("retrieve_documents", retrieve_documents_node)
     workflow.add_node("grade_documents", grade_documents_node)
     workflow.add_node("fallback_no_context", fallback_no_context_node)
@@ -140,8 +138,9 @@ def build_hr_rag_test_graph():
     workflow.add_conditional_edges(
         "route_message",
         _route_after_rag_test_router,
-        {"retrieve_documents": "retrieve_documents", "save_output": "save_output"},
+        {"rewrite_question": "rewrite_question", "save_output": "save_output"},
     )
+    workflow.add_edge("rewrite_question", "retrieve_documents")
     workflow.add_edge("retrieve_documents", "grade_documents")
     workflow.add_conditional_edges(
         "grade_documents",
@@ -177,8 +176,9 @@ def build_hr_rag_replacement_test_graph():
     workflow.add_conditional_edges(
         "route_message",
         _route_after_rag_test_router,
-        {"retrieve_documents": "retrieve_documents", "save_output": "save_output"},
+        {"rewrite_question": "rewrite_question", "save_output": "save_output"},
     )
+    workflow.add_edge("rewrite_question", "retrieve_documents")
     workflow.add_edge("retrieve_documents", "grade_documents")
     workflow.add_conditional_edges(
         "grade_documents",
@@ -211,6 +211,7 @@ def build_hr_full_router_test_graph():
     workflow.add_node("ingest_lead", ingest_lead_node)
     workflow.add_node("substance_disclosure_analysis", substance_disclosure_analysis_node)
     workflow.add_node("contextual_rewrite", contextual_rewrite_node)
+    workflow.add_node("rewrite_safety_guard", rewrite_safety_guard_node)
     workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
     workflow.add_node("route_stub_response", route_stub_response_node)
@@ -225,16 +226,16 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("normalize_input", "load_conversation")
     workflow.add_edge("load_conversation", "build_conversation_memory")
     workflow.add_edge("build_conversation_memory", "save_incoming_message")
-    workflow.add_edge("save_incoming_message", "ingest_lead")
-    workflow.add_edge("ingest_lead", "substance_disclosure_analysis")
+    workflow.add_edge("save_incoming_message", "substance_disclosure_analysis")
     workflow.add_edge("substance_disclosure_analysis", "contextual_rewrite")
-    workflow.add_edge("contextual_rewrite", "classify_message")
+    workflow.add_edge("contextual_rewrite", "rewrite_safety_guard")
+    workflow.add_edge("rewrite_safety_guard", "classify_message")
     workflow.add_edge("classify_message", "route_message")
     workflow.add_conditional_edges(
         "route_message",
-        _route_after_full_router,
+        route_after_full_router,
         {
-            "retrieve_documents": "retrieve_documents",
+            "rewrite_question": "rewrite_question",
             "tavily_web_search": "tavily_web_search",
             "route_stub_response": "route_stub_response",
         },
@@ -243,6 +244,7 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("review_new_information", "route_stub_response")
     workflow.add_edge("route_stub_response", "profile_response_guard")
     workflow.add_edge("profile_response_guard", "save_assistant_message")
+    workflow.add_edge("rewrite_question", "retrieve_documents")
     workflow.add_edge("retrieve_documents", "grade_documents")
     workflow.add_conditional_edges(
         "grade_documents",

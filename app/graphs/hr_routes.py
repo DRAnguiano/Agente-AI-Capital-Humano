@@ -43,15 +43,45 @@ def _is_internal_side_question(state: HRState) -> bool:
     text = _effective_question(state).strip().lower()
     if not text:
         return False
+
     has_question_shape = "?" in text or "¿" in text or any(
         term in text
-        for term in ("cuanto", "cuánto", "como", "cómo", "cuales", "cuáles", "donde", "dónde", "sabe")
+        for term in (
+            "cuanto",
+            "cuánto",
+            "como",
+            "cómo",
+            "cuales",
+            "cuáles",
+            "donde",
+            "dónde",
+            "sabe",
+        )
     )
+
     return has_question_shape and any(term in text for term in INTERNAL_SIDE_QUESTION_TERMS)
 
 
 def route_after_router(state: HRState) -> str:
     return state.get("route", "fallback")
+
+
+def route_after_full_router(state: HRState) -> str:
+    """
+    Map semantic routes to technical graph nodes.
+
+    Keep state["route"] as a business/semantic route. This function is the only
+    place that translates it into LangGraph node names.
+    """
+    route = state.get("route")
+
+    if route == "rag":
+        return "rewrite_question"
+
+    if route == "web_review":
+        return "tavily_web_search"
+
+    return "route_stub_response"
 
 
 def route_after_grading(state: HRState) -> str:
@@ -73,10 +103,23 @@ def route_after_grading_or_web(state: HRState) -> str:
 
     if _env_bool("WEB_SEARCH_ENABLED", False):
         return "tavily_web_search"
+
     return "fallback_no_context"
 
 
 def route_after_answer_check(state: HRState) -> str:
+    """
+    Route after answer quality checks.
+
+    A failed RAG answer is not automatically a human-handoff case. Most failures
+    mean missing context or weak grounding, so the safe default is the controlled
+    no-context fallback. Human handoff remains reserved for explicit high-risk
+    routes decided before generation.
+    """
     if state.get("answer_check") == "PASS":
         return "save_output"
-    return "human_handoff"
+
+    if state.get("requires_human") or state.get("risk_level") == "high":
+        return "route_stub_response"
+
+    return "fallback_no_context"

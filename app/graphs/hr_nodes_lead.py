@@ -336,6 +336,51 @@ def _fields_from_extraction(
     return fields, notes
 
 
+
+def _drop_speculative_experience_from_lead(lead: dict) -> dict:
+    """
+    Remove speculative experience_text from lead extraction.
+
+    The bot must not store "experiencia_quinta_rueda" when the candidate only
+    asked whether they can continue or whether they are eligible.
+    """
+    if not isinstance(lead, dict):
+        return lead
+
+    extracted = lead.get("extracted")
+    if not isinstance(extracted, dict):
+        return lead
+
+    exp = str(extracted.get("experience_text") or "").lower()
+
+    speculative = any(marker in exp for marker in (
+        "no está claro",
+        "no esta claro",
+        "no proporciona",
+        "pregunta si",
+        "pregunta sobre",
+        "expresa interés",
+        "expresa interes",
+        "interés en conducir",
+        "interes en conducir",
+        "no menciona experiencia",
+        "no indica experiencia",
+        "posibilidad de conducir",
+    ))
+
+    if speculative:
+        extracted["experience_text"] = None
+
+        updated = lead.get("updated_fields")
+        if isinstance(updated, list):
+            lead["updated_fields"] = [
+                item for item in updated
+                if item != "experiencia_quinta_rueda"
+            ]
+
+    return lead
+
+
 def ingest_lead_node(state: HRState) -> dict[str, Any]:
     if not _env_bool("LEAD_INGESTION_ENABLED", True):
         return {

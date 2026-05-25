@@ -40,10 +40,17 @@ services:
 
       HF_HOME: /app/.cache
       SENTENCE_TRANSFORMERS_HOME: /app/.cache
+
+      CELERY_BROKER_URL: redis://chatwoot_redis:6379/1
+      CELERY_RESULT_BACKEND: redis://chatwoot_redis:6379/1
+      FIRST_REPLY_INTRO_ENABLED: ${FIRST_REPLY_INTRO_ENABLED:-true}
+      ASSISTANT_PUBLIC_INTRO: ${ASSISTANT_PUBLIC_INTRO:-Hola, soy Mundo, asistente de Capital Humano.}
+      ANONYMIZED_TELEMETRY: "false"
     ports:
       - "8000:8000"
     volumes:
       - chroma_data:/app/chroma_db
+      - chroma_bge_m3:/app/chroma_db_bge_m3
       - ./.cache:/app/.cache
       - ./data:/app/data
     depends_on:
@@ -55,6 +62,50 @@ services:
           # Alias válido para que Chatwoot UI acepte la URL del webhook:
           # http://api.localhost:8000/chatwoot/webhook?token=...
           - api.localhost
+    restart: unless-stopped
+
+
+  #######################################
+  # CELERY WORKER / DEBOUNCE INBOUND CHATWOOT
+  #######################################
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hr-rag-api:latest
+    container_name: hr_worker
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
+      POSTGRES_USER: ${POSTGRES_USER:-hr_david}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
+
+      CHATWOOT_BASE_URL: http://chatwoot_rails:3000
+
+      HF_HOME: /app/.cache
+      SENTENCE_TRANSFORMERS_HOME: /app/.cache
+
+      CELERY_BROKER_URL: redis://chatwoot_redis:6379/1
+      CELERY_RESULT_BACKEND: redis://chatwoot_redis:6379/1
+      FIRST_REPLY_INTRO_ENABLED: ${FIRST_REPLY_INTRO_ENABLED:-true}
+      ASSISTANT_PUBLIC_INTRO: ${ASSISTANT_PUBLIC_INTRO:-Hola, soy Mundo, asistente de Capital Humano.}
+      ANONYMIZED_TELEMETRY: "false"
+    command:
+      - sh
+      - -c
+      - celery -A app.tasks_chatwoot worker --loglevel=INFO -Q inbound
+    volumes:
+      - chroma_data:/app/chroma_db
+      - chroma_bge_m3:/app/chroma_db_bge_m3
+      - ./.cache:/app/.cache
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - chatwoot_rails
+      - chatwoot_redis
     restart: unless-stopped
 
   #######################################
@@ -219,6 +270,7 @@ services:
 
 volumes:
   chroma_data:
+  chroma_bge_m3:
   n8n_data:
   pg_data:
   chatwoot_pg_data:

@@ -10,7 +10,6 @@ from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
 from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int
-from .orchestrator import orchestrate_message
 from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
@@ -874,8 +873,63 @@ async def chatwoot_webhook(
 
     username = contact.get("name") or f"Chatwoot Contact {channel_user_id}"
 
+    if os.getenv("INBOUND_DEBOUNCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        try:
+            from .tasks_chatwoot import enqueue_chatwoot_message
+
+            queued = enqueue_chatwoot_message(
+                {
+                    "account_id": account_id,
+                    "conversation_id": conversation_id,
+                    "inbox_id": inbox_id,
+                    "message_id": message_id,
+                    "channel_user_id": channel_user_id,
+                    "username": username,
+                    "phone": contact.get("phone"),
+                    "channel_label": channel_label,
+                    "content": content,
+                }
+            )
+
+            print(
+                "[CHATWOOT_DEBOUNCE_QUEUED]",
+                json.dumps(
+                    {
+                        "account_id": account_id,
+                        "conversation_id": conversation_id,
+                        "message_id": message_id,
+                        "channel_user_id": channel_user_id,
+                        "debounce_seconds": queued.get("debounce_seconds"),
+                        "content_preview": content[:300],
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+
+            return {
+                "status": "accepted",
+                "queued": True,
+                "debounce_seconds": queued.get("debounce_seconds"),
+                "conversation_id": conversation_id,
+                "account_id": account_id,
+                "message_id": message_id,
+            }
+
+        except Exception as exc:
+            traceback.print_exc()
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "error": _public_error(exc),
+                    "where": "chatwoot_debounce_enqueue",
+                },
+            )
+
+
     try:
-        result = orchestrate_message(
+        result = run_hr_graph_message(
             channel="chatwoot",
             channel_user_id=channel_user_id,
             username=username,

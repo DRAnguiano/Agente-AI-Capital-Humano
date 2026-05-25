@@ -71,6 +71,53 @@ def _normalize_rewrite(payload: dict[str, Any], original_question: str) -> dict[
     }
 
 
+
+def _is_ambiguous_cachimba_retrieval_case(state: HRState, question: str) -> bool:
+    substance = state.get("substance_disclosure_analysis") or {}
+    contextual = state.get("contextual_rewrite") or {}
+
+    haystack = " ".join(
+        str(x or "")
+        for x in (
+            question,
+            contextual.get("rewritten"),
+            contextual.get("original"),
+            substance.get("raw_mention"),
+        )
+    ).lower()
+
+    has_cachimba = any(
+        term in haystack
+        for term in ("cachimba", "cachimbear", "cachimbr", "cachimb")
+    )
+
+    return bool(
+        has_cachimba
+        and substance.get("detected") is True
+        and str(substance.get("status") or "").upper() == "AMBIGUOUS"
+    )
+
+
+def _ambiguous_cachimba_retrieval_rewrite(original_question: str) -> dict[str, Any]:
+    return {
+        "rewritten_question": (
+            "significado cachimbear cachimba paradores autorizados descanso alimentos "
+            "política cero tolerancia pruebas toxicológicas sustancias alcohol operador quinta rueda"
+        ),
+        "normalized_terms": [
+            "cachimbear",
+            "cachimba",
+            "paradores autorizados",
+            "cero tolerancia",
+            "pruebas toxicológicas",
+            "sustancias",
+            "alcohol",
+        ],
+        "reason": "ambiguous_cachimba_dual_retrieval",
+        "confidence": 0.95,
+    }
+
+
 def rewrite_question_node(state: HRState) -> dict[str, Any]:
     """
     Rewrite only the retrieval query, not the final user-facing answer.
@@ -96,6 +143,24 @@ def rewrite_question_node(state: HRState) -> dict[str, Any]:
 
     classifier = state.get("classifier") or {}
     conversation_memory = state.get("conversation_memory") or {}
+
+    if _is_ambiguous_cachimba_retrieval_case(state, original_question):
+        rewrite = _ambiguous_cachimba_retrieval_rewrite(original_question)
+        rewritten_question = rewrite["rewritten_question"]
+        return {
+            "question": rewritten_question,
+            "question_rewrite": rewrite,
+            "events": [
+                {
+                    "type": "question_rewritten",
+                    "original_question": original_question,
+                    "rewritten_question": rewritten_question,
+                    "normalized_terms": rewrite.get("normalized_terms", []),
+                    "reason": rewrite.get("reason"),
+                    "confidence": rewrite.get("confidence"),
+                }
+            ],
+        }
 
     prompt = f"""
 You are a query rewrite node for document retrieval in a Mexican trucking recruiting assistant.
