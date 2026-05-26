@@ -21,3 +21,7 @@ test-chatwoot.html
 
 # Local document dumps
 DOCUMENTOS/
+
+# Local migration backups
+_backup_langgraph_step1/
+_backup_rag_docs_*/

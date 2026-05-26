@@ -4,7 +4,7 @@ from app.graphs.hr_state import HRState
 from app.indexer import call_llm
 
 
-ANALYTICS_SAFE_ACK = "Gracias por aclararlo. Podemos continuar con tus datos."
+ANALYTICS_SAFE_ACK = "Gracias por comentarlo. Por seguridad operativa, ese punto debe revisarlo directamente Capital Humano. La empresa maneja política de cero tolerancia y puede realizar pruebas toxicológicas; por este medio no puedo confirmar continuidad ni descarte del proceso."
 RESTRICTIVE_REVIEW_ACK = (
     "Nuestra empresa tiene política de 0 tolerancia. "
     "Capital Humano debe revisar este punto antes de continuar."
