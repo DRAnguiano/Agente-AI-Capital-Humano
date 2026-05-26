@@ -123,3 +123,72 @@ def route_after_answer_check(state: HRState) -> str:
         return "route_stub_response"
 
     return "fallback_no_context"
+
+def route_after_web_review(state: HRState) -> str:
+    """
+    After Tavily/review, avoid dead-ending into fallback when the question is
+    still clearly internal to recruiting/logistics.
+
+    Tavily is used to understand unknown terms. If it returns no useful content,
+    we still try internal RAG with the contextual rewrite instead of giving up.
+    """
+    web_count = int(state.get("web_results_count") or 0)
+    web_error = state.get("web_search_error")
+    review = state.get("new_information_review") or {}
+
+    if web_count > 0 and review:
+        return "route_stub_response"
+
+    if web_error or web_count == 0:
+        question = _effective_question(state).lower()
+        internal_terms = (
+            "operador",
+            "quinta rueda",
+            "tractocamión",
+            "tractocamion",
+            "trailero",
+            "transporte",
+            "ruta",
+            "parada",
+            "paradas",
+            "parador",
+            "carretera",
+            "café",
+            "cafe",
+            "baño",
+            "bano",
+            "descanso",
+            "licencia",
+            "apto",
+            "proceso",
+            "contratación",
+            "contratacion",
+            "prueba",
+            "toxicológica",
+            "toxicologica",
+            "orina",
+            "sustancias",
+            "alcohol",
+            "puedo aplicar",
+            "puedo entrar",
+            "puedo continuar",
+        )
+
+        if any(term in question for term in internal_terms):
+            return "rewrite_question"
+
+    return "route_stub_response"
+
+def route_after_semantic_uncertainty(state: HRState) -> str:
+    """
+    Respect the semantic uncertainty analyzer.
+
+    If it says the graph is assuming too much, stop routing and ask a friendly
+    clarification before RAG/web/policy boundary can run.
+    """
+    uncertainty = state.get("semantic_uncertainty") or {}
+
+    if uncertainty.get("should_clarify") is True:
+        return "semantic_clarification"
+
+    return "rewrite_safety_guard"

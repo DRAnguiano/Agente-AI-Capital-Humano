@@ -197,6 +197,7 @@ def _rewrite_prompt(state: HRState) -> str:
     profile = state.get("profile_snapshot") or {}
     lead = state.get("lead_ingestion") or {}
     substance = state.get("substance_disclosure_analysis") or {}
+    unknown_term_review = state.get("unknown_term_review") or {}
     history = _conversation_tail(state)
 
     return f"""
@@ -225,6 +226,16 @@ LEAD_INGESTION:
 
 SUBSTANCE_ANALYSIS:
 {json.dumps(substance, ensure_ascii=False, default=str)}
+
+PRE_REWRITE_UNKNOWN_TERM_REVIEW:
+{json.dumps(unknown_term_review, ensure_ascii=False, default=str)}
+
+Critical rules for unknown terms:
+- Use PRE_REWRITE_UNKNOWN_TERM_REVIEW before rewriting unclear words.
+- If unknown_term_review says a term is ambiguous, low-confidence, or needs clarification, preserve the original term.
+- Do NOT convert unclear words into substances, alcohol, crimes, diagnoses, addictions or serious misconduct unless the candidate explicitly wrote that meaning.
+- If web evidence is weak or ambiguous, lower confidence and keep ambiguity.
+- If a single unclear word changes the meaning of the whole message, keep the word and let the clarification node ask the candidate.
 
 CONVERSATION_TAIL:
 {json.dumps(history, ensure_ascii=False, default=str)}
@@ -309,6 +320,20 @@ def _normalize_rewrite(payload: dict[str, Any], message: str, state: HRState | N
                 }
             )
 
+    blocked_sensitive_rewrite, blocked_term = _unknown_term_review_blocks_sensitive_rewrite(state, message, rewritten)
+    if blocked_sensitive_rewrite:
+        rewritten = message
+        confidence = min(confidence, 0.49)
+        should_use = False
+        intent_preserved = True
+        clean_corrections.append(
+            {
+                "from": blocked_term or "unknown_term",
+                "to": "preserve_original",
+                "reason": "Término ambiguo revisado antes del rewrite; no se permite inferir sustancias/hechos sensibles sin evidencia clara.",
+            }
+        )
+
     if rewritten.strip() != (message or "").strip() and confidence >= MIN_REWRITE_CONFIDENCE and intent_preserved:
         should_use = True
 
@@ -323,6 +348,78 @@ def _normalize_rewrite(payload: dict[str, Any], message: str, state: HRState | N
         "reason": _clean_text(data.get("reason"), 300) or "contextual_rewrite_checked",
     }
 
+
+
+
+def _unknown_term_review_blocks_sensitive_rewrite(state: HRState | None, message: str, rewritten: str) -> tuple[bool, str | None]:
+    """
+    Hard safety gate:
+    If pre-rewrite web review found an unclear term and evidence is weak/ambiguous,
+    contextual rewrite cannot convert that term into substances/alcohol/crimes/etc.
+    """
+    if state is None:
+        return False, None
+
+    review = state.get("unknown_term_review") or {}
+    if not review.get("has_unclear_terms"):
+        return False, None
+
+    sensitive_terms = (
+        "marihuana",
+        "mariguana",
+        "cannabis",
+        "droga",
+        "drogas",
+        "sustancia",
+        "sustancias",
+        "alcohol",
+        "cocaína",
+        "cocaina",
+        "cristal",
+        "perico",
+        "adicto",
+        "adicción",
+        "adiccion",
+        "delito",
+        "robo",
+    )
+
+    rewritten_l = (rewritten or "").lower()
+    if not any(term in rewritten_l for term in sensitive_terms):
+        return False, None
+
+    message_l = (message or "").lower()
+    # If candidate explicitly wrote the sensitive word, do not block it.
+    if any(term in message_l for term in sensitive_terms):
+        return False, None
+
+    terms = review.get("terms") or []
+    if not terms:
+        terms = (review.get("extraction") or {}).get("terms") or []
+
+    reviewed_terms = []
+    for item in terms:
+        if isinstance(item, dict):
+            term = str(item.get("term") or "").strip()
+            if term:
+                reviewed_terms.append(term)
+
+    for item in review.get("terms", []) or []:
+        if isinstance(item, dict):
+            try:
+                confidence = float(item.get("confidence") or 0.0)
+            except Exception:
+                confidence = 0.0
+
+            if item.get("needs_clarification") or item.get("do_not_infer_sensitive_fact") or confidence < 0.70:
+                return True, str(item.get("term") or None)
+
+    # If there are unclear terms but synthesis did not give per-term confidence,
+    # still block sensitive inference. This is intentional.
+    if reviewed_terms or review.get("has_unclear_terms"):
+        return True, reviewed_terms[0] if reviewed_terms else None
+
+    return False, None
 
 
 def _protect_ambiguous_slang_rewrite(original: str, rewritten: str) -> str:

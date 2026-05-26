@@ -63,6 +63,8 @@ class HRState(TypedDict, total=False):
 
     # Contextual typo/slang rewrite before routing/RAG
     contextual_rewrite: dict[str, Any]
+    unknown_term_review: dict[str, Any] | None
+    semantic_uncertainty: dict[str, Any] | None
 
     # Response guard / quality control
     profile_response_guard: dict[str, Any]

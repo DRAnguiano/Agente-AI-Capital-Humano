@@ -25,15 +25,22 @@ from app.graphs.hr_nodes_rag import (
 from app.graphs.hr_nodes_response_guard import profile_response_guard_node
 from app.graphs.hr_nodes_rewrite import rewrite_question_node
 from app.graphs.hr_nodes_rewrite_guard import rewrite_safety_guard_node
+from app.graphs.hr_nodes_semantic_uncertainty import (
+    semantic_clarification_node,
+    semantic_uncertainty_analyzer_node,
+)
 from app.graphs.hr_nodes_review import review_new_information_node
 from app.graphs.hr_nodes_router import route_message_node
 from app.graphs.hr_nodes_stubs import route_stub_response_node
 from app.graphs.hr_nodes_substance import substance_disclosure_analysis_node
+from app.graphs.hr_nodes_unknown_term_review import pre_rewrite_unknown_term_review_node
 from app.graphs.hr_nodes_web_search import tavily_web_search_node
 from app.graphs.hr_routes import (
     route_after_full_router,
     route_after_grading,
     route_after_grading_or_web,
+    route_after_web_review,
+    route_after_semantic_uncertainty,
 )
 from app.graphs.hr_state import HRState
 
@@ -210,7 +217,10 @@ def build_hr_full_router_test_graph():
     workflow.add_node("save_incoming_message", save_incoming_message_node)
     workflow.add_node("ingest_lead", ingest_lead_node)
     workflow.add_node("substance_disclosure_analysis", substance_disclosure_analysis_node)
+    workflow.add_node("pre_rewrite_unknown_term_review", pre_rewrite_unknown_term_review_node)
     workflow.add_node("contextual_rewrite", contextual_rewrite_node)
+    workflow.add_node("semantic_uncertainty_analyzer", semantic_uncertainty_analyzer_node)
+    workflow.add_node("semantic_clarification", semantic_clarification_node)
     workflow.add_node("rewrite_safety_guard", rewrite_safety_guard_node)
     workflow.add_node("classify_message", classify_message_node)
     workflow.add_node("route_message", route_message_node)
@@ -227,8 +237,17 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("load_conversation", "build_conversation_memory")
     workflow.add_edge("build_conversation_memory", "save_incoming_message")
     workflow.add_edge("save_incoming_message", "substance_disclosure_analysis")
-    workflow.add_edge("substance_disclosure_analysis", "contextual_rewrite")
-    workflow.add_edge("contextual_rewrite", "rewrite_safety_guard")
+    workflow.add_edge("substance_disclosure_analysis", "pre_rewrite_unknown_term_review")
+    workflow.add_edge("pre_rewrite_unknown_term_review", "contextual_rewrite")
+    workflow.add_edge("contextual_rewrite", "semantic_uncertainty_analyzer")
+    workflow.add_conditional_edges(
+        "semantic_uncertainty_analyzer",
+        route_after_semantic_uncertainty,
+        {
+            "semantic_clarification": "semantic_clarification",
+            "rewrite_safety_guard": "rewrite_safety_guard",
+        },
+    )
     workflow.add_edge("rewrite_safety_guard", "classify_message")
     workflow.add_edge("classify_message", "route_message")
     workflow.add_conditional_edges(
@@ -241,7 +260,15 @@ def build_hr_full_router_test_graph():
         },
     )
     workflow.add_edge("tavily_web_search", "review_new_information")
-    workflow.add_edge("review_new_information", "route_stub_response")
+    workflow.add_conditional_edges(
+        "review_new_information",
+        route_after_web_review,
+        {
+            "rewrite_question": "rewrite_question",
+            "route_stub_response": "route_stub_response",
+        },
+    )
+    workflow.add_edge("semantic_clarification", "save_assistant_message")
     workflow.add_edge("route_stub_response", "profile_response_guard")
     workflow.add_edge("profile_response_guard", "save_assistant_message")
     workflow.add_edge("rewrite_question", "retrieve_documents")

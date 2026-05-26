@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from app.graphs.hr_state import HRState
+from app.graphs.hr_trace import build_graph_trace
 from app.indexer import call_llm, retrieve_context_for_guardrail
 from app.orchestrator import orchestrate_message
 from app.persona_config import SYSTEM_PROMPT
@@ -719,6 +720,16 @@ IMPORTANTE SOBRE FLUJO DE FORMULARIO:
     prompt = f"""
 {SYSTEM_PROMPT}
 
+
+PUBLIC_VOICE_RULES:
+- Responde como Mundo, asistente de Capital Humano, no como lector de documentos.
+- No digas: "según la información", "la información disponible", "según mis fuentes", "en los documentos", "en la base", "se menciona", "se ha mencionado", "se ha manejado".
+- Convierte el contexto interno en respuesta natural.
+- Usa frases directas: "Manejamos...", "El esquema es...", "Para avanzar necesitamos...", "La matriz está en...".
+- No repitas "Hola, soy Mundo" si la conversación ya inició.
+- No cierres respuestas RAG con preguntas genéricas tipo "¿Deseas saber más?".
+- Si falta un dato exacto, di: "Ese dato lo revisa Capital Humano según la vacante vigente", sin sonar a cita documental.
+
 === CONTEXTO INTERNO CONFIRMADO ===
 {context_text}
 
@@ -782,6 +793,121 @@ def hallucination_check_node(state: HRState) -> dict[str, Any]:
     return {"hallucination_check": "PASS"}
 
 
+
+
+def _public_route_stop_language_guard(reply: str, state: HRState) -> str:
+    """
+    Public wording guard for route-stop answers.
+
+    The internal docs may use slang, but Mundo should speak professionally:
+    - paradas breves
+    - puntos autorizados
+    - Monitoreo / Control Operativo
+    """
+    clean = (reply or "").strip()
+    if not clean:
+        return clean
+
+    low = clean.lower()
+    haystack = " ".join(
+        str(x or "")
+        for x in (
+            state.get("message"),
+            (state.get("contextual_rewrite") or {}).get("rewritten"),
+            (state.get("question_rewrite") or {}).get("rewritten_question"),
+            clean,
+        )
+    ).lower()
+
+    talks_about_route_stops = any(
+        term in haystack
+        for term in (
+            "parada",
+            "paradas",
+            "parador",
+            "paradores",
+            "carretera",
+            "café",
+            "cafe",
+            "baño",
+            "bano",
+            "descanso",
+            "alimentos",
+            "ruta",
+            "puntos autorizados",
+            "monitoreo",
+            "control operativo",
+            "cachimba",
+            "cachimbear",
+        )
+    )
+
+    if not talks_about_route_stops:
+        return clean
+
+    if "cachimba" in low or "cachimbear" in low or "dos significados" in low or "dos situaciones" in low:
+        substance = state.get("substance_disclosure_analysis") or {}
+        is_sensitive = substance.get("detected") is True
+
+        base = (
+            "Hola, soy Mundo, asistente de Capital Humano.\n\n"
+            "Si te refieres a hacer paradas breves para tomar café, comer, ir al baño "
+            "o descansar, eso debe hacerse únicamente en puntos autorizados por seguridad "
+            "y operación. La lista de puntos permitidos la valida Monitoreo o Control Operativo "
+            "según la ruta."
+        )
+
+        if is_sensitive:
+            base += (
+                "\n\nSi te refieres a consumo de sustancias o alcohol, la empresa maneja política "
+                "de cero tolerancia y puede realizar pruebas toxicológicas. La continuidad del proceso "
+                "depende de cumplir esa política y de la validación de Capital Humano."
+            )
+
+        return base.strip()
+
+    # Cleanup if the answer is otherwise fine but includes the slang once.
+    replacements = {
+        "cachimbear": "hacer ese tipo de paradas",
+        "Cachimbear": "Hacer ese tipo de paradas",
+        "cachimbas": "puntos autorizados",
+        "Cachimbas": "Puntos autorizados",
+        "cachimba": "punto autorizado",
+        "Cachimba": "Punto autorizado",
+    }
+
+    for old, new in replacements.items():
+        clean = clean.replace(old, new)
+
+    # Remove profile-style continuation questions from RAG answers.
+    clean = re.sub(
+        r"\n*\s*¿Deseas continuar con información sobre la vacante.*?\?\s*$",
+        "",
+        clean,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    clean = re.sub(
+        r"\n*\s*¿Quieres continuar.*?\?\s*$",
+        "",
+        clean,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    clean = re.sub(
+        r"\n*\s*Si tienes.*?(duda|dudas).*?$",
+        "",
+        clean,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    clean = re.sub(
+        r"\n*\s*Estoy aquí.*?$",
+        "",
+        clean,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    return clean.strip()
+
+
 def answer_check_node(state: HRState) -> dict[str, Any]:
     draft = (state.get("draft_answer") or "").strip()
 
@@ -824,6 +950,7 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
         context_text,
         relevant_docs,
     )
+    final_reply = _public_route_stop_language_guard(final_reply, state)
     final_reply = _public_language_guard_for_ambiguous_cachimba(final_reply, state)
 
     benefits_appended = final_reply != draft
@@ -967,4 +1094,15 @@ def _last_mile_clean_reply(reply: str, state: HRState) -> str:
 def save_output_node(state: HRState) -> dict[str, Any]:
     reply = (state.get("reply") or state.get("text") or "").strip()
     reply = _last_mile_clean_reply(reply, state)
-    return {"reply": reply, "text": reply, "status": state.get("status", "ok")}
+    return {
+        "reply": reply,
+        "text": reply,
+        "status": state.get("status", "ok"),
+        "unknown_term_review": state.get("unknown_term_review"),
+        "semantic_uncertainty": state.get("semantic_uncertainty"),
+        "contextual_rewrite": state.get("contextual_rewrite"),
+        "question_rewrite": state.get("question_rewrite"),
+        "selected_route": state.get("route"),
+        "requires_clarification": state.get("requires_clarification"),
+        "graph_trace": build_graph_trace(state),
+    }
