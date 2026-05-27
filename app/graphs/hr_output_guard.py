@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
+from app.graphs.hr_hybrid_rules import output_guard
 from app.graphs.hr_state import HRState
 
 
@@ -20,48 +20,6 @@ def _sources_text(state: HRState) -> str:
                 chunks.append(str(meta.get("source") or ""))
 
     return " ".join(chunks).lower()
-
-
-def _strip_think_blocks(reply: str) -> str:
-    clean = (reply or "").strip()
-    if not clean:
-        return clean
-    clean = re.sub(r"<think>.*?</think>", "", clean, flags=re.IGNORECASE | re.DOTALL)
-    clean = re.sub(r"</?think>", "", clean, flags=re.IGNORECASE)
-    return clean.strip()
-
-
-def _strip_public_noise(reply: str) -> str:
-    clean = _strip_think_blocks(reply)
-
-    # Remove repeated greeting in downstream RAG/profile outputs.
-    clean = re.sub(
-        r"^\s*(¡?Hola!?[,\s]*)?soy Mundo,?\s*asistente de Capital Humano\.?\s*",
-        "",
-        clean,
-        flags=re.IGNORECASE,
-    ).strip()
-
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", clean) if p.strip()]
-    kept: list[str] = []
-
-    generic_patterns = (
-        r"^¿?deseas saber más.*\?$",
-        r"^¿?desea saber más.*\?$",
-        r"^¿?quieres saber más.*\?$",
-        r"^¿?te gustaría continuar.*\?$",
-        r"^¿?deseas continuar.*\?$",
-        r"^¡?estamos aquí para guiarte.*!$",
-        r"^si estás interesado.*podemos continuar.*$",
-    )
-
-    for p in paragraphs:
-        low = p.lower().strip()
-        if any(re.search(pattern, low, flags=re.IGNORECASE | re.DOTALL) for pattern in generic_patterns):
-            continue
-        kept.append(p)
-
-    return "\n\n".join(kept).strip()
 
 
 def _is_ambiguous_cachimba_case(state: HRState) -> bool:
@@ -106,12 +64,14 @@ def _already_has_zero_tolerance_branch(reply: str) -> bool:
 
 def apply_output_guard(reply: str, state: HRState) -> str:
     """
-    Single canonical last-mile response guard.
+    Final deterministic cleanup.
 
-    Both persistence and final API output call this same function so the
-    zero-tolerance addendum and cleanup are idempotent.
+    Phase 1 keeps the current graph intact, but routes all public cleanup through
+    the single centralized hybrid output guard. The existing zero-tolerance
+    addendum remains as a compatibility rule until the production hybrid graph
+    moves this policy into the generate node contract.
     """
-    clean = _strip_public_noise(reply)
+    clean = output_guard(reply)
 
     if (
         _is_ambiguous_cachimba_case(state)
