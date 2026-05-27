@@ -159,20 +159,6 @@ FAST_INTENTS: list[dict[str, Any]] = [
 ]
 
 
-DROP_OFF_RISK_TERMS = [
-    "desde ayer estoy esperando",
-    "sigo esperando",
-    "ya me hablaron de otro lado",
-    "me hablaron de otro lado",
-    "otra oferta",
-    "tengo otra oferta",
-    "me urge",
-    "ocupo respuesta",
-    "no me han respondido",
-    "no me contestan",
-]
-
-
 UNKNOWN_AMBIGUOUS_TERMS = [
     "kchmbr",
     "kchimb",
@@ -187,12 +173,14 @@ def _contains_any(text: str, aliases: list[str]) -> bool:
 
 def fast_semantic_router_node(state: HRState) -> dict[str, Any]:
     """
-    Fast deterministic router for frequent recruiting questions.
+    Fast deterministic router for frequent, low-ambiguity recruiting FAQs.
 
-    Goal:
-    - Avoid expensive LLM classifier/rewrite/review path for common questions.
-    - Keep ambiguous unknown slang out of RAG.
-    - Route obvious FAQ messages directly to RAG with a clean retrieval question.
+    Important:
+    - This node must not decide conversational churn, urgency, complaints or
+      candidate-loss situations. Those messages can contain multiple intentions
+      and must be handled by the intent understanding gate.
+    - Keep this node limited to stable FAQ-style routes where a partial keyword
+      match is acceptable because the downstream answer is grounded in RAG.
     """
     message = state.get("message") or ""
     text = _norm(message)
@@ -209,36 +197,7 @@ def fast_semantic_router_node(state: HRState) -> dict[str, Any]:
             ],
         }
 
-    # 1) Candidate drop-off / fuga risk: route to controlled human follow-up, not RAG.
-    if _contains_any(text, DROP_OFF_RISK_TERMS):
-        reply = (
-            "Gracias por avisarme. Para no hacerte esperar más, voy a dejar tu caso "
-            "marcado para revisión de Capital Humano. ¿Me confirmas si aún estás interesado "
-            "en continuar con la vacante?"
-        )
-        return {
-            "fast_route_found": True,
-            "fast_intent": "candidate_dropoff_risk",
-            "route": "human_handoff",
-            "intent": "candidate_dropoff_risk",
-            "risk_level": "medium",
-            "requires_human": True,
-            "requires_rag": False,
-            "requires_clarification": False,
-            "reason": "fast_candidate_dropoff_risk",
-            "reply": reply,
-            "text": reply,
-            "events": [
-                {
-                    "type": "fast_semantic_router_matched",
-                    "intent": "candidate_dropoff_risk",
-                    "route": "human_handoff",
-                    "reason": "candidate_waiting_or_other_offer",
-                }
-            ],
-        }
-
-    # 2) Unknown ambiguous slang: do not send to RAG and do not invent.
+    # Ambiguous slang should not be rewritten into a sensitive fact or sent to RAG.
     if _contains_any(text, UNKNOWN_AMBIGUOUS_TERMS):
         reply = (
             "Me perdí tantito con esa palabra. ¿Me confirmas a qué te refieres? "
@@ -266,7 +225,7 @@ def fast_semantic_router_node(state: HRState) -> dict[str, Any]:
             ],
         }
 
-    # 3) FAQ RAG routes.
+    # FAQ RAG routes only.
     matches: list[dict[str, Any]] = []
     for item in FAST_INTENTS:
         hit_count = sum(1 for alias in item["aliases"] if alias in text)
