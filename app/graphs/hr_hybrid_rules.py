@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -56,7 +57,9 @@ OUTPUT_GUARD_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(ya est[aá]s contratado|quedaste seleccionado|eres el candidato)\b", re.IGNORECASE),
 )
 
-MAX_REPLY_CHARS = 600
+# Keep this high enough to avoid cutting factual RAG answers mid-number.
+# The response prompt should keep answers short; this guard is only a last resort.
+MAX_REPLY_CHARS = int(os.getenv("OUTPUT_GUARD_MAX_REPLY_CHARS", "1200"))
 
 
 def _rule_to_route(rule: str | None) -> str | None:
@@ -83,6 +86,25 @@ def regex_guard(text: str) -> dict[str, Any]:
     return {"matched_rule": None, "route": None, "reply": None}
 
 
+def _safe_truncate(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+
+    # Prefer sentence boundaries. Include Spanish punctuation cases.
+    sentence_cuts = [text.rfind(mark, 0, max_chars) for mark in (". ", ".\n", "! ", "? ", "。")]
+    cut = max(sentence_cuts)
+    if cut > int(max_chars * 0.55):
+        # Include the punctuation mark, not the following whitespace.
+        return text[: cut + 1].strip()
+
+    # Fall back to a word boundary, but do not cut in the middle of money/numbers.
+    word_cut = text.rfind(" ", 0, max_chars)
+    if word_cut > int(max_chars * 0.55):
+        return text[:word_cut].rstrip(" ,;:-") + "…"
+
+    return text[:max_chars].rstrip(" ,;:-") + "…"
+
+
 def output_guard(reply: str, max_chars: int = MAX_REPLY_CHARS) -> str:
     """Final deterministic cleanup with no LLM call."""
     clean = (reply or "").strip()
@@ -98,8 +120,5 @@ def output_guard(reply: str, max_chars: int = MAX_REPLY_CHARS) -> str:
     for pattern in OUTPUT_GUARD_PATTERNS:
         clean = pattern.sub("", clean).strip()
 
-    if len(clean) > max_chars:
-        cut = clean.rfind(".", 0, max_chars)
-        clean = clean[: cut + 1] if cut > 0 else clean[:max_chars]
-
+    clean = _safe_truncate(clean, max_chars)
     return clean.strip()
