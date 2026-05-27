@@ -12,6 +12,7 @@ RouteName = Literal[
     "fallback",
     "web_review",
     "policy_boundary",
+    "candidate_dropoff_recovery",
     "greeting",
 ]
 
@@ -97,6 +98,7 @@ class HRState(TypedDict, total=False):
     clarification_real_flow_used: bool
     fallback_real_flow_used: bool
     policy_boundary_real_flow_used: bool
+    dropoff_recovery_real_flow_used: bool
 
     # Candidate profile
     extracted_fields: dict[str, Any]
@@ -106,6 +108,7 @@ class HRState(TypedDict, total=False):
     profile_updated: bool
     stage_updated: bool
     profile_event_logged: bool
+    dropoff_event_logged: bool
 
     # RAG state
     question: str
