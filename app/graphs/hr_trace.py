@@ -141,6 +141,20 @@ def build_graph_trace(state: HRState) -> dict[str, Any]:
                 "decision": "answered_profile_side_question",
             })
 
+        elif event_type == "candidate_dropoff_recovery_answered":
+            item.update({
+                "node": "dropoff_recovery_response",
+                "decision": "recover_candidate",
+                "reason": _compact(event.get("reason")),
+            })
+
+        elif event_type == "candidate_dropoff_closed":
+            item.update({
+                "node": "dropoff_recovery_response",
+                "decision": "graceful_close",
+                "reason": _compact(event.get("reason")),
+            })
+
         elif event_type == "fallback_answered":
             item.update({
                 "node": "route_stub_response",
