@@ -7,6 +7,7 @@ from typing import Any, Callable
 from app.graphs.hr_state import HRState
 
 LOGGER = logging.getLogger("hr_graph_timing")
+_PATCHED_ATTR = "_hr_timing_add_node_patched"
 
 
 def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) -> Callable[[HRState], dict[str, Any]]:
@@ -61,3 +62,38 @@ def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) ->
     wrapper.__name__ = f"timed_{getattr(fn, '__name__', node_name)}"
     setattr(wrapper, "_hr_timing_wrapped", True)
     return wrapper
+
+
+def install_stategraph_timing_patch() -> None:
+    """Patch LangGraph's StateGraph.add_node once so every node is timed.
+
+    This is intentionally used only inside app.graphs.hr_graph during graph
+    construction. It avoids manually editing every workflow.add_node call and
+    keeps the instrumentation behavior-only: no routing or prompt changes.
+    """
+    try:
+        from langgraph.graph import StateGraph
+    except Exception:
+        LOGGER.exception("Could not import StateGraph for timing patch")
+        return
+
+    if getattr(StateGraph, _PATCHED_ATTR, False):
+        return
+
+    original_add_node = StateGraph.add_node
+
+    def timed_add_node(self: Any, node: Any, action: Any = None, *args: Any, **kwargs: Any) -> Any:
+        node_name = str(node) if isinstance(node, str) else getattr(node, "__name__", "unknown_node")
+        wrapped_action = action
+
+        if callable(action):
+            wrapped_action = timed_graph_node(node_name, action)
+        elif callable(node) and action is None:
+            wrapped_action = timed_graph_node(node_name, node)
+            return original_add_node(self, wrapped_action, *args, **kwargs)
+
+        return original_add_node(self, node, wrapped_action, *args, **kwargs)
+
+    StateGraph.add_node = timed_add_node
+    setattr(StateGraph, _PATCHED_ATTR, True)
+    LOGGER.info("Installed HR StateGraph timing patch")
