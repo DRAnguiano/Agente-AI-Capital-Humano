@@ -20,6 +20,24 @@ def _compact(value: Any, limit: int = 280) -> Any:
     return str(value)[:limit]
 
 
+def _timing_summary(timings: dict[str, Any]) -> dict[str, Any]:
+    clean: dict[str, float] = {}
+    for key, value in (timings or {}).items():
+        try:
+            clean[str(key)] = round(float(value), 2)
+        except Exception:
+            continue
+
+    sorted_items = sorted(clean.items(), key=lambda item: item[1], reverse=True)
+    return {
+        "total_node_timing_ms": round(sum(clean.values()), 2),
+        "top_slow_nodes": [
+            {"node": node, "elapsed_ms": elapsed_ms}
+            for node, elapsed_ms in sorted_items[:5]
+        ],
+    }
+
+
 def build_graph_trace(state: HRState) -> dict[str, Any]:
     events = state.get("events") or []
     nodes: list[dict[str, Any]] = []
@@ -34,7 +52,16 @@ def build_graph_trace(state: HRState) -> dict[str, Any]:
 
         item: dict[str, Any] = {"event": event_type}
 
-        if event_type == "fast_semantic_router_matched":
+        if event_type == "node_timing":
+            item.update({
+                "node": _compact(event.get("node")),
+                "decision": "timed",
+                "elapsed_ms": event.get("elapsed_ms"),
+                "status": _compact(event.get("status")),
+                "error": _compact(event.get("error")),
+            })
+
+        elif event_type == "fast_semantic_router_matched":
             item.update({
                 "node": "fast_semantic_router",
                 "decision": "matched",
@@ -183,12 +210,17 @@ def build_graph_trace(state: HRState) -> dict[str, Any]:
             if name and name not in source_names:
                 source_names.append(name)
 
+    timings = state.get("timings") or {}
+    timing_summary = _timing_summary(timings if isinstance(timings, dict) else {})
+
     return {
         "route": state.get("route"),
         "requires_rag": state.get("requires_rag"),
         "requires_human": state.get("requires_human"),
         "requires_clarification": state.get("requires_clarification"),
         "risk_level": state.get("risk_level"),
+        "timings": timings if isinstance(timings, dict) else {},
+        **timing_summary,
         "nodes": nodes,
         "evidence_sources": source_names,
         "evidence": {
