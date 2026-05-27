@@ -69,6 +69,10 @@ class HRState(TypedDict, total=False):
     # Response guard / quality control
     profile_response_guard: dict[str, Any]
 
+    # Fast deterministic routing
+    fast_route_found: bool
+    fast_intent: str | None
+
     # Classifier / semantic routing
     classifier: dict[str, Any]
     classifier_intent: str
@@ -130,6 +134,7 @@ class HRState(TypedDict, total=False):
     status: str
     labels: list[str]
     events: Annotated[list[dict[str, Any]], add]
+    graph_trace: dict[str, Any]
 
     # Compatibility payload returned by the legacy orchestrator node.
     legacy_result: dict[str, Any]
