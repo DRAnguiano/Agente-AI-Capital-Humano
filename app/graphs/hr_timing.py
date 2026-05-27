@@ -4,13 +4,11 @@ import logging
 import time
 from typing import Any, Callable
 
-from app.graphs.hr_state import HRState
-
 LOGGER = logging.getLogger("hr_graph_timing")
 _PATCHED_ATTR = "_hr_timing_add_node_patched"
 
 
-def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) -> Callable[[HRState], dict[str, Any]]:
+def timed_graph_node(node_name: str, fn: Callable[[dict[str, Any]], dict[str, Any]]) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Wrap a LangGraph node and append deterministic timing data.
 
     The wrapper does not change business behavior. It only adds:
@@ -22,14 +20,14 @@ def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) ->
     if getattr(fn, "_hr_timing_wrapped", False):
         return fn
 
-    def wrapper(state: HRState) -> dict[str, Any]:
+    def wrapper(state: dict[str, Any]) -> dict[str, Any]:
         start = time.perf_counter()
         status = "ok"
         error: str | None = None
         update: dict[str, Any] = {}
 
         try:
-            result = fn(state)
+            result = fn(state)  # type: ignore[arg-type]
             update = result if isinstance(result, dict) else {}
             return update
         except Exception as exc:
@@ -65,12 +63,7 @@ def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) ->
 
 
 def install_stategraph_timing_patch() -> None:
-    """Patch LangGraph's StateGraph.add_node once so every node is timed.
-
-    This is intentionally used only inside app.graphs.hr_graph during graph
-    construction. It avoids manually editing every workflow.add_node call and
-    keeps the instrumentation behavior-only: no routing or prompt changes.
-    """
+    """Patch LangGraph's StateGraph.add_node once so every node is timed."""
     try:
         from langgraph.graph import StateGraph
     except Exception:
