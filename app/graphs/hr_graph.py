@@ -10,6 +10,7 @@ from app.graphs.hr_nodes_core import (
     save_assistant_message_node,
     save_incoming_message_node,
 )
+from app.graphs.hr_nodes_fast_semantic_router import fast_semantic_router_node
 from app.graphs.hr_nodes_lead import ingest_lead_node
 from app.graphs.hr_nodes_memory import build_conversation_memory_node
 from app.graphs.hr_nodes_rag import (
@@ -36,14 +37,16 @@ from app.graphs.hr_nodes_substance import substance_disclosure_analysis_node
 from app.graphs.hr_nodes_unknown_term_review import pre_rewrite_unknown_term_review_node
 from app.graphs.hr_nodes_web_search import tavily_web_search_node
 from app.graphs.hr_routes import (
-    route_after_full_router,
     route_after_answer_check,
+    route_after_fast_semantic_router,
+    route_after_full_router,
     route_after_grading,
     route_after_grading_or_web,
-    route_after_web_review,
     route_after_semantic_uncertainty,
+    route_after_web_review,
 )
 from app.graphs.hr_state import HRState
+from app.graphs.hr_trace import build_graph_trace
 
 
 INPUT_TEST_CHANNEL = "test_input_nodes"
@@ -216,6 +219,7 @@ def build_hr_full_router_test_graph():
     workflow.add_node("load_conversation", load_conversation_node)
     workflow.add_node("build_conversation_memory", build_conversation_memory_node)
     workflow.add_node("save_incoming_message", save_incoming_message_node)
+    workflow.add_node("fast_semantic_router", fast_semantic_router_node)
     workflow.add_node("ingest_lead", ingest_lead_node)
     workflow.add_node("substance_disclosure_analysis", substance_disclosure_analysis_node)
     workflow.add_node("pre_rewrite_unknown_term_review", pre_rewrite_unknown_term_review_node)
@@ -237,7 +241,16 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("normalize_input", "load_conversation")
     workflow.add_edge("load_conversation", "build_conversation_memory")
     workflow.add_edge("build_conversation_memory", "save_incoming_message")
-    workflow.add_edge("save_incoming_message", "substance_disclosure_analysis")
+    workflow.add_edge("save_incoming_message", "fast_semantic_router")
+    workflow.add_conditional_edges(
+        "fast_semantic_router",
+        route_after_fast_semantic_router,
+        {
+            "fast_rag": "retrieve_documents",
+            "fast_stub": "route_stub_response",
+            "slow_graph": "substance_disclosure_analysis",
+        },
+    )
     workflow.add_edge("substance_disclosure_analysis", "pre_rewrite_unknown_term_review")
     workflow.add_edge("pre_rewrite_unknown_term_review", "contextual_rewrite")
     workflow.add_edge("contextual_rewrite", "semantic_uncertainty_analyzer")
@@ -340,6 +353,15 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
     relevant_docs = final_state.get("relevant_docs", []) or []
     web_results = final_state.get("web_results", []) or []
     memory = final_state.get("conversation_memory") or {}
+    graph_trace = final_state.get("graph_trace")
+
+    if (
+        not isinstance(graph_trace, dict)
+        or not graph_trace.get("route")
+        or not graph_trace.get("nodes")
+    ):
+        graph_trace = build_graph_trace(final_state)
+
     return {
         "status": final_state.get("status", "ok"),
         "conversation_key": final_state.get("conversation_key"),
@@ -356,6 +378,8 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "requires_clarification": bool(final_state.get("requires_clarification", False)),
         "reason": final_state.get("reason"),
         "selected_route": final_state.get("route"),
+        "fast_route_found": bool(final_state.get("fast_route_found", False)),
+        "fast_intent": final_state.get("fast_intent"),
         "classifier_intent": final_state.get("classifier_intent"),
         "classifier_confidence": final_state.get("classifier_confidence"),
         "safe_reply_mode": final_state.get("safe_reply_mode"),
@@ -367,7 +391,7 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "unknown_term_review": final_state.get("unknown_term_review"),
         "semantic_uncertainty": final_state.get("semantic_uncertainty"),
         "question_rewrite": final_state.get("question_rewrite"),
-        "graph_trace": final_state.get("graph_trace"),
+        "graph_trace": graph_trace,
         "profile_followup_plan": final_state.get("profile_followup_plan"),
         "profile_response_guard": final_state.get("profile_response_guard"),
         "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),
@@ -466,6 +490,7 @@ def _run_full_router_test_graph(
         "thread_id": config["configurable"]["thread_id"],
         "input_nodes_extracted": True,
         "memory_node_enabled": True,
+        "fast_semantic_router_enabled": True,
         "lead_ingestion_node_enabled": True,
         "substance_analysis_node_enabled": True,
         "contextual_rewrite_enabled": True,
