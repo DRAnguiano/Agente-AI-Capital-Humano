@@ -34,7 +34,26 @@ def build_graph_trace(state: HRState) -> dict[str, Any]:
 
         item: dict[str, Any] = {"event": event_type}
 
-        if event_type == "unknown_term_review_completed":
+        if event_type == "fast_semantic_router_matched":
+            item.update({
+                "node": "fast_semantic_router",
+                "decision": "matched",
+                "intent": _compact(event.get("intent")),
+                "route": _compact(event.get("route")),
+                "question": _compact(event.get("question")),
+                "preferred_sources": _compact(event.get("preferred_sources")),
+                "hit_count": event.get("hit_count"),
+                "reason": _compact(event.get("reason")),
+            })
+
+        elif event_type == "fast_semantic_router_checked":
+            item.update({
+                "node": "fast_semantic_router",
+                "decision": "no_match",
+                "reason": _compact(event.get("reason")),
+            })
+
+        elif event_type == "unknown_term_review_completed":
             item.update({
                 "node": "pre_rewrite_unknown_term_review",
                 "decision": "unknown_terms_reviewed",
@@ -116,6 +135,12 @@ def build_graph_trace(state: HRState) -> dict[str, Any]:
                 "decision": "answered_with_rag",
             })
 
+        elif event_type == "rag_answered_side_question":
+            item.update({
+                "node": "generate_answer",
+                "decision": "answered_profile_side_question",
+            })
+
         elif event_type == "fallback_answered":
             item.update({
                 "node": "route_stub_response",
@@ -151,6 +176,7 @@ def build_graph_trace(state: HRState) -> dict[str, Any]:
         "requires_clarification": state.get("requires_clarification"),
         "risk_level": state.get("risk_level"),
         "nodes": nodes,
+        "evidence_sources": source_names,
         "evidence": {
             "sources": source_names,
             "unknown_term_review": _compact(state.get("unknown_term_review")),
