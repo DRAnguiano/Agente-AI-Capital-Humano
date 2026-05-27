@@ -3,6 +3,7 @@ from typing import Any
 
 from app.db import get_conversation_state, make_conversation_key, save_message, upsert_conversation
 from app.graphs.hr_state import HRState
+from app.graphs.hr_output_guard import apply_output_guard
 
 
 DEFAULT_STAGE = "START"
@@ -226,32 +227,7 @@ def _final_guard_has_zero_tolerance_branch(reply: str) -> bool:
 
 
 def _apply_final_output_guard(reply: str, state: HRState) -> str:
-    """
-    Last-mile response guard before persistence/output.
-
-    This catches cases where the RAG answer is mostly correct but:
-    - tries to continue profile capture too early;
-    - appends a weak lead acknowledgement;
-    - misses the zero-tolerance branch in an ambiguous cachimba/cachimbear case.
-    """
-    clean = _strip_rag_profile_continuation(reply)
-
-    if (
-        _final_guard_is_ambiguous_cachimba(state)
-        and _final_guard_sources_support_zero_tolerance(state)
-        and not _final_guard_has_zero_tolerance_branch(clean)
-    ):
-        addendum = (
-            "Si con “cachimbear” te refieres a consumo de sustancias o alcohol, "
-            "la empresa maneja política de cero tolerancia en operación y puede realizar "
-            "pruebas toxicológicas. En ese caso, la continuidad del proceso y la posible "
-            "contratación dependen de cumplir esa política y de la validación de Capital Humano."
-        )
-
-        clean = f"{clean}\n\n{addendum}".strip() if clean else addendum
-
-    return clean.strip()
-
+    return apply_output_guard(reply, state)
 
 def save_assistant_message_node(state: HRState) -> dict[str, Any]:
     """

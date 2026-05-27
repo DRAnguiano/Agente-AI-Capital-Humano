@@ -37,6 +37,7 @@ from app.graphs.hr_nodes_unknown_term_review import pre_rewrite_unknown_term_rev
 from app.graphs.hr_nodes_web_search import tavily_web_search_node
 from app.graphs.hr_routes import (
     route_after_full_router,
+    route_after_answer_check,
     route_after_grading,
     route_after_grading_or_web,
     route_after_web_review,
@@ -268,7 +269,7 @@ def build_hr_full_router_test_graph():
             "route_stub_response": "route_stub_response",
         },
     )
-    workflow.add_edge("semantic_clarification", "save_assistant_message")
+    workflow.add_edge("semantic_clarification", "profile_response_guard")
     workflow.add_edge("route_stub_response", "profile_response_guard")
     workflow.add_edge("profile_response_guard", "save_assistant_message")
     workflow.add_edge("rewrite_question", "retrieve_documents")
@@ -286,8 +287,12 @@ def build_hr_full_router_test_graph():
     workflow.add_edge("hallucination_check", "answer_check")
     workflow.add_conditional_edges(
         "answer_check",
-        _route_after_rag_replacement_answer_check,
-        {"save_assistant_message": "save_assistant_message", "fallback_no_context": "fallback_no_context"},
+        route_after_answer_check,
+        {
+            "save_output": "save_assistant_message",
+            "route_stub_response": "route_stub_response",
+            "fallback_no_context": "fallback_no_context",
+        },
     )
     workflow.add_conditional_edges(
         "fallback_no_context",
@@ -359,6 +364,10 @@ def _base_payload(final_state: HRState) -> dict[str, Any]:
         "lead_ingestion": final_state.get("lead_ingestion"),
         "substance_disclosure_analysis": final_state.get("substance_disclosure_analysis"),
         "contextual_rewrite": final_state.get("contextual_rewrite"),
+        "unknown_term_review": final_state.get("unknown_term_review"),
+        "semantic_uncertainty": final_state.get("semantic_uncertainty"),
+        "question_rewrite": final_state.get("question_rewrite"),
+        "graph_trace": final_state.get("graph_trace"),
         "profile_followup_plan": final_state.get("profile_followup_plan"),
         "profile_response_guard": final_state.get("profile_response_guard"),
         "requires_web_lookup": bool(final_state.get("requires_web_lookup", False)),

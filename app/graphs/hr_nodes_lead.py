@@ -455,6 +455,16 @@ Return JSON:
         raw = call_llm(prompt)
         parsed = _json_from_text(raw)
         extracted = _normalize_extraction(parsed)
+
+        # Prevent speculative LLM summaries from polluting the candidate profile.
+        # Example to drop: "expresa interés en conducir" when the candidate only
+        # asked whether they are eligible or asked for information.
+        lead_preview = {
+            "extracted": extracted,
+            "updated_fields": ["experiencia_quinta_rueda"] if extracted.get("experience_text") else [],
+        }
+        lead_preview = _drop_speculative_experience_from_lead(lead_preview)
+        extracted = lead_preview.get("extracted") or extracted
     except Exception as exc:
         return {
             "lead_ingestion": {

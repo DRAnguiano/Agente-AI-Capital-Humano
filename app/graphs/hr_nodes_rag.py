@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from app.graphs.hr_state import HRState
+from app.graphs.hr_output_guard import apply_output_guard
 from app.graphs.hr_trace import build_graph_trace
 from app.indexer import call_llm, retrieve_context_for_guardrail
 from app.orchestrator import orchestrate_message
@@ -980,116 +981,7 @@ def answer_check_node(state: HRState) -> dict[str, Any]:
 
 
 def _last_mile_clean_reply(reply: str, state: HRState) -> str:
-    """
-    Last-mile public reply cleanup.
-
-    Removes:
-    - generic closings;
-    - premature profile questions from RAG answers;
-    - weak lead acknowledgements caused by speculative extraction.
-
-    Also adds zero-tolerance branch for ambiguous cachimba/cachimbear cases when
-    internal sources support it.
-    """
-    clean = (reply or "").strip()
-    if not clean:
-        return clean
-
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", clean) if p.strip()]
-    kept = []
-
-    for p in paragraphs:
-        low = p.lower()
-
-        generic_close = (
-            "si tienes más dudas" in low
-            or "si tienes mas dudas" in low
-            or "estoy aquí" in low
-            or "estoy aqui" in low
-            or "puedo ayudarte" in low
-            or "resolver cualquier duda" in low
-        )
-
-        profile_push = (
-            ("si quieres aplicar" in low or "podemos continuar con el proceso" in low)
-            and (
-                "nombre completo" in low
-                or "cuál es tu nombre" in low
-                or "cual es tu nombre" in low
-                or "me confirmas tu nombre" in low
-            )
-        )
-
-        weak_ack = (
-            "ya registré tus datos principales" in low
-            or "ya registre tus datos principales" in low
-            or "ya registré tus datos" in low
-            or "ya registre tus datos" in low
-        )
-
-        if generic_close or profile_push or weak_ack:
-            continue
-
-        kept.append(p)
-
-    clean = "\n\n".join(kept).strip()
-
-    analysis = state.get("substance_disclosure_analysis") or {}
-    raw = str(analysis.get("raw_mention") or "")
-    msg = str(state.get("message") or "")
-    rewrite = str((state.get("contextual_rewrite") or {}).get("rewritten") or "")
-    haystack = f"{raw} {msg} {rewrite}".lower()
-
-    ambiguous_cachimba = (
-        analysis.get("detected") is True
-        and str(analysis.get("status") or "").upper() == "AMBIGUOUS"
-        and any(term in haystack for term in ("cachimba", "cachimbear", "cachimbr", "cachimb"))
-    )
-
-    sources = state.get("sources") or []
-    docs = state.get("relevant_docs") or state.get("retrieved_docs") or []
-    source_text = ""
-
-    for item in list(sources) + list(docs):
-        if isinstance(item, dict):
-            source_text += " " + str(item.get("source") or item.get("id") or item.get("metadata", {}).get("source") or "")
-            source_text += " " + str(item.get("text") or item.get("content") or "")
-
-    source_text = source_text.lower()
-
-    supports_zero_tolerance = any(term in source_text for term in (
-        "03_seguridad_antidoping",
-        "00_politicas_generales",
-        "cero tolerancia",
-        "0 tolerancia",
-        "toxicológica",
-        "toxicologica",
-        "antidoping",
-        "sustancias",
-        "alcohol",
-    ))
-
-    already_mentions_zero_tolerance = any(term in clean.lower() for term in (
-        "cero tolerancia",
-        "0 tolerancia",
-        "toxicológica",
-        "toxicologica",
-        "antidoping",
-        "sustancias",
-        "alcohol",
-    ))
-
-    if ambiguous_cachimba and supports_zero_tolerance and not already_mentions_zero_tolerance:
-        addendum = (
-            "Si con “cachimbear” te refieres a consumo de sustancias o alcohol, "
-            "la empresa maneja política de cero tolerancia en operación y puede realizar "
-            "pruebas toxicológicas. La continuidad del proceso y una posible contratación "
-            "dependen de cumplir esa política y de la validación de Capital Humano."
-        )
-        clean = f"{clean}\n\n{addendum}".strip() if clean else addendum
-
-    return clean.strip()
-
+    return apply_output_guard(reply, state)
 
 def save_output_node(state: HRState) -> dict[str, Any]:
     reply = (state.get("reply") or state.get("text") or "").strip()

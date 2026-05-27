@@ -132,7 +132,8 @@ def route_after_web_review(state: HRState) -> str:
     Tavily is used to understand unknown terms. If it returns no useful content,
     we still try internal RAG with the contextual rewrite instead of giving up.
     """
-    web_count = int(state.get("web_results_count") or 0)
+    web_results = state.get("web_results") or []
+    web_count = len(web_results) if isinstance(web_results, list) else int(state.get("web_results_count") or 0)
     web_error = state.get("web_search_error")
     review = state.get("new_information_review") or {}
 
