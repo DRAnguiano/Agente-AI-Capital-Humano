@@ -130,6 +130,9 @@ class HRState(TypedDict, total=False):
     hallucination_check: CheckResult
     answer_check: CheckResult
 
+    # Latency instrumentation
+    timings: Annotated[dict[str, float], lambda left, right: {**(left or {}), **(right or {})}]
+
     # Final output
     reply: str
     text: str
