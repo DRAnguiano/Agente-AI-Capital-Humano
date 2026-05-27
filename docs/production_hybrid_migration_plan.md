@@ -1,20 +1,34 @@
-# Production hybrid migration plan
+# Production clean hybrid migration plan
 
 Goal: reduce latency and hallucination risk for the HR recruiting chatbot without losing the useful graph/vector behavior already tested.
 
-## Guardrails for the migration
+The final target is the clean 8-node architecture:
 
+1. Bucket / debounce
+2. Central regex guard
+3. Rewrite node
+4. Knowledge graph / state
+5. RAG only for documents
+6. Generate node
+7. Output guard
+8. Save state / Chatwoot lead status
+
+## Hard boundaries
+
+- Regex handles only obvious binary guards: high risk, pure greeting, on-route, callback.
+- Rewrite only normalizes fragmented and misspelled human language.
+- Rewrite must not classify business intent, assign risk, decide routes, or produce lead state.
+- Knowledge graph/state owns candidate memory: profile, stage, lead status, risk, answered topics.
+- RAG owns documentary facts: pay, benefits, routes, bases, requirements, medical, antidoping, training.
+- Generate owns the conversational answer using the fused context.
+- Output guard owns deterministic cleanup with no LLM call.
 - Do not add more LLM validation nodes.
 - Keep LangGraph as a simple orchestrator, not a long chain of LLM judges.
-- Use exactly one centralized regex rule module for obvious entry/output guards.
-- Keep rewrite because candidates send fragmented and misspelled messages.
-- Use vector/RAG only for documentary knowledge: pay, benefits, routes, bases, requirements, medical, antidoping, training.
-- Use persisted graph/state for candidate context: stage, lead status, profile fields, risk, last intent, answered topics.
 - Every phase must be debugged and closed before moving to the next one.
 
 ## Phase 1 — Centralize deterministic guards and measure baseline
 
-Status target: safe refactor, no behavioral rewrite of the full graph yet.
+Status target: safe refactor, no full behavior migration yet.
 
 Changes:
 - Add `app/graphs/hr_hybrid_rules.py`.
@@ -31,6 +45,21 @@ Debug completion criteria:
 
 Exit decision:
 - Close Phase 1 only after we review debug output together.
+
+## Phase 1.1 — Correct rewrite boundary
+
+Status target: undo the experimental behavior where rewrite acts like a classifier.
+
+Changes:
+- Remove business routing metadata from rewrite as the final target.
+- Keep rewrite focused on punctuation, spelling, fragmented bucket messages and safe normalization.
+- Move route/risk/lead decisions to context builder + generate contract in later phases.
+- During compatibility testing, any remaining route hints are temporary and must not become final architecture.
+
+Debug completion criteria:
+- Bucket examples normalize cleanly.
+- Dropoff, pay, documents and sensitive cases still route safely through explicit graph/router logic, not because rewrite became a hidden classifier.
+- No regression on the current `candidate_dropoff_recovery` case.
 
 ## Phase 2 — Add context builder contract
 
@@ -96,4 +125,4 @@ Debug completion criteria:
 ## Current phase
 
 We are in Phase 1.
-Do not proceed to Phase 2 until Phase 1 debug output is reviewed and accepted.
+Do not proceed to Phase 2 until Phase 1 and Phase 1.1 debug output is reviewed and accepted.
