@@ -13,12 +13,32 @@ ROUTE_MAP = {
     "human_handoff": "human_handoff",
     "fallback": "fallback",
     "policy_boundary": "policy_boundary",
+    "candidate_dropoff_recovery": "candidate_dropoff_recovery",
+}
+
+DROPOFF_REASONS = {
+    "candidate_dropoff_risk",
+    "candidate_churn_risk",
+    "candidate_loss_risk",
+}
+
+DROPOFF_INTENTS = {
+    "candidate_dropoff_risk",
+    "candidate_churn_risk",
+    "candidate_loss_risk",
+    "dropoff_risk",
 }
 
 
 def _route_from_classifier(classifier: dict) -> str:
     recommended = str(classifier.get("recommended_route") or "").strip().lower()
     datasource = str(classifier.get("datasource") or "").strip().lower()
+    reason = str(classifier.get("reason") or "").strip().lower()
+    intent = str(classifier.get("classifier_intent") or "").strip().lower()
+
+    if reason in DROPOFF_REASONS or intent in DROPOFF_INTENTS:
+        return "candidate_dropoff_recovery"
+
     return ROUTE_MAP.get(recommended) or ROUTE_MAP.get(datasource) or "rag"
 
 
@@ -30,7 +50,15 @@ def route_message_node(state: HRState) -> dict:
     requires_clarification = bool(classifier.get("requires_clarification", False)) or route == "clarification"
     requires_rag = bool(classifier.get("requires_rag", False)) or route == "rag"
 
-    if route in {"greeting", "profile", "human_handoff", "clarification", "fallback", "policy_boundary"}:
+    if route in {
+        "greeting",
+        "profile",
+        "human_handoff",
+        "clarification",
+        "fallback",
+        "policy_boundary",
+        "candidate_dropoff_recovery",
+    }:
         requires_rag = False
     if route == "web_review":
         requires_rag = False
