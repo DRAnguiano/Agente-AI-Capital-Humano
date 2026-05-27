@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.graphs.hr_nodes_clarification import request_clarification_node
+from app.graphs.hr_nodes_dropoff import dropoff_recovery_response_node
 from app.graphs.hr_nodes_fallback import fallback_response_node
 from app.graphs.hr_nodes_greeting import greeting_response_node
 from app.graphs.hr_nodes_handoff import (
@@ -37,6 +38,7 @@ def policy_boundary_response_node(state: HRState) -> dict[str, Any]:
         "clarification_real_flow_used": False,
         "fallback_real_flow_used": False,
         "policy_boundary_real_flow_used": True,
+        "dropoff_recovery_real_flow_used": False,
         "events": [
             {
                 "type": "policy_boundary_answered",
@@ -47,7 +49,16 @@ def policy_boundary_response_node(state: HRState) -> dict[str, Any]:
     }
 
 
-def _flow_flags(*, profile: bool = False, handoff: bool = False, clarification: bool = False, fallback: bool = False, policy: bool = False, greeting: bool = False) -> dict[str, bool]:
+def _flow_flags(
+    *,
+    profile: bool = False,
+    handoff: bool = False,
+    clarification: bool = False,
+    fallback: bool = False,
+    policy: bool = False,
+    greeting: bool = False,
+    dropoff: bool = False,
+) -> dict[str, bool]:
     return {
         "route_stub_used": False,
         "greeting_real_flow_used": greeting,
@@ -56,6 +67,7 @@ def _flow_flags(*, profile: bool = False, handoff: bool = False, clarification: 
         "clarification_real_flow_used": clarification,
         "fallback_real_flow_used": fallback,
         "policy_boundary_real_flow_used": policy,
+        "dropoff_recovery_real_flow_used": dropoff,
     }
 
 
@@ -78,6 +90,13 @@ def route_stub_response_node(state: HRState) -> dict[str, Any]:
 
     if route == "greeting":
         return greeting_response_node(state)
+
+    if route == "candidate_dropoff_recovery":
+        dropoff_update = dropoff_recovery_response_node(state)
+        return {
+            **dropoff_update,
+            **_flow_flags(dropoff=True),
+        }
 
     if route == "profile":
         lead = state.get("lead_ingestion") or {}
