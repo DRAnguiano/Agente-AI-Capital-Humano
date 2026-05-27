@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable
 
 from app.graphs.hr_state import HRState
 
 LOGGER = logging.getLogger("hr_graph_timing")
-NodeFn = TypeVar("NodeFn", bound=Callable[[HRState], dict[str, Any]])
 
 
 def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) -> Callable[[HRState], dict[str, Any]]:
@@ -19,6 +18,8 @@ def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) ->
 
     This lets us identify latency sources before cutting nodes or changing prompts.
     """
+    if getattr(fn, "_hr_timing_wrapped", False):
+        return fn
 
     def wrapper(state: HRState) -> dict[str, Any]:
         start = time.perf_counter()
@@ -58,4 +59,5 @@ def timed_graph_node(node_name: str, fn: Callable[[HRState], dict[str, Any]]) ->
             LOGGER.info("hr_node_timing node=%s elapsed_ms=%s status=%s", node_name, elapsed_ms, status)
 
     wrapper.__name__ = f"timed_{getattr(fn, '__name__', node_name)}"
+    setattr(wrapper, "_hr_timing_wrapped", True)
     return wrapper
