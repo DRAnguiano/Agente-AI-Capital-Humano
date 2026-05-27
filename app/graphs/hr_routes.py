@@ -66,6 +66,23 @@ def route_after_router(state: HRState) -> str:
     return state.get("route", "fallback")
 
 
+def route_after_fast_semantic_router(state: HRState) -> str:
+    """
+    If fast router found a safe deterministic route, skip expensive LLM nodes.
+
+    - rag: question is already rewritten; go straight to retrieval.
+    - non-rag: use the existing controlled response branch.
+    - no match: continue the full slow graph.
+    """
+    if not state.get("fast_route_found"):
+        return "slow_graph"
+
+    if state.get("route") == "rag":
+        return "fast_rag"
+
+    return "fast_stub"
+
+
 def route_after_full_router(state: HRState) -> str:
     """
     Map semantic routes to technical graph nodes.
@@ -124,6 +141,7 @@ def route_after_answer_check(state: HRState) -> str:
 
     return "fallback_no_context"
 
+
 def route_after_web_review(state: HRState) -> str:
     """
     After Tavily/review, avoid dead-ending into fallback when the question is
@@ -179,6 +197,7 @@ def route_after_web_review(state: HRState) -> str:
             return "rewrite_question"
 
     return "route_stub_response"
+
 
 def route_after_semantic_uncertainty(state: HRState) -> str:
     """
