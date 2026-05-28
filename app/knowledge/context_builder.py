@@ -6,12 +6,29 @@ from typing import Any
 
 from app.indexer import _embed_texts, _get_collection, _normalize_text, _to_int
 
+_COLLECTION_CACHE: Any | None = None
+_WARMUP_RESULT: dict[str, Any] | None = None
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 def _env_float(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, str(default)))
     except Exception:
         return default
+
+
+def _get_cached_collection():
+    global _COLLECTION_CACHE
+    if _COLLECTION_CACHE is None:
+        _COLLECTION_CACHE = _get_collection()
+    return _COLLECTION_CACHE
 
 
 def _source_where(preferred_sources: list[str]) -> dict[str, Any] | None:
@@ -41,6 +58,39 @@ def _dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             seen.add(item_id)
         out.append(item)
     return out
+
+
+def warmup_controlled_rag_runtime() -> dict[str, Any]:
+    """Load Chroma collection and embedding model before the first candidate request.
+
+    This avoids making the first real user pay the BAAI/bge-m3 cold start.
+    The function performs no LLM call and spends no Groq tokens.
+    """
+    global _WARMUP_RESULT
+    if _WARMUP_RESULT is not None:
+        return _WARMUP_RESULT
+
+    started = time.perf_counter()
+    try:
+        collection = _get_cached_collection()
+        _embed_texts([os.getenv("KNOWLEDGE_RAG_WARMUP_TEXT", "cuanto pagan por kilometro")])
+        count = collection.count()
+        _WARMUP_RESULT = {
+            "ok": True,
+            "collection_count": count,
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+            "error": None,
+        }
+    except Exception as exc:
+        _WARMUP_RESULT = {
+            "ok": False,
+            "collection_count": None,
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    print(f"[knowledge_rag_warmup] {_WARMUP_RESULT}", flush=True)
+    return _WARMUP_RESULT
 
 
 def retrieve_preferred_context(
@@ -73,7 +123,7 @@ def retrieve_preferred_context(
     source_filter = [str(item).strip() for item in preferred_sources or [] if str(item).strip()]
 
     try:
-        collection = _get_collection()
+        collection = _get_cached_collection()
         query_embedding = _embed_texts([query])[0]
         where = _source_where(source_filter)
 
@@ -222,3 +272,7 @@ def estimate_llm_cost(prompt: str, reply: str) -> dict[str, Any]:
         "total_usd_est": round(input_usd + output_usd, 8),
         "chars_per_token": chars_per_token,
     }
+
+
+if _env_bool("KNOWLEDGE_RAG_WARMUP_ON_STARTUP", True):
+    warmup_controlled_rag_runtime()
