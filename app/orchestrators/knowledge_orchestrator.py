@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any
 
@@ -25,6 +26,13 @@ NO_CONTEXT_REPLY = (
     "Lo correcto es que Capital Humano lo valide antes de confirmarte el dato."
 )
 
+GENERIC_CLOSING_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\s*Si tienes (m[aá]s |alguna )?(otra )?duda[s]?,? puedo ayudarte\.?\s*$", re.IGNORECASE),
+    re.compile(r"\s*Si necesitas m[aá]s informaci[oó]n,? puedo ayudarte[^.?!]*(\.|!|\?)?\s*$", re.IGNORECASE),
+    re.compile(r"\s*Estoy aqu[ií] para ayudarte\.?\s*$", re.IGNORECASE),
+    re.compile(r"\s*¿?Tienes alguna otra duda\??\s*$", re.IGNORECASE),
+)
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -45,14 +53,8 @@ def _route_flags(route: str, risk_level: str) -> dict[str, bool]:
 
 def _clean_reply(text: str) -> str:
     clean = (text or "").strip()
-    for ending in (
-        "Si tienes otra duda, puedo ayudarte.",
-        "Si tienes alguna otra duda, puedo ayudarte.",
-        "Estoy aquí para ayudarte.",
-        "¿Tienes alguna otra duda?",
-    ):
-        if clean.endswith(ending):
-            clean = clean[: -len(ending)].strip()
+    for pattern in GENERIC_CLOSING_PATTERNS:
+        clean = pattern.sub("", clean).strip()
     return clean
 
 
