@@ -56,7 +56,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
-CREATE OR REPLACE VIEW v_rh_lead_memory_v2 AS
+-- CREATE OR REPLACE VIEW no permite insertar columnas en medio de una vista ya existente.
+-- Como esta vista es de lectura para RH/Power BI/notas, la recreamos sin CASCADE
+-- para no tumbar dependencias por accidente.
+DROP VIEW IF EXISTS v_rh_lead_memory_v2;
+
+CREATE VIEW v_rh_lead_memory_v2 AS
 WITH lead_effective AS (
     SELECT
         l.*,
