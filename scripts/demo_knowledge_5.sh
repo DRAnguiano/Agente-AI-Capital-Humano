@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ENDPOINT="${ENDPOINT:-http://localhost:8000/orchestrate/message}"
-CHANNEL="${CHANNEL:-test_knowledge_orchestrator}"
+CHANNEL="${CHANNEL:-}"
 RUN_ID="${RUN_ID:-demo_$(date +%Y%m%d_%H%M%S)}"
 
 cases=(
@@ -14,7 +14,9 @@ cases=(
 )
 
 printf 'Demo endpoint: %s\n' "$ENDPOINT"
-printf 'Canal: %s\n' "$CHANNEL"
+if [ -n "$CHANNEL" ]; then
+  printf 'Canal: %s\n' "$CHANNEL"
+fi
 printf 'Run ID: %s\n\n' "$RUN_ID"
 
 for i in "${!cases[@]}"; do
@@ -28,11 +30,18 @@ for i in "${!cases[@]}"; do
   printf 'CASO %s - %s\n' "$case_num" "$label"
   printf 'Candidato: %s\n\n' "$message"
 
-  payload=$(jq -cn \
-    --arg channel "$CHANNEL" \
-    --arg user_id "$user_id" \
-    --arg message "$message" \
-    '{channel:$channel, channel_user_id:$user_id, message:$message}')
+  if [ -n "$CHANNEL" ]; then
+    payload=$(jq -cn \
+      --arg channel "$CHANNEL" \
+      --arg user_id "$user_id" \
+      --arg message "$message" \
+      '{channel:$channel, channel_user_id:$user_id, message:$message}')
+  else
+    payload=$(jq -cn \
+      --arg user_id "$user_id" \
+      --arg message "$message" \
+      '{channel_user_id:$user_id, message:$message}')
+  fi
 
   response=$(curl -s "$ENDPOINT" \
     -H "Content-Type: application/json" \
