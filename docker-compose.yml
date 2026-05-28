@@ -59,8 +59,6 @@ services:
     networks:
       default:
         aliases:
-          # Alias válido para que Chatwoot UI acepte la URL del webhook:
-          # http://api.localhost:8000/chatwoot/webhook?token=...
           - api.localhost
     restart: unless-stopped
 
@@ -214,7 +212,7 @@ services:
       - chatwoot_redis
     restart: unless-stopped
 
-    #######################################
+  #######################################
   # N8N OPCIONAL / LABORATORIO / AUTOMATIZACIONES
   #######################################
   n8n:
@@ -246,7 +244,20 @@ services:
     restart: unless-stopped
 
   #######################################
-  # NGROK PUBLICANDO CHATWOOT
+  # GATEWAY PUBLICO CHATWOOT + WEBHOOK API
+  #######################################
+  public-gateway:
+    image: nginx:alpine
+    container_name: public-gateway
+    depends_on:
+      - api
+      - chatwoot_rails
+    volumes:
+      - ./deploy/nginx/public-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  #######################################
+  # NGROK PUBLICANDO GATEWAY PUBLICO
   #######################################
   ngrok:
     image: ngrok/ngrok:latest
@@ -258,14 +269,14 @@ services:
       - "${NGROK_AUTHTOKEN}"
       - "--domain"
       - "${NGROK_DOMAIN}"
-      - "http://chatwoot_rails:3000"
+      - "http://public-gateway:80"
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
       NGROK_DOMAIN: ${NGROK_DOMAIN}
     ports:
       - "4040:4040"
     depends_on:
-      - chatwoot_rails
+      - public-gateway
     restart: unless-stopped
 
 volumes:
