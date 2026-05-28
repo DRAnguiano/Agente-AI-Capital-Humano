@@ -1,0 +1,179 @@
+{
+  "name": "hr_recruiting_knowledge_graph_schema",
+  "version": "0.1.0",
+  "purpose": "Constrain knowledge extraction and graph writes for the HR recruiting assistant. This schema prevents uncontrolled node/relationship creation and replaces scattered regex routing with typed knowledge.",
+  "node_types": [
+    {
+      "label": "Term",
+      "description": "Controlled dictionary term, synonym group, typo variant or trucking/recruiting slang.",
+      "required_properties": ["id", "canonical", "category"],
+      "properties": {
+        "id": "Stable snake_case id.",
+        "canonical": "Human readable canonical expression.",
+        "category": "One of greeting, faq_topic, dropoff_signal, dropoff_close_signal, profile_signal, safety_static, ambiguous_slang, sensitive_handoff, jargon.",
+        "aliases": "List of accepted variants. Matching is normalized outside Neo4j.",
+        "meanings": "Optional list of possible meanings for ambiguous slang.",
+        "action": "Optional controlled action such as clarify_or_dual_safe_response, answer_from_knowledge, handoff_review.",
+        "updated_at": "Neo4j datetime."
+      }
+    },
+    {
+      "label": "Intent",
+      "description": "Business intent detected from terms or conversation state.",
+      "required_properties": ["id", "risk_level"],
+      "properties": {
+        "id": "Stable intent id, e.g. payment_compensation.",
+        "risk_level": "low, medium, or high.",
+        "topic": "Optional topic id for RAG context selection."
+      }
+    },
+    {
+      "label": "Route",
+      "description": "Technical/business route selected by the knowledge node.",
+      "required_properties": ["id"],
+      "properties": {
+        "id": "greeting, rag, profile, human_handoff, clarification, fallback, policy_boundary, candidate_dropoff_recovery.",
+        "label": "Human readable route label."
+      }
+    },
+    {
+      "label": "ReplyTemplate",
+      "description": "Controlled static or semi-static candidate-facing reply.",
+      "required_properties": ["id", "text"],
+      "properties": {
+        "id": "Stable template id.",
+        "text": "Spanish candidate-facing response.",
+        "updated_at": "Neo4j datetime."
+      }
+    },
+    {
+      "label": "Policy",
+      "description": "Operational, compliance or safety policy that constrains generation.",
+      "required_properties": ["id", "label", "risk_level", "public_guidance"],
+      "properties": {
+        "id": "Stable policy id.",
+        "label": "Policy display name.",
+        "risk_level": "low, medium, or high.",
+        "public_guidance": "Short safe public guidance for the LLM/context builder.",
+        "updated_at": "Neo4j datetime."
+      }
+    },
+    {
+      "label": "Topic",
+      "description": "Document/RAG topic bucket.",
+      "required_properties": ["id"],
+      "properties": {
+        "id": "payment, requirements, safety, routes, training."
+      }
+    },
+    {
+      "label": "InternalSource",
+      "description": "Internal document or source id preferred for a term/topic.",
+      "required_properties": ["id"],
+      "properties": {
+        "id": "Filename or stable source id.",
+        "kind": "rag_document, policy_doc, database_fact, or other."
+      }
+    },
+    {
+      "label": "Candidate",
+      "description": "Candidate identity and current recruiting profile facts. Initially remains in Postgres; Neo4j relation is future-ready.",
+      "required_properties": ["id"],
+      "properties": {
+        "id": "Stable candidate id or conversation-derived id.",
+        "name": "Optional candidate full name.",
+        "phone": "Optional normalized phone.",
+        "city": "Optional canonical city.",
+        "risk_level": "low, medium, or high."
+      }
+    },
+    {
+      "label": "Conversation",
+      "description": "Conversation session state. Initially mirrored from Postgres.",
+      "required_properties": ["id"],
+      "properties": {
+        "id": "conversation_key.",
+        "channel": "chatwoot, telegram, test, whatsapp, etc.",
+        "current_stage": "Recruiting stage.",
+        "last_topic": "Optional last topic id.",
+        "risk_level": "low, medium, or high."
+      }
+    }
+  ],
+  "relationship_types": [
+    {
+      "type": "SUGGESTS_INTENT",
+      "from": "Term",
+      "to": "Intent",
+      "description": "A matched controlled term suggests a business intent.",
+      "properties": {
+        "weight": "Optional numeric confidence weight."
+      }
+    },
+    {
+      "type": "ROUTES_TO",
+      "from": "Intent",
+      "to": "Route",
+      "description": "Intent maps to the route selected by the knowledge node."
+    },
+    {
+      "type": "PREFERS_SOURCE",
+      "from": "Term|Topic",
+      "to": "InternalSource",
+      "description": "Preferred source for RAG retrieval/context building."
+    },
+    {
+      "type": "USES_REPLY",
+      "from": "Term|Intent|Route",
+      "to": "ReplyTemplate",
+      "description": "Controlled static reply for a matched term/intent/route."
+    },
+    {
+      "type": "APPLIES_TO",
+      "from": "Policy",
+      "to": "Intent|Topic|Term",
+      "description": "Policy applies when this intent/topic/term is active."
+    },
+    {
+      "type": "HAS_CONVERSATION",
+      "from": "Candidate",
+      "to": "Conversation",
+      "description": "Candidate has an active conversation."
+    },
+    {
+      "type": "MENTIONED_TERM",
+      "from": "Conversation",
+      "to": "Term",
+      "description": "Conversation/message mentioned a controlled term. Future audit edge."
+    },
+    {
+      "type": "CURRENT_INTENT",
+      "from": "Conversation",
+      "to": "Intent",
+      "description": "Conversation was classified by the knowledge node into this intent. Future audit edge."
+    }
+  ],
+  "extraction_rules": {
+    "allowed_node_labels_only": true,
+    "allowed_relationship_types_only": true,
+    "no_new_policy_from_candidate_message": true,
+    "no_new_sensitive_fact_without_explicit_candidate_statement": true,
+    "ambiguous_slang_default_action": "clarify_or_dual_safe_response",
+    "unknown_term_default_action": "ask_clarification",
+    "candidate_message_never_creates_route_or_policy": true,
+    "candidate_message_may_create_audit_edges_only": ["MENTIONED_TERM", "CURRENT_INTENT"]
+  },
+  "knowledge_node_output_contract": {
+    "recognized_terms": "List of matched Term ids.",
+    "intent": "Selected Intent id.",
+    "route": "Selected Route id.",
+    "risk_level": "low, medium, or high.",
+    "requires_human": "Boolean.",
+    "requires_rag": "Boolean.",
+    "requires_clarification": "Boolean.",
+    "preferred_sources": "List of InternalSource ids.",
+    "reply_template": "Optional ReplyTemplate id and text.",
+    "policies": "List of policy public_guidance strings.",
+    "reason": "Short internal reason."
+  }
+}
