@@ -93,26 +93,23 @@ def _lead_memory_text_for_note(lead_memory: dict) -> str:
             raise RuntimeError("No encontré marcador def _human_city_group para insertar helpers.")
         text = text.replace(marker, helper + "\n\n" + marker, 1)
 
-    # Amplía mapa de intenciones a español para el orquestador de conocimiento.
-    additions = {
-        '"payment_compensation": "Pago / compensación",': '"payment_compensation": "Pago / compensación",',
-        '"requirements_documents": "Documentos / requisitos",': '"requirements_documents": "Documentos / requisitos",',
-        '"drug_testing_urine": "Pruebas / política de seguridad",': '"drug_testing_urine": "Pruebas / política de seguridad",',
-        '"bases_routes_rest": "Rutas / bases / descansos",': '"bases_routes_rest": "Rutas / bases / descansos",',
-        '"driving_school": "Escuela de manejo / experiencia",': '"driving_school": "Escuela de manejo / experiencia",',
-        '"candidate_dropoff_risk": "Riesgo de abandono",': '"candidate_dropoff_risk": "Riesgo de abandono",',
-        '"document_submission_ack": "Documentos enviados por candidato",': '"document_submission_ack": "Documentos enviados por candidato",',
-        '"on_route_safety": "Candidato en ruta / seguridad",': '"on_route_safety": "Candidato en ruta / seguridad",',
-        '"friendly_smalltalk": "Conversación casual segura",': '"friendly_smalltalk": "Conversación casual segura",',
-        '"local_time": "Hora local",': '"local_time": "Hora local",',
-        '"farewell": "Despedida / seguimiento abierto",': '"farewell": "Despedida / seguimiento abierto",',
-    }
-
     if '"payment_compensation": "Pago / compensación",' not in text:
         needle = '        "conditional_availability": "Disponibilidad condicionada",\n'
         if needle not in text:
             raise RuntimeError("No encontré marcador conditional_availability en _human_intent.")
-        inject = "".join(f"        {line}\n" for line in additions.values())
+        inject = (
+            '        "payment_compensation": "Pago / compensación",\n'
+            '        "requirements_documents": "Documentos / requisitos",\n'
+            '        "drug_testing_urine": "Pruebas / política de seguridad",\n'
+            '        "bases_routes_rest": "Rutas / bases / descansos",\n'
+            '        "driving_school": "Escuela de manejo / experiencia",\n'
+            '        "candidate_dropoff_risk": "Riesgo de abandono",\n'
+            '        "document_submission_ack": "Documentos enviados por candidato",\n'
+            '        "on_route_safety": "Candidato en ruta / seguridad",\n'
+            '        "friendly_smalltalk": "Conversación casual segura",\n'
+            '        "local_time": "Hora local",\n'
+            '        "farewell": "Despedida / seguimiento abierto",\n'
+        )
         text = text.replace(needle, needle + inject, 1)
 
     new_note_function = r'''def _build_chatwoot_internal_note(
@@ -129,7 +126,6 @@ def _lead_memory_text_for_note(lead_memory: dict) -> str:
     """
     conversation_key = result.get("conversation_key")
     if not conversation_key:
-        # Compatibilidad con rutas de Chatwoot anteriores.
         channel_user_id = work_queue.get("channel_user_id")
         if channel_user_id:
             conversation_key = make_conversation_key("chatwoot", str(channel_user_id))
@@ -138,7 +134,6 @@ def _lead_memory_text_for_note(lead_memory: dict) -> str:
     if not isinstance(lead_memory, dict) or not lead_memory.get("lead"):
         lead_memory = _get_lead_memory_v2_for_note(result, conversation_key=conversation_key)
     else:
-        # Resultado directo del orquestador trae {lead, facts, messages, events}; usamos la vista si hay lead_key.
         lead_memory = _get_lead_memory_v2_for_note(result, conversation_key=conversation_key) or lead_memory
 
     current_stage_raw = result.get("current_stage") or work_queue.get("current_stage")
@@ -220,7 +215,10 @@ def _lead_memory_text_for_note(lead_memory: dict) -> str:
         flags=re.DOTALL,
     )
     replacement = new_note_function + '\n\n\n@app.post("/chatwoot/webhook")'
-    text, count = pattern.subn(replacement, text, count=1)
+
+    # Important: use a lambda so re.sub does NOT interpret \n in replacement
+    # as real line breaks inside the generated Python string literals.
+    text, count = pattern.subn(lambda _m: replacement, text, count=1)
     if count != 1:
         raise RuntimeError("No pude reemplazar _build_chatwoot_internal_note. Revisa app/app.py manualmente.")
 
