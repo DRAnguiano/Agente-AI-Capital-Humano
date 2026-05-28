@@ -119,7 +119,7 @@ UNWIND [
   {id:'escuelita', canonical:'escuela de manejo', category:'faq_topic', intent:'driving_school', source:'02_documentos_requisitos.md', aliases:['escuelita','escuela','curso','op 5ta','5ta rueda','quinta rueda','me falta experiencia','sin experiencia','aprender','ensenan','enseñan']},
 
   // dropoff
-  {id:'dropoff_delay', canonical:'riesgo de abandono por demora', category:'dropoff_signal', intent:'candidate_dropoff_risk', aliases:['desde ayer estoy esperando','desde ayer espero','estoy esperando','sigo esperando','me dejaron en visto','nadie me contesto','nadie me contestó','no me han contestado','no me respondieron','tardaron mucho','ya me hablaron de otro lado','me hablaron de otro lado','ya me llamaron de otro lado','me llamaron de otro lado','ya fui a otra entrevista']},
+  {id:'dropoff_delay', canonical:'riesgo de abandono por demora', category:'dropoff_signal', intent:'candidate_dropoff_risk', reply:'dropoff_recovery', aliases:['desde ayer estoy esperando','desde ayer espero','estoy esperando','sigo esperando','me dejaron en visto','nadie me contesto','nadie me contestó','no me han contestado','no me respondieron','tardaron mucho','ya me hablaron de otro lado','me hablaron de otro lado','ya me llamaron de otro lado','me llamaron de otro lado','ya fui a otra entrevista']},
   {id:'dropoff_close', canonical:'candidato cierra proceso', category:'dropoff_close_signal', intent:'candidate_dropoff_risk', reply:'dropoff_close', aliases:['ya encontre trabajo','ya encontré trabajo','ya consegui trabajo','ya conseguí trabajo','ya no me interesa','no me interesa','ya acepte otro','ya acepté otro','gracias ya no']},
 
   // callback
