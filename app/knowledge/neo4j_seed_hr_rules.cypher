@@ -83,6 +83,7 @@ UNWIND [
   {id:'driving_school', route:'rag', risk:'low', topic:'training'},
   {id:'candidate_dropoff_risk', route:'candidate_dropoff_recovery', risk:'medium'},
   {id:'callback_request', route:'profile', risk:'low'},
+  {id:'on_route_safety', route:'profile', risk:'low'},
   {id:'high_risk_sensitive', route:'human_handoff', risk:'high'},
   {id:'ambiguous_slang_clarification', route:'clarification', risk:'medium'}
 ] AS row
@@ -125,7 +126,7 @@ UNWIND [
   {id:'callback_request', canonical:'solicitud de llamada', category:'profile_signal', intent:'callback_request', reply:'static_callback', aliases:['llamenme','llámenme','llamenme','llámeme','me llaman','me pueden llamar','quiero que me llamen','a que hora me llaman','a qué hora me llaman']},
 
   // on route
-  {id:'on_route', canonical:'candidato manejando/en ruta', category:'safety_static', intent:'profile', reply:'static_on_route', aliases:['voy manejando','ando en ruta','voy en ruta','10-4','al rato','ahorita manejo','luego te escribo','luego te mando']},
+  {id:'on_route', canonical:'candidato manejando/en ruta', category:'safety_static', intent:'on_route_safety', reply:'static_on_route', aliases:['voy manejando','ando en ruta','voy en ruta','10-4','al rato','ahorita manejo','luego te escribo','luego te mando']},
 
   // ambiguous slang
   {id:'cachimba', canonical:'cachimba/cachimbear', category:'ambiguous_slang', intent:'ambiguous_slang_clarification', aliases:['cachimba','cachimbear','cachimbr','cachimb','kchmbr','kchimb','kchimba','kachmbr'], meanings:['paradas breves en ruta','posible referencia sensible según contexto'], action:'clarify_or_dual_safe_response'},
