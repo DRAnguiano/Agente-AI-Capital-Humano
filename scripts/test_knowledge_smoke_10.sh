@@ -7,6 +7,10 @@ RUN_ID="${RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
 OUT_JSONL="${OUT_JSONL:-/tmp/hr_knowledge_smoke_10_${RUN_ID}.jsonl}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-0.2}"
 
+now_ms() {
+  date +%s%3N
+}
+
 cases=(
   "pago|rag|cuanto pagan por kilometro"
   "documentos|rag|que documentos piden"
@@ -45,22 +49,13 @@ for i in "${!cases[@]}"; do
     --arg message "$message" \
     '{channel:$channel, channel_user_id:$user_id, message:$message}')
 
-  start_ms=$(python - <<'PY'
-import time
-print(int(time.time() * 1000))
-PY
-)
+  start_ms=$(now_ms)
 
   response=$(curl -s "$ENDPOINT" \
     -H "Content-Type: application/json" \
     -d "$payload")
 
-  end_ms=$(python - <<'PY'
-import time
-print(int(time.time() * 1000))
-PY
-)
-
+  end_ms=$(now_ms)
   latency_ms=$((end_ms - start_ms))
 
   echo "$response" | jq -c \
