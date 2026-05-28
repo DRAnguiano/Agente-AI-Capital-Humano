@@ -2,26 +2,24 @@ services:
   neo4j:
     image: neo4j:5-community
     container_name: hr_neo4j
-    env_file:
-      - .env
+    # Do NOT use env_file here.
+    # Neo4j converts every NEO4J_* environment variable into database config.
+    # App variables such as NEO4J_URI or NEO4J_HEAP_INITIAL would become invalid
+    # settings inside Neo4j and can cause restart loops.
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo4j_password}
-      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_INITIAL:-512m}
-      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_MAX:-1G}
-      NEO4J_dbms_security_procedures_unrestricted: apoc.*
-      NEO4J_dbms_security_procedures_allowlist: apoc.*
+      # Keep Neo4j-specific settings explicit and minimal.
+      server.memory.heap.initial_size: ${NEO4J_HEAP_INITIAL:-512m}
+      server.memory.heap.max_size: ${NEO4J_HEAP_MAX:-1G}
     ports:
       - "7474:7474"
       - "7687:7687"
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
-      - neo4j_import:/var/lib/neo4j/import
-      - neo4j_plugins:/plugins
+      - ./app/knowledge:/var/lib/neo4j/import
     restart: unless-stopped
 
 volumes:
   neo4j_data:
   neo4j_logs:
-  neo4j_import:
-  neo4j_plugins:
