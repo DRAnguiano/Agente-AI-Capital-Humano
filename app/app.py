@@ -14,6 +14,7 @@ from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
 from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY
+from .chatwoot_note_sync import sync_chatwoot_candidate_note
 
 app = FastAPI(default_response_class=ORJSONResponse)
 
@@ -969,60 +970,107 @@ async def chatwoot_webhook(
         note_created = False
         labels_error = None
         note_error = None
+        note_sync = None
 
         try:
-            await _set_chatwoot_labels(
+            note_sync = await sync_chatwoot_candidate_note(
+                lead_key=conversation_key,
                 account_id=account_id,
                 conversation_id=conversation_id,
-                labels=labels,
+                fallback_last_message=content,
+                channel_label=channel_label,
             )
-            labels_applied = True
-        except Exception as label_exc:
-            labels_error = str(label_exc)
+            labels = note_sync.get("labels") or []
+            labels_applied = bool(note_sync.get("ok"))
+            note_created = bool(note_sync.get("ok"))
+
             print(
-                "[CHATWOOT_LABELS_ERROR]",
+                "[CHATWOOT_NOTE_SYNC_OK]",
                 json.dumps(
                     {
+                        "lead_key": conversation_key,
                         "conversation_id": conversation_id,
                         "account_id": account_id,
                         "labels": labels,
-                        "error": labels_error[:500],
+                        "note_message_id": note_sync.get("note_message_id"),
                     },
                     ensure_ascii=False,
                 ),
                 flush=True,
             )
 
-        try:
-            note = _build_chatwoot_internal_note(
-                result=result,
-                work_queue=work_queue,
-                labels=labels,
-                username=username,
-                content=content,
-                channel_label=channel_label,
-            )
+        except Exception as sync_exc:
+            note_error = str(sync_exc)
+            labels_error = str(sync_exc)
 
-            await _send_chatwoot_private_note(
-                account_id=account_id,
-                conversation_id=conversation_id,
-                content=note,
-            )
-            note_created = True
-        except Exception as note_exc:
-            note_error = str(note_exc)
             print(
-                "[CHATWOOT_NOTE_ERROR]",
+                "[CHATWOOT_NOTE_SYNC_ERROR]",
                 json.dumps(
                     {
+                        "lead_key": conversation_key,
                         "conversation_id": conversation_id,
                         "account_id": account_id,
-                        "error": note_error[:500],
+                        "error": str(sync_exc)[:500],
                     },
                     ensure_ascii=False,
                 ),
                 flush=True,
             )
+
+            # Fallback al comportamiento anterior para no romper operación si falla la memoria v2.
+            try:
+                await _set_chatwoot_labels(
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    labels=labels,
+                )
+                labels_applied = True
+            except Exception as label_exc:
+                labels_error = str(label_exc)
+                print(
+                    "[CHATWOOT_LABELS_ERROR]",
+                    json.dumps(
+                        {
+                            "conversation_id": conversation_id,
+                            "account_id": account_id,
+                            "labels": labels,
+                            "error": labels_error[:500],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+
+            try:
+                note = _build_chatwoot_internal_note(
+                    result=result,
+                    work_queue=work_queue,
+                    labels=labels,
+                    username=username,
+                    content=content,
+                    channel_label=channel_label,
+                )
+
+                await _send_chatwoot_private_note(
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    content=note,
+                )
+                note_created = True
+            except Exception as fallback_note_exc:
+                note_error = str(fallback_note_exc)
+                print(
+                    "[CHATWOOT_NOTE_ERROR]",
+                    json.dumps(
+                        {
+                            "conversation_id": conversation_id,
+                            "account_id": account_id,
+                            "error": note_error[:500],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
 
         return {
             "status": "ok",
@@ -1040,6 +1088,7 @@ async def chatwoot_webhook(
             "labels_error": labels_error,
             "note_created": note_created,
             "note_error": note_error,
+            "note_sync": note_sync,
             "work_priority": work_queue.get("work_priority"),
             "work_bucket": work_queue.get("work_bucket"),
             "recommended_action": work_queue.get("recommended_action"),
