@@ -95,12 +95,14 @@ def _demo_guardrail_reply(message: str, memory: dict[str, Any] | None, contract:
     text = normalize_text(message)
 
     if _looks_like_infonavit_question(message):
-        return "Sí, se manejan prestaciones de ley; los detalles específicos como Infonavit los confirma Capital Humano durante el proceso. Para orientarte mejor, ¿en qué ciudad resides actualmente?"
+        return "Sí, se manejan prestaciones de ley; los detalles específicos como Infonavit los confirma Capital Humano durante el proceso. Para orientarte mejor, ¿en qué ciudad reside actualmente?"
 
     if _is_brief_positive_close(message):
+        contract["demo_brief_positive_close"] = True
         return "Perfecto, gracias. Dejamos el proceso abierto; cuando tenga oportunidad de compartir la documentación, Capital Humano la revisa y seguimos adelante."
 
     if _looks_like_docs_later_or_driving(message):
+        contract["demo_docs_pending_send"] = True
         return "Claro, sin problema. Primero maneje con seguridad; cuando esté detenido y tenga oportunidad, nos comparte la documentación para que Capital Humano la revise. Dejamos su proceso abierto."
 
     if _is_profile_memory_complaint(message):
@@ -112,6 +114,7 @@ def _demo_guardrail_reply(message: str, memory: dict[str, Any] | None, contract:
 
     if _is_simple_yes(message):
         if _has_profile_viable_facts(memory):
+            contract["demo_vacancy_accepted"] = True
             return "Perfecto. Entonces ya queda como candidato potencial; cuando tenga oportunidad, comparta su documentación para que Capital Humano la revise y continúe su proceso."
         if "candidate.city" in facts and "license.category" in facts:
             return "Perfecto, gracias. Entonces solo confirmo lo más importante: ¿su licencia federal y apto médico están vigentes?"
@@ -164,9 +167,53 @@ def _demo_guardrail_reply(message: str, memory: dict[str, Any] | None, contract:
         if old in text:
             text = text.replace(old, new, 1)
 
+    # Store guardrail facts inside _store_lead_memory_updates, where source_message_id exists.
+    if 'contract.get("demo_vacancy_accepted")' not in text:
+        marker = """    if intent == "requirements_documents":
+        upsert_lead_fact(
+            lead_key=lead_key,
+            fact_group="interest",
+            fact_key="requirements_documents",
+            fact_value="asked",
+            confidence=0.80,
+            source_message_id=source_message_id,
+            source_text=message,
+        )
+        facts_written.append("interest.requirements_documents")
+
+"""
+        insert = marker + """    if contract.get("demo_vacancy_accepted"):
+        upsert_lead_fact(
+            lead_key=lead_key,
+            fact_group="candidate",
+            fact_key="vacancy_accepted",
+            fact_value="sí",
+            confidence=0.80,
+            source_message_id=source_message_id,
+            source_text=message,
+        )
+        facts_written.append("candidate.vacancy_accepted")
+
+    if contract.get("demo_docs_pending_send"):
+        upsert_lead_fact(
+            lead_key=lead_key,
+            fact_group="documents",
+            fact_key="submission_status",
+            fact_value="pending_candidate_will_send",
+            confidence=0.85,
+            source_message_id=source_message_id,
+            source_text=message,
+        )
+        facts_written.append("documents.submission_status")
+
+"""
+        text = replace_once(text, marker, insert, "guardrail memory facts")
+
     # Insert guardrail before RAG and friendly generation branches.
     if "guardrail_reply = _demo_guardrail_reply" not in text:
-        old = """    if contract.get("route") == "rag" or contract.get("requires_rag"):
+        old = """    if contract.get("intent") == "local_time":
+        reply = _time_reply()
+    elif contract.get("requires_rag"):
         rag_result = _answer_rag_message(message, contract)
         reply = rag_result["reply"]
     elif _should_use_friendly_llm(message, contract):
@@ -174,39 +221,18 @@ def _demo_guardrail_reply(message: str, memory: dict[str, Any] | None, contract:
         new = """    guardrail_reply = _demo_guardrail_reply(message, lead_memory_before, contract)
     if guardrail_reply:
         reply = guardrail_reply
-        if _is_simple_yes(message) and _has_profile_viable_facts(lead_memory_before):
-            upsert_lead_fact(
-                lead_key=lead_key,
-                fact_group="candidate",
-                fact_key="vacancy_accepted",
-                fact_value="sí",
-                confidence=0.8,
-                source_message_id=source_message_id,
-                source_text=message,
-            )
-            facts_written.append("candidate.vacancy_accepted")
-        if _looks_like_docs_later_or_driving(message):
-            upsert_lead_fact(
-                lead_key=lead_key,
-                fact_group="documents",
-                fact_key="submission_status",
-                fact_value="pending_candidate_will_send",
-                confidence=0.85,
-                source_message_id=source_message_id,
-                source_text=message,
-            )
-            facts_written.append("documents.submission_status")
         rag_result = {
             "reply": reply,
             "rag_used": False,
-            "rag_skipped_reason": "demo_guardrail_static_reply",
-            "preferred_sources": [],
-            "retrieved_sources": [],
-            "items_count": 0,
+            "rag_generation_used": False,
+            "rag_generation_skipped_reason": "demo_guardrail_static_reply",
+            "rag_context": {"sources": [], "items": [], "source_filter_used": []},
             "llm_cost_estimate": None,
             "timings": {"retrieve_context_ms": 0.0, "generate_answer_ms": 0.0},
         }
-    elif contract.get("route") == "rag" or contract.get("requires_rag"):
+    elif contract.get("intent") == "local_time":
+        reply = _time_reply()
+    elif contract.get("requires_rag"):
         rag_result = _answer_rag_message(message, contract)
         reply = rag_result["reply"]
     elif _should_use_friendly_llm(message, contract):
