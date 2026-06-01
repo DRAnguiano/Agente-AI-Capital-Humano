@@ -48,6 +48,16 @@ FAREWELL_REPLY = (
     "cuando guste retomar el proceso, por aquí lo apoyamos."
 )
 
+GREETING_REPLY = (
+    "Hola, soy Mundo de Capital Humano de Transmontes. "
+    "¿Le interesa la vacante de operador de quinta rueda?"
+)
+
+_GREETING_TERMS = (
+    "hola", "buen dia", "buen día", "buenos dias", "buenos días",
+    "buenas tardes", "buenas noches", "buenas", "ola", "hey", "hi",
+)
+
 GENERIC_CLOSING_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\s*Si tienes (m[aá]s |alguna )?(otra )?duda[s]?,? puedo ayudarte\.?\s*$", re.IGNORECASE),
     re.compile(r"\s*Si necesitas m[aá]s informaci[oó]n,? puedo ayudarte[^.?!]*(\.|!|\?)?\s*$", re.IGNORECASE),
@@ -276,7 +286,38 @@ def _save_call_preference_note(
         print(f"[CALL_PREF_ERROR] lead={lead_key} error={exc}", flush=True)
 
 
+def _looks_like_greeting(message: str) -> bool:
+    text = normalize_text(message).strip()
+    if not text or len(text.split()) > 5:
+        return False
+    if "?" in message or "¿" in message:
+        return False
+    if _message_has_any(message, BUSINESS_QUESTION_TERMS):
+        return False
+    return any(normalize_text(t) in text for t in _GREETING_TERMS)
+
+
 def _apply_deterministic_overrides(message: str, contract: dict[str, Any]) -> dict[str, Any]:
+    # Greeting check first — prevents "hola buen dia" from hitting farewell
+    if _looks_like_greeting(message):
+        updated = dict(contract)
+        updated.update(
+            {
+                "recognized_terms": ["greeting"],
+                "matched_aliases": ["greeting"],
+                "intent": "greeting",
+                "route": "profile",
+                "risk_level": "low",
+                "requires_rag": False,
+                "requires_human": False,
+                "requires_clarification": False,
+                "preferred_sources": [],
+                "reply_template": {"id": "greeting", "text": GREETING_REPLY},
+                "reason": "deterministic_greeting_reply",
+            }
+        )
+        return updated
+
     if _looks_like_farewell(message):
         updated = dict(contract)
         updated.update(
@@ -795,6 +836,7 @@ _FUNNEL_STEPS: list[dict] = [
 
 _NUDGE_SKIP_INTENTS = frozenset({
     "farewell",
+    "greeting",
     "sensitive_handoff",
     "rcontrol_or_incident_handoff",
     "candidate_dropoff_risk",
