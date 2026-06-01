@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import random
 import re
 import time
 from datetime import datetime
@@ -597,6 +598,102 @@ def _store_lead_memory_updates(
     return {"facts_written": facts_written, "memory": memory}
 
 
+# ---------------------------------------------------------------------------
+# Funnel nudge — one profiling question appended after RAG/friendly answers.
+# Order follows the linear recruiting flow. Variants avoid repetition.
+# ---------------------------------------------------------------------------
+
+_FUNNEL_STEPS: list[dict] = [
+    {
+        "keys": {"candidate.city"},
+        "variants": [
+            "Para su registro, ¿desde qué ciudad o estado nos escribe?",
+            "Para continuar con su perfil, ¿en qué ciudad o estado se encuentra?",
+            "¿Me puede decir en qué ciudad vive para seguir con su proceso?",
+        ],
+    },
+    {
+        "keys": {"license.category"},
+        "variants": [
+            "¿Con qué tipo de licencia federal cuenta, A, B o E?",
+            "Para su perfil, ¿su licencia federal es tipo A, B o E?",
+            "¿Qué tipo de licencia federal maneja, A, B o E?",
+        ],
+    },
+    {
+        "keys": {"license.status", "medical.apto_status"},
+        "variants": [
+            "¿Tiene vigentes su licencia federal y apto médico?",
+            "Para continuar, ¿cómo está la vigencia de su licencia y apto médico?",
+            "¿Su licencia y apto médico están al corriente?",
+        ],
+    },
+    {
+        "keys": {"experience.fifth_wheel"},
+        "variants": [
+            "¿Cuántos años lleva manejando quinta rueda o full?",
+            "Para su perfil, ¿qué experiencia tiene en quinta rueda o tracto?",
+            "¿Cuánto tiempo tiene de experiencia en quinta rueda?",
+        ],
+    },
+    {
+        "keys": {"documents.labor_letters_status"},
+        "variants": [
+            "¿Cuenta con cartas laborales de empleos anteriores?",
+            "Para el proceso, ¿tiene cartas laborales disponibles?",
+            "¿Sus cartas laborales están disponibles para cuando avancemos?",
+        ],
+    },
+]
+
+_NUDGE_SKIP_INTENTS = frozenset({
+    "farewell",
+    "sensitive_handoff",
+    "rcontrol_or_incident_handoff",
+    "candidate_dropoff_risk",
+    "document_submission_ack",
+    "local_time",
+})
+
+_NUDGE_SKIP_ROUTES = frozenset({
+    "human_handoff",
+    "policy_boundary",
+    "clarification",
+    "candidate_dropoff_recovery",
+})
+
+
+def _build_funnel_nudge(
+    message: str,
+    contract: dict[str, Any],
+    lead_memory: dict[str, Any],
+) -> str | None:
+    """Return the next profiling question or None if nudge is not appropriate."""
+    intent = str(contract.get("intent") or "")
+    route = str(contract.get("route") or "")
+
+    if intent in _NUDGE_SKIP_INTENTS or route in _NUDGE_SKIP_ROUTES:
+        return None
+    if contract.get("requires_human"):
+        return None
+
+    # Merge persisted facts with facts explicitly stated in the current message
+    # so we never ask something the candidate just answered.
+    active_facts: dict[str, str] = dict(lead_memory.get("active_facts") or {})
+    try:
+        from app.lead_memory.profile_extractor import extract_profile_facts
+        for f in extract_profile_facts(message, intent or None):
+            active_facts[f"{f['fact_group']}.{f['fact_key']}"] = str(f["fact_value"])
+    except Exception:
+        pass
+
+    for step in _FUNNEL_STEPS:
+        if any(k not in active_facts for k in step["keys"]):
+            return random.choice(step["variants"])
+
+    return None  # All profile fields covered — no nudge needed
+
+
 def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     """Resolve a candidate message through Neo4j and optionally answer with controlled RAG."""
     started = time.perf_counter()
@@ -655,6 +752,12 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         reply = friendly_result["reply"]
     else:
         reply = _controlled_reply_from_contract(contract)
+
+    # Append one funnel profiling question after RAG or friendly answers.
+    if rag_result is not None or friendly_result is not None:
+        nudge = _build_funnel_nudge(message, contract, lead_memory_before)
+        if nudge:
+            reply = f"{reply}\n\n{nudge}"
 
     update_stage(
         conversation_key=conversation_key,

@@ -239,12 +239,13 @@ MENSAJE DEL CANDIDATO:
 
 INSTRUCCIONES:
 1. Responde solo con base en el contexto interno recuperado y el contrato de Neo4j.
-2. Si el contexto no tiene el dato suficiente, dilo con claridad y sugiere validarlo con Capital Humano.
+2. Si el contexto recuperado ya tiene el dato, respóndelo directamente sin remitir a Capital Humano. Solo menciona "Capital Humano" cuando genuinamente no tengas el dato o cuando sea una condición final de contratación (fecha de inicio, asignación de ruta, aprobación médica definitiva).
 3. No inventes pagos, prestaciones, rutas, requisitos, horarios ni condiciones.
 4. No prometas contratación ni selección.
 5. Responde en español natural, breve y profesional.
-6. No cierres con frases genéricas tipo "si tienes otra duda".
+6. No cierres con frases genéricas tipo "si tienes otra duda", "puedo ayudarte" o "estoy aquí para ayudarte".
 7. No hagas una lista larga si una respuesta corta basta.
+8. No añadas "Capital Humano puede confirmar" ni frases similares cuando el contexto ya provee la información suficiente.
 
 RESPUESTA:
 """.strip()
