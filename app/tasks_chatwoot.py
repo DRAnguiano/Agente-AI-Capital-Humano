@@ -10,6 +10,9 @@ from typing import Any
 
 import redis
 
+# Registra las tareas de seguimiento para que el worker inbound las ejecute
+import app.tasks_seguimiento  # noqa: F401
+
 from app.celery_app import celery_app
 
 
