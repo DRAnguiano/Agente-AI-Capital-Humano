@@ -103,7 +103,7 @@ def _demo_7_questions_override(message: str) -> dict[str, Any] | None:
 
     if msg in {"hola buen dia", "buen dia", "hola"}:
         return {
-            "reply": "Hola, buen día. Soy Mundo, asistente de Capital Humano de Transmontes. Tenemos vacante para operador de quinta rueda. ¿Actualmente manejas quinta rueda o full?",
+            "reply": "Hola, soy Mundo de Capital Humano de Transmontes. ¿Le interesa la vacante de operador de quinta rueda?",
             "selected_route": "greeting",
             "route": "greeting",
             "intent": "greeting",
