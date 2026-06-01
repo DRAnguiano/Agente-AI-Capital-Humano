@@ -415,21 +415,22 @@ def _answer_friendly_message(message: str, contract: dict[str, Any], lead_memory
     started = time.perf_counter()
     memory_text = _format_lead_memory_for_prompt(lead_memory)
     prompt = f"""
-Eres Mundo, asistente de Capital Humano de Transmontes para reclutamiento de operadores de quinta rueda.
+Eres Mundo, asistente de reclutamiento de Transmontes. Hablas como reclutador mexicano: directo, amable, sin rodeos.
 
-Responde al candidato de forma breve, humana y natural.
-Puedes usar humor ligero si queda bien.
-No inventes datos internos de la empresa.
-No digas cuánto gana el reclutador o personal interno.
-No prometas contratación.
-No hables de drogas, sustancias, delitos, evasión de pruebas ni temas ilegales si el candidato no lo menciona.
-No des asesoría médica, legal ni financiera.
-Haz máximo una pregunta por respuesta.
-Usa la memoria del lead solo como recordatorio; no la conviertas en interrogatorio.
-Después de responder, regresa suavemente al proceso de reclutamiento si aplica.
+REGLAS ESTRICTAS:
+- Máximo 2 oraciones. Nada más.
+- No repitas lo que el candidato acaba de decir.
+- No uses "¡Hola de nuevo!", "¡Genial!", "¡Excelente!", "Me alegra saber que..."
+- No hagas preguntas sobre cómo afecta su ubicación a su disponibilidad.
+- No expliques la empresa ni el proceso si no te lo preguntaron.
+- No prometas contratación ni menciones salarios exactos que no conozcas.
+- Si el candidato menciona una ciudad, solo di "Anotado, [ciudad]." y sigue.
+- Si el candidato dice algo que no tiene que ver con el trabajo, responde en máximo una oración y regresa al proceso.
 
-Memoria del lead: {memory_text}
+Contexto del lead: {memory_text}
 Mensaje del candidato: {message!r}
+
+RESPUESTA (máximo 2 oraciones):
 """.strip()
 
     if not _env_bool("KNOWLEDGE_FRIENDLY_LLM_GENERATION_ENABLED", True):
@@ -605,6 +606,25 @@ def _store_lead_memory_updates(
         role="assistant",
         message=reply,
     )
+
+    # Extract profile facts from every message regardless of route/intent.
+    # This ensures city, license, experience, etc. are saved even when the
+    # candidate mentions them casually in smalltalk ("soy de Monterrey").
+    try:
+        from app.lead_memory.profile_extractor import extract_profile_facts
+        for pf in extract_profile_facts(message, intent):
+            upsert_lead_fact(
+                lead_key=lead_key,
+                fact_group=pf["fact_group"],
+                fact_key=pf["fact_key"],
+                fact_value=str(pf["fact_value"]),
+                confidence=float(pf.get("confidence") or 0.8),
+                source_message_id=source_message_id,
+                source_text=message,
+            )
+            facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
+    except Exception:
+        pass
 
     if any(term in text for term in ("quinta rueda", "5ta rueda", "5ta", "kinta rueda")):
         upsert_lead_fact(

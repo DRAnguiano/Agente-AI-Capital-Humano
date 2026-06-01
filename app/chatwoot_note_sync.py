@@ -169,6 +169,22 @@ def get_lead_note_context(lead_key: str) -> dict[str, Any]:
     }
 
 
+def _expiry_urgency(expiration_text: str) -> str | None:
+    """Classify document expiry urgency from free-text like 'vence en 2 semanas'."""
+    if not expiration_text:
+        return None
+    t = expiration_text.lower()
+    # Urgent: days or weeks
+    if any(w in t for w in ("día", "dia", "días", "dias", "semana", "semanas")):
+        return "urgente"
+    # Watch: months 1–5
+    for n in range(1, 6):
+        if f"{n} mes" in t or f"{n} mes" in t:
+            return "revisar"
+    # OK: 6+ months or years — no urgency label
+    return None
+
+
 def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     lead = context.get("lead") or {}
     facts = context.get("facts") or {}
@@ -179,8 +195,41 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.update({"requiere_agente", "requiere_revision_ch"})
     if (lead.get("risk_level") or "").lower() == "high":
         labels.add("riesgo_alto")
-    if facts.get("documents.submission_status") or facts.get("interest.requirements_documents"):
-        labels.add("documentos")
+
+    # Specific document status labels instead of generic "documentos"
+    has_license    = bool(facts.get("license.category"))
+    has_medical    = facts.get("medical.apto_status") in {"vigente", "sí", "si"}
+    has_experience = facts.get("experience.fifth_wheel") in {"sí", "si", "yes", "true"}
+    has_letters    = facts.get("documents.labor_letters_status") in {"available", "sí", "si"} or \
+                     facts.get("documents.labor_letters") in {"available", "sí", "si"}
+
+    if not has_license:
+        labels.add("falta_licencia")
+    if not has_medical:
+        labels.add("falta_apto")
+    if not has_letters and (has_license or has_experience):
+        labels.add("falta_cartas")
+
+    # Expiry urgency labels
+    apto_exp = facts.get("medical.apto_expiration_text") or ""
+    lic_exp  = facts.get("license.expiration_text") or ""
+
+    apto_urg = _expiry_urgency(apto_exp)
+    if apto_urg == "urgente":
+        labels.add("apto_por_vencer_urgente")
+        labels.discard("falta_apto")
+    elif apto_urg == "revisar":
+        labels.add("apto_por_vencer")
+        labels.discard("falta_apto")
+    elif has_medical:
+        labels.discard("falta_apto")
+
+    lic_urg = _expiry_urgency(lic_exp)
+    if lic_urg == "urgente":
+        labels.add("licencia_por_vencer_urgente")
+    elif lic_urg == "revisar":
+        labels.add("licencia_por_vencer")
+
     if facts.get("documents.submission_status") == "pending_candidate_will_send":
         labels.add("seguimiento")
     if facts.get("candidate.availability_status") == "en_ruta_o_no_disponible_ahora":
@@ -190,16 +239,12 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     if city and not any(local in city for local in ["torreón", "torreon", "gómez palacio", "gomez palacio", "lerdo", "matamoros"]):
         labels.update({"foraneo", "validar_traslado"})
 
-    if isinstance(facts_summary, dict) and facts_summary.get("profile_missing_fields"):
-        labels.add("aclaracion_pendiente")
-
-    has_experience = facts.get("experience.fifth_wheel") in {"sí", "si", "yes", "true"}
-    has_license = bool(facts.get("license.category"))
-    has_medical = facts.get("medical.apto_status") in {"vigente", "sí", "si"}
     accepted = facts.get("candidate.vacancy_accepted") in {"sí", "si", "yes", "true"}
     if has_experience and has_license and has_medical and accepted:
         labels.update({"perfil_listo", "requiere_revision_ch"})
-        labels.discard("aclaracion_pendiente")
+        labels.discard("falta_licencia")
+        labels.discard("falta_apto")
+        labels.discard("falta_cartas")
 
     return _normalize_labels(labels)
 
@@ -215,7 +260,9 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     fifth_wheel_raw = _fact(facts, "experience.fifth_wheel")
     years = _fact(facts, "experience.years")
     license_category = _fact(facts, "license.category")
+    license_exp_text = _fact(facts, "license.expiration_text", default="")
     medical_status_raw = _fact(facts, "medical.apto_status", "document.apto_status", "documents.general_status")
+    apto_exp_text = _fact(facts, "medical.apto_expiration_text", default="")
     documents_status_raw = _fact(facts, "documents.submission_status", "documents.labor_letters", "interest.requirements_documents")
     city = _fact(facts, "candidate.city")
     availability_raw = _fact(facts, "candidate.availability_status")
@@ -276,8 +323,10 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         "📋 Perfil detectado\n"
         f"Quinta rueda/full: {fifth_wheel}\n"
         f"Experiencia: {years}\n"
-        f"Licencia: {_human_fact(license_category)}\n"
-        f"Apto médico: {medical_status}\n"
+        f"Licencia: {_human_fact(license_category)}"
+        + (f" · vigencia {apto_exp_text}" if license_exp_text and license_exp_text != PENDING_TEXT else "") + "\n"
+        f"Apto médico: {medical_status}"
+        + (f" · {apto_exp_text}" if apto_exp_text and apto_exp_text != PENDING_TEXT else "") + "\n"
         f"Cartas/documentos: {documents_status}\n"
         f"Ciudad: {city}\n"
         f"Disponibilidad actual: {availability}\n"
