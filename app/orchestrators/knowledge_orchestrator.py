@@ -215,6 +215,67 @@ def _apply_profile_guards(message: str, contract: dict[str, Any]) -> dict[str, A
     return contract
 
 
+_CALL_ACCEPT_HINTS = (
+    "sí", "si", "claro", "por supuesto", "adelante", "está bien", "esta bien",
+    "me parece", "de acuerdo", "ok", "okay", "acepto", "con gusto",
+)
+
+_CALL_TIME_HINTS = (
+    "de ", "entre ", "mañana", "tarde", "noche", "lunes", "martes", "miércoles",
+    "miercoles", "jueves", "viernes", "sábado", "sabado", "am", "pm",
+    "hrs", "hora", "horas", "disponible",
+)
+
+
+def _pending_call_request(lead_key: str) -> bool:
+    """True si el lead tiene una solicitud de llamada enviada en los últimos 7 días."""
+    try:
+        from datetime import datetime, timedelta, timezone
+        from app.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1 FROM rh_seguimiento_tareas
+                    WHERE lead_key = %(lead_key)s
+                      AND tipo = 'solicitud_llamada'
+                      AND estado = 'enviado'
+                      AND enviado_en >= now() - interval '7 days'
+                    LIMIT 1
+                    """,
+                    {"lead_key": lead_key},
+                )
+                return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def _save_call_preference_note(
+    *,
+    lead_key: str,
+    message: str,
+    lead_memory: dict[str, Any],
+) -> None:
+    """Guarda nota privada en Chatwoot con el horario preferido del candidato."""
+    try:
+        import asyncio
+        from app.followup.templates import nota_horario_llamada
+        from app.followup.sender import _ids_chatwoot, _enviar_nota_privada
+
+        lead = lead_memory.get("lead") or {}
+        nombre = lead.get("display_name")
+        telefono = lead.get("phone")
+        etapa = lead.get("funnel_stage", "")
+
+        nota = nota_horario_llamada(nombre, message, etapa, telefono)
+        account_id, conversation_id = _ids_chatwoot(lead_key)
+        if account_id and conversation_id:
+            asyncio.run(_enviar_nota_privada(account_id, conversation_id, nota))
+            print(f"[CALL_PREF_SAVED] lead={lead_key}", flush=True)
+    except Exception as exc:
+        print(f"[CALL_PREF_ERROR] lead={lead_key} error={exc}", flush=True)
+
+
 def _apply_deterministic_overrides(message: str, contract: dict[str, Any]) -> dict[str, Any]:
     if _looks_like_farewell(message):
         updated = dict(contract)
@@ -780,6 +841,34 @@ def _build_funnel_nudge(
     return None  # All profile fields covered — no nudge needed
 
 
+def _maybe_save_call_preference(
+    *,
+    message: str,
+    lead_key: str,
+    lead_memory: dict[str, Any],
+    lead_stage_to: str,
+) -> None:
+    """Guarda nota de horario preferido si el candidato está respondiendo una solicitud de llamada."""
+    if lead_stage_to not in {"profile_ready", "human_review", "followup_pending"}:
+        return
+
+    text = normalize_text(message)
+    # Mensaje debe tener algún indicador de horario o aceptación
+    has_time = any(hint in text for hint in _CALL_TIME_HINTS)
+    has_accept = any(hint in text for hint in _CALL_ACCEPT_HINTS)
+    if not (has_time or has_accept):
+        return
+
+    if not _pending_call_request(lead_key):
+        return
+
+    _save_call_preference_note(
+        lead_key=lead_key,
+        message=message,
+        lead_memory=lead_memory,
+    )
+
+
 def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     """Resolve a candidate message through Neo4j and optionally answer with controlled RAG."""
     started = time.perf_counter()
@@ -852,6 +941,15 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         nudge = _build_funnel_nudge(message, contract, lead_memory_before)
         if nudge:
             reply = f"{reply}\n\n{nudge}"
+
+    # Detect call-time preference response when a solicitud_llamada was recently sent.
+    # Saves the candidate's message as a private note in Chatwoot for Capital Humano.
+    _maybe_save_call_preference(
+        message=message,
+        lead_key=lead_key,
+        lead_memory=lead_memory_before,
+        lead_stage_to=lead_stage_to,
+    )
 
     update_stage(
         conversation_key=conversation_key,

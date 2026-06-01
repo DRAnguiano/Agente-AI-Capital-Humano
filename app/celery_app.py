@@ -1,6 +1,7 @@
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 
 def _redis_url() -> str:
@@ -26,4 +27,21 @@ celery_app.conf.update(
     task_default_queue="inbound",
     worker_prefetch_multiplier=1,
     task_acks_late=False,
+    # Programación periódica
+    beat_schedule={
+        # Crea tareas para leads enfriando/fríos — cada 15 min
+        "programar-seguimientos": {
+            "task": "seguimiento.programar_tareas",
+            "schedule": crontab(minute="*/15"),
+            "options": {"queue": "inbound"},
+        },
+        # Despacha mensajes pendientes dentro de la ventana — cada 5 min
+        "enviar-seguimientos-pendientes": {
+            "task": "seguimiento.enviar_pendientes",
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": "inbound"},
+        },
+    },
+    # El beat guarda su estado en Redis para sobrevivir reinicios
+    beat_scheduler="celery.beat:PersistentScheduler",
 )

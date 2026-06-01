@@ -64,6 +64,45 @@ services:
 
 
   #######################################
+  # CELERY BEAT / SEGUIMIENTO AUTOMÁTICO
+  #######################################
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hr-rag-api:latest
+    container_name: hr_beat
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
+      POSTGRES_USER: ${POSTGRES_USER:-hr_david}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
+
+      CHATWOOT_BASE_URL: http://chatwoot_rails:3000
+
+      HF_HOME: /app/.cache
+      SENTENCE_TRANSFORMERS_HOME: /app/.cache
+
+      CELERY_BROKER_URL: redis://chatwoot_redis:6379/1
+      CELERY_RESULT_BACKEND: redis://chatwoot_redis:6379/1
+      TZ: America/Monterrey
+      ANONYMIZED_TELEMETRY: "false"
+    command:
+      - sh
+      - -c
+      - celery -A app.tasks_seguimiento beat --loglevel=INFO -s /tmp/celerybeat-schedule
+    volumes:
+      - ./.cache:/app/.cache
+    depends_on:
+      - postgres
+      - chatwoot_redis
+      - worker
+    restart: unless-stopped
+
+  #######################################
   # CELERY WORKER / DEBOUNCE INBOUND CHATWOOT
   #######################################
   worker:
