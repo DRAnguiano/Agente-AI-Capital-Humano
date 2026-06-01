@@ -599,6 +599,92 @@ def _store_lead_memory_updates(
 
 
 # ---------------------------------------------------------------------------
+# Profile acknowledgment — deterministic reply for explicit candidate data.
+# No LLM. Reads extracted facts and builds a natural confirmation.
+# ---------------------------------------------------------------------------
+
+_ACK_INTROS = [
+    "Perfecto, registro que",
+    "Anotado,",
+    "Registrado,",
+    "Queda anotado:",
+]
+
+
+def _build_profile_ack_reply(message: str) -> str | None:
+    """Build a short confirmation from facts explicitly stated in the message.
+
+    Returns None when the extractor finds nothing recognizable, letting the
+    caller fall through to whatever reply is appropriate.
+    """
+    try:
+        from app.lead_memory.profile_extractor import extract_profile_facts
+        raw = extract_profile_facts(message)
+    except Exception:
+        return None
+
+    if not raw:
+        return None
+
+    by_key = {f"{f['fact_group']}.{f['fact_key']}": f["fact_value"] for f in raw}
+
+    parts: list[str] = []
+
+    # City
+    city = by_key.get("candidate.city")
+    if city:
+        parts.append(f"reside en {city}")
+
+    # License — merge category + validity into one phrase when both present
+    lic_cat = by_key.get("license.category")
+    lic_st = by_key.get("license.status")
+    if lic_cat and lic_st in {"vigente", "sí", "si"}:
+        parts.append(f"licencia federal tipo {lic_cat} vigente")
+    elif lic_cat:
+        parts.append(f"licencia federal tipo {lic_cat}")
+    elif lic_st in {"vigente", "sí", "si"}:
+        parts.append("licencia federal vigente")
+
+    # Apto médico
+    apto = by_key.get("medical.apto_status") or by_key.get("document.apto_status")
+    if apto in {"vigente", "sí", "si"}:
+        parts.append("apto médico vigente")
+
+    # Experience — merge years + fifth_wheel
+    years = by_key.get("experience.years")
+    fifth = by_key.get("experience.fifth_wheel")
+    if years and fifth:
+        s = "s" if years != "1" else ""
+        parts.append(f"{years} año{s} de experiencia en quinta rueda")
+    elif years:
+        s = "s" if years != "1" else ""
+        parts.append(f"{years} año{s} de experiencia")
+    elif fifth:
+        parts.append("experiencia en quinta rueda/full")
+
+    # Labor letters
+    labor = by_key.get("documents.labor_letters_status") or by_key.get("documents.labor_letters")
+    if labor in {"available", "sí", "si"}:
+        parts.append("cartas laborales disponibles")
+
+    # Age (mention only when accompanied by other facts to avoid bare "X años")
+    age = by_key.get("candidate.age")
+    if age and len(parts) >= 1:
+        parts.append(f"{age} años de edad")
+
+    if not parts:
+        return None
+
+    intro = random.choice(_ACK_INTROS)
+    if len(parts) == 1:
+        return f"{intro} {parts[0]}."
+    if len(parts) == 2:
+        return f"{intro} {parts[0]} y {parts[1]}."
+    listed = ", ".join(parts[:-1]) + f" y {parts[-1]}"
+    return f"{intro} {listed}."
+
+
+# ---------------------------------------------------------------------------
 # Funnel nudge — one profiling question appended after RAG/friendly answers.
 # Order follows the linear recruiting flow. Variants avoid repetition.
 # ---------------------------------------------------------------------------
@@ -738,6 +824,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
 
     rag_result: dict[str, Any] | None = None
     friendly_result: dict[str, Any] | None = None
+    profile_ack_used: bool = False
 
     if contract.get("intent") == "local_time":
         reply = _time_reply()
@@ -750,11 +837,18 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
             lead_stage_to = _stage_for_contract(contract, message)
         friendly_result = _answer_friendly_message(message, contract, lead_memory_before)
         reply = friendly_result["reply"]
+    elif contract.get("intent") == "candidate_profile_signal":
+        ack = _build_profile_ack_reply(message)
+        if ack:
+            reply = ack
+            profile_ack_used = True
+        else:
+            reply = _controlled_reply_from_contract(contract)
     else:
         reply = _controlled_reply_from_contract(contract)
 
-    # Append one funnel profiling question after RAG or friendly answers.
-    if rag_result is not None or friendly_result is not None:
+    # Append one funnel profiling question after RAG, friendly, or profile ack.
+    if rag_result is not None or friendly_result is not None or profile_ack_used:
         nudge = _build_funnel_nudge(message, contract, lead_memory_before)
         if nudge:
             reply = f"{reply}\n\n{nudge}"
