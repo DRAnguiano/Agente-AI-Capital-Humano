@@ -154,3 +154,91 @@ def missing_profile_fields(active_facts: dict[str, Any] | None) -> list[str]:
         ("documents.labor_letters_status", "cartas laborales"),
     ]
     return [label for key, label in required if key not in facts]
+
+# ---------------------------------------------------------------------------
+# Current-turn extraction hotfix.
+# Rule: explicit candidate facts in the current message override stale memory/RAG.
+# Examples:
+# - "apto medico vence en 2 años" => apto vigente, not pending_update.
+# - "tengo 33 aos" => age 33.
+# - "7 años de experiencia en full" => experience.years = 7, fifth_wheel = sí.
+# ---------------------------------------------------------------------------
+
+if "_CURRENT_TURN_PROFILE_HOTFIX_APPLIED" not in globals():
+    _CURRENT_TURN_PROFILE_HOTFIX_APPLIED = True
+    _base_extract_profile_facts = extract_profile_facts
+
+    def _hotfix_fact(fact_group: str, fact_key: str, fact_value: str, confidence: float = 0.9) -> dict[str, Any]:
+        return {
+            "fact_group": fact_group,
+            "fact_key": fact_key,
+            "fact_value": fact_value,
+            "confidence": confidence,
+        }
+
+    def _upsert_fact_local(facts: list[dict[str, Any]], fact: dict[str, Any]) -> None:
+        for idx, item in enumerate(facts):
+            if item.get("fact_group") == fact.get("fact_group") and item.get("fact_key") == fact.get("fact_key"):
+                if float(fact.get("confidence") or 0) >= float(item.get("confidence") or 0):
+                    facts[idx] = fact
+                return
+        facts.append(fact)
+
+    def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[str, Any]]:
+        facts = list(_base_extract_profile_facts(message, intent))
+        text = normalize_text(message)
+
+        # Normalize common typo: "aos" -> "años/anios" equivalent.
+        text_for_numbers = text.replace(" aos", " anos").replace(" ao ", " ano ")
+
+        # License category.
+        license_match = re.search(r"\b(?:licencia\s*)?(?:tipo\s*)?([abe])\b", text_for_numbers)
+        if license_match and ("licencia" in text_for_numbers or "tipo" in text_for_numbers):
+            _upsert_fact_local(facts, _hotfix_fact("license", "category", license_match.group(1).upper(), 0.92))
+
+        # License validity: "se vence en 3 años" means valid.
+        if "licencia" in text_for_numbers and re.search(r"\b(?:vence|vencen|se vence|vigente)\b", text_for_numbers):
+            if re.search(r"\bvence\s+en\s+\d+\s+(?:ano|anos|anio|anios)\b", text_for_numbers) or "vigente" in text_for_numbers:
+                _upsert_fact_local(facts, _hotfix_fact("license", "status", "vigente", 0.92))
+
+        # Apto medico validity. Any future expiration in years is valid.
+        if "apto" in text_for_numbers or "medico" in text_for_numbers:
+            if (
+                "vigente" in text_for_numbers
+                or re.search(r"\bvence\s+en\s+\d+\s+(?:ano|anos|anio|anios)\b", text_for_numbers)
+                or "no le veo el problema" in text_for_numbers
+            ):
+                _upsert_fact_local(facts, _hotfix_fact("medical", "apto_status", "vigente", 0.95))
+                # Compatibility with older code that accidentally uses singular "document".
+                _upsert_fact_local(facts, _hotfix_fact("document", "apto_status", "vigente", 0.95))
+
+        apto_exp = re.search(r"\bapto(?:\s+medico)?\s+(?:vence|se vence)\s+en\s+(\d+)\s+(?:ano|anos|anio|anios)\b", text_for_numbers)
+        if apto_exp:
+            _upsert_fact_local(facts, _hotfix_fact("medical", "apto_expiration_text", f"vence en {apto_exp.group(1)} años", 0.9))
+
+        # Documents / labor letters.
+        if ("carta" in text_for_numbers or "cartas" in text_for_numbers or "laboral" in text_for_numbers) and not "no tengo" in text_for_numbers:
+            _upsert_fact_local(facts, _hotfix_fact("documents", "labor_letters", "sí", 0.9))
+
+        # City.
+        if "san luis potosi" in text_for_numbers or "slp" in text_for_numbers:
+            _upsert_fact_local(facts, _hotfix_fact("candidate", "city", "San Luis Potosí", 0.95))
+
+        # Age.
+        age_match = re.search(r"\b(?:tengo|edad(?:\s+es\s+de)?|soy de .*? tengo)?\s*(1[8-9]|[2-6][0-9]|7[0-5])\s*(?:ano|anos|anio|anios)?\b", text_for_numbers)
+        if age_match:
+            _upsert_fact_local(facts, _hotfix_fact("candidate", "age", age_match.group(1), 0.88))
+
+        # Full / fifth wheel experience.
+        years_match = re.search(r"\b(\d{1,2})\s*(?:ano|anos|anio|anios)\s+(?:de\s+)?experiencia\b", text_for_numbers)
+        if not years_match:
+            years_match = re.search(r"\bcon\s+(\d{1,2})\s*(?:ano|anos|anio|anios)\b", text_for_numbers)
+
+        if years_match and any(term in text_for_numbers for term in ("full", "quinta", "quinta rueda", "tracto")):
+            _upsert_fact_local(facts, _hotfix_fact("experience", "years", years_match.group(1), 0.92))
+            _upsert_fact_local(facts, _hotfix_fact("experience", "fifth_wheel", "sí", 0.92))
+
+        if any(term in text_for_numbers for term in ("full", "quinta", "quinta rueda", "tracto")):
+            _upsert_fact_local(facts, _hotfix_fact("experience", "fifth_wheel", "sí", 0.85))
+
+        return facts
