@@ -73,9 +73,17 @@ BUSINESS_QUESTION_TERMS = (
 
 FAREWELL_HINTS = (
     "gracias señor", "gracias senor", "gracias muy amable", "muchas gracias",
-    "gracias", "pase buen dia", "pase buen día", "buen dia", "buen día",
+    "gracias", "pase buen dia", "pase buen día",
     "hasta luego", "nos vemos", "saludos", "que este bien", "que esté bien",
     "luego le escribo", "luego le marco", "lo retomo luego",
+)
+
+# "buen dia" / "buen día" alone are ambiguous (greeting OR farewell).
+# Block farewell detection when the message opens with a clear greeting word.
+GREETING_GUARD_TERMS = (
+    "hola", "ola", "holaa", "hey", "ei",
+    "buenos dias", "buenos días", "buenas tardes", "buenas noches", "buenas",
+    "buen dia", "buen día",
 )
 
 DISALLOWED_FREE_CHAT_TERMS = (
@@ -167,6 +175,11 @@ def _looks_like_farewell(message: str) -> bool:
     if not any(normalize_text(hint) in text for hint in FAREWELL_HINTS):
         return False
     if "?" in message or "¿" in message:
+        return False
+    # A message that opens with a greeting word is not a farewell.
+    # Use startswith so "pase buen dia" (farewell) is not confused with
+    # "buen dia" / "hola buen dia" (greetings).
+    if any(text.startswith(normalize_text(g)) for g in GREETING_GUARD_TERMS):
         return False
     if _message_has_any(message, BUSINESS_QUESTION_TERMS) and len(text) > 80:
         return False
