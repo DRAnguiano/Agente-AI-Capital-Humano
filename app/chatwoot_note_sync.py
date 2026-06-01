@@ -15,6 +15,33 @@ def _text(value: Any, default: str = "No disponible") -> str:
     return value or default
 
 
+def _human_fact(value: Any, default: str = PENDING_TEXT) -> str:
+    raw = _text(value, default)
+    mapping = {
+        "asked": "Preguntó",
+        "sí": "Sí",
+        "si": "Sí",
+        "yes": "Sí",
+        "true": "Sí",
+        "vigente": "Vigente",
+        "mencionada": "Mencionada",
+        "pending_update": "Pendiente de actualización",
+        "pending_candidate_will_send": "Pendiente, candidato enviará",
+        "pendiente_por_candidato": "Pendiente, candidato enviará",
+        "en_ruta_o_no_disponible_ahora": "En ruta / no disponible ahora",
+    }
+    return mapping.get(raw, raw)
+
+
+def _is_yes(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"sí", "si", "yes", "true", "1"}
+
+
+def _is_vigente(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"vigente", "sí", "si", "yes", "true"}
+
+
+
 def _risk(value: str | None) -> str:
     return {"low": "Bajo", "medium": "Medio", "high": "Alto"}.get((value or "").lower(), value or "No disponible")
 
@@ -27,7 +54,10 @@ def _stage(value: str | None) -> str:
         "profiled_viable": "Perfil viable",
         "potential_candidate_documents_pending": "Pendiente de documentos",
         "followup_pending": "Seguimiento pendiente",
+        "documents_pending": "Pendiente de documentos",
+        "profile_hint_collected": "Perfil en captura",
         "profile_ready": "Perfil listo",
+        "apto_pending_update": "Apto pendiente de actualización",
         "human_review_required": "Revisión de Capital Humano",
         "closed": "Cerrado",
         "discarded": "Descartado",
@@ -161,29 +191,57 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     facts = context.get("facts") or {}
     last = context.get("last_message") or {}
 
-    message = _text(last.get("message") or fallback_last_message, "Sin mensaje reciente")[:500]
-    next_action = _text(lead.get("next_best_action"), "Continuar flujo automático según etapa actual.")
-    memory = _text(lead.get("memory_summary"), "Candidato en seguimiento. Falta completar datos clave del perfil.")
-    requires_human = "Sí" if lead.get("requires_human") else "No"
+    message = _text(fallback_last_message or last.get("message"), "Sin mensaje reciente")[:500]
 
-    fifth_wheel = _fact(facts, "experience.fifth_wheel")
+    fifth_wheel_raw = _fact(facts, "experience.fifth_wheel")
     years = _fact(facts, "experience.years")
     license_category = _fact(facts, "license.category")
-    medical_status = _fact(facts, "medical.apto_status")
-    documents_status = _fact(facts, "documents.submission_status", "interest.requirements_documents")
+    medical_status_raw = _fact(facts, "medical.apto_status", "document.apto_status", "documents.general_status")
+    documents_status_raw = _fact(facts, "documents.submission_status", "documents.labor_letters", "interest.requirements_documents")
     city = _fact(facts, "candidate.city")
-    availability = _fact(facts, "candidate.availability_status")
-    payment = _fact(facts, "interest.payment", default="No detectado")
+    availability_raw = _fact(facts, "candidate.availability_status")
+    payment_raw = _fact(facts, "interest.payment", default="No detectado")
+
+    fifth_wheel = _human_fact(fifth_wheel_raw)
+    medical_status = _human_fact(medical_status_raw)
+    documents_status = _human_fact(documents_status_raw)
+    availability = _human_fact(availability_raw)
+    payment = _human_fact(payment_raw, "No detectado")
+
+    next_action = _text(lead.get("next_best_action"), "Continuar flujo automático según etapa actual.")
+    memory = _text(lead.get("memory_summary"), "Candidato en seguimiento. Falta completar datos clave del perfil.")
+    stage_value = lead.get("funnel_stage")
+
+    # Protección contra memoria vieja: si el apto está vigente, no pedir actualización.
+    if _is_vigente(medical_status_raw):
+        if "actualice apto" in next_action.lower() or "actualizar apto" in next_action.lower():
+            next_action = "Continuar revisión del perfil; apto médico reportado como vigente."
+        if "vencido" in memory.lower() or "próximo a vencer" in memory.lower() or "proximo a vencer" in memory.lower():
+            memory = "El candidato reportó apto médico vigente."
+        if str(stage_value or "").lower() == "apto_pending_update":
+            stage_value = "profile_hint_collected"
+
+    has_experience = _is_yes(fifth_wheel_raw) or fifth_wheel_raw != PENDING_TEXT or years != PENDING_TEXT
+    has_license = license_category != PENDING_TEXT
+    has_medical = _is_vigente(medical_status_raw)
+    has_documents = documents_status_raw != PENDING_TEXT
+    has_city = city != PENDING_TEXT
 
     blocker = "Faltan datos base del perfil"
-    if documents_status == "pending_candidate_will_send":
+    if has_experience and has_license and has_medical and has_documents and has_city:
+        blocker = "Validar documentos con Capital Humano"
+    elif documents_status_raw == "pending_candidate_will_send":
         blocker = "Esperando envío documental"
-    elif fifth_wheel == PENDING_TEXT:
+    elif not has_experience:
         blocker = "Falta confirmar experiencia en quinta rueda/full"
-    elif license_category == PENDING_TEXT:
+    elif not has_license:
         blocker = "Falta validar licencia federal/tipo"
-    elif medical_status == PENDING_TEXT:
+    elif not has_medical:
         blocker = "Falta validar apto médico"
+    elif not has_city:
+        blocker = "Falta confirmar ciudad de residencia"
+
+    requires_human = "Sí" if lead.get("requires_human") else "No"
 
     return (
         "🤖 Nota IA: Seguimiento de candidato\n\n"
@@ -198,14 +256,14 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         "📋 Perfil detectado\n"
         f"Quinta rueda/full: {fifth_wheel}\n"
         f"Experiencia: {years}\n"
-        f"Licencia: {license_category}\n"
+        f"Licencia: {_human_fact(license_category)}\n"
         f"Apto médico: {medical_status}\n"
         f"Cartas/documentos: {documents_status}\n"
         f"Ciudad: {city}\n"
         f"Disponibilidad actual: {availability}\n"
         f"Interés en pago/compensación: {payment}\n\n"
         "📍 Embudo\n"
-        f"Etapa: {_stage(lead.get('funnel_stage'))}\n"
+        f"Etapa: {_stage(stage_value)}\n"
         f"Bloqueo actual: {blocker}\n"
         f"Riesgo: {_risk(lead.get('risk_level'))}\n"
         f"Requiere humano: {requires_human}\n\n"
