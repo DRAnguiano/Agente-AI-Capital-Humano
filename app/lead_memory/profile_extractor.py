@@ -7,27 +7,39 @@ from app.knowledge.text_normalizer import normalize_text
 
 
 KNOWN_CITY_ALIASES: list[tuple[str, str]] = [
-    ("san luis potosi", "San Luis Potosí"),
-    ("slp", "San Luis Potosí"),
+    # Multi-word aliases FIRST — must precede any shorter alias they contain.
+    # "nuevo leon" before "leon" prevents extracting León (Guanajuato) from the state name.
     ("nuevo laredo", "Nuevo Laredo"),
     ("nvo laredo", "Nuevo Laredo"),
+    ("nuevo leon", "Nuevo León"),
+    ("nuevo león", "Nuevo León"),
+    ("san luis potosi", "San Luis Potosí"),
+    ("ciudad juarez", "Ciudad Juárez"),
+    ("cd juarez", "Ciudad Juárez"),
+    ("cd. juarez", "Ciudad Juárez"),
+    ("gómez palacio", "Gómez Palacio"),
+    ("gomez palacio", "Gómez Palacio"),
+    ("rio bravo", "Río Bravo"),
+    ("río bravo", "Río Bravo"),
+    # Single-word aliases
+    ("monterrey", "Monterrey"),
+    ("monterey", "Monterrey"),   # common one-r spelling in Mexican speech
+    ("mty", "Monterrey"),
+    ("slp", "San Luis Potosí"),
     ("torreon", "Torreón"),
     ("torreón", "Torreón"),
-    ("monterrey", "Monterrey"),
-    ("mty", "Monterrey"),
+    ("matehuala", "Matehuala"),
     ("durango", "Durango"),
     ("queretaro", "Querétaro"),
     ("querétaro", "Querétaro"),
-    ("cd juarez", "Ciudad Juárez"),
-    ("cd. juarez", "Ciudad Juárez"),
-    ("ciudad juarez", "Ciudad Juárez"),
     ("juarez", "Ciudad Juárez"),
     ("juárez", "Ciudad Juárez"),
     ("manzanillo", "Manzanillo"),
-    ("rio bravo", "Río Bravo"),
-    ("río bravo", "Río Bravo"),
     ("saltillo", "Saltillo"),
-    ("leon", "León"),
+    ("chihuahua", "Chihuahua"),
+    ("culiacan", "Culiacán"),
+    ("culiacán", "Culiacán"),
+    ("leon", "León"),    # after "nuevo leon" so it doesn't match the state name
     ("león", "León"),
 ]
 
@@ -42,6 +54,14 @@ def _fact(fact_group: str, fact_key: str, fact_value: str, confidence: float = 0
 
 
 def _extract_city(message: str, text: str) -> dict[str, Any] | None:
+    # Don't extract city from complaints or questions about the city itself.
+    # E.g. "porque me dice leon?" or "ya te dije monterrey" — the second is OK
+    # but "por qué me dice X" would re-save the wrong city.
+    if re.search(r"\bpor\s*qu[eé]\s+me\b|\bque\s+es\s+\w+\b|\bpara\s+qu[eé]\b", text):
+        return None
+    if re.search(r"\bme\s+dic[ei]\s+\w+", text):
+        return None
+
     # Prefer explicit known aliases. This is intentionally conservative.
     for alias, canonical in KNOWN_CITY_ALIASES:
         if alias in text:
@@ -115,7 +135,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     if years_match and any(term in text for term in ("manejando", "manejo", "experiencia", "full", "quinta", "5ta")):
         facts.append(_fact("experience", "years", years_match.group(1), 0.8))
 
-    if any(term in text for term in ("full", "quinta rueda", "5ta rueda", "quinta", "kinta")):
+    if any(term in text for term in ("full", "quinta rueda", "5ta rueda", "quinta", "kinta", "fulero", "fulera", "tracto", "tractocamion", "tractocamión")):
         facts.append(_fact("experience", "fifth_wheel", "sí", 0.8))
 
     if any(term in text for term in ("carretera mexicana", "republica", "república", "foraneo", "foráneo")):
@@ -220,9 +240,40 @@ if "_CURRENT_TURN_PROFILE_HOTFIX_APPLIED" not in globals():
         if ("carta" in text_for_numbers or "cartas" in text_for_numbers or "laboral" in text_for_numbers) and not "no tengo" in text_for_numbers:
             _upsert_fact_local(facts, _hotfix_fact("documents", "labor_letters", "sí", 0.9))
 
-        # City.
+        # City — hotfix overrides for common typos/slang not in base alias list.
         if "san luis potosi" in text_for_numbers or "slp" in text_for_numbers:
             _upsert_fact_local(facts, _hotfix_fact("candidate", "city", "San Luis Potosí", 0.95))
+        elif "monterrey" in text_for_numbers or "monterey" in text_for_numbers or "mty" in text_for_numbers:
+            _upsert_fact_local(facts, _hotfix_fact("candidate", "city", "Monterrey", 0.95))
+        elif "nuevo leon" in text_for_numbers or "nuevo leon" in text_for_numbers:
+            _upsert_fact_local(facts, _hotfix_fact("candidate", "city", "Nuevo León", 0.90))
+
+        # "Ambas / los dos / las dos" + expiration time → apply to BOTH license and apto.
+        ambas_match = re.search(
+            r"\b(ambas?|los dos|las dos|ambos)\b.*?\bvencen?\s+en\s+(\d+)\s+(?:mes|meses|ano|anos|anio|anios)\b",
+            text_for_numbers,
+        )
+        if not ambas_match:
+            # Also handles reversed order: "vencen en 6 meses ambas cosas"
+            ambas_match = re.search(
+                r"\bvencen?\s+en\s+(\d+)\s+(mes|meses|ano|anos|anio|anios)\b.*?\b(ambas?|los dos|las dos|ambos)\b",
+                text_for_numbers,
+            )
+            if ambas_match:
+                n, unit = ambas_match.group(1), ambas_match.group(2)
+                ambas_match = type("M", (), {"group": lambda self, i: (None, n, unit)[i]})()
+
+        if ambas_match:
+            n = ambas_match.group(1) if ambas_match.group(1) and ambas_match.group(1).isdigit() else ambas_match.group(2)
+            raw_unit = ambas_match.group(2) if not (ambas_match.group(1) or "").isdigit() else ambas_match.group(2)
+            # Determine status: still valid if expiry is in the future
+            unit_label = "meses" if "mes" in (raw_unit or "") else "años"
+            exp_text = f"vence en {n} {unit_label}"
+            _upsert_fact_local(facts, _hotfix_fact("license", "status", "vigente", 0.88))
+            _upsert_fact_local(facts, _hotfix_fact("license", "expiration_text", exp_text, 0.88))
+            _upsert_fact_local(facts, _hotfix_fact("medical", "apto_status", "vigente", 0.88))
+            _upsert_fact_local(facts, _hotfix_fact("medical", "apto_expiration_text", exp_text, 0.88))
+            _upsert_fact_local(facts, _hotfix_fact("document", "apto_status", "vigente", 0.88))
 
         # Age.
         age_match = re.search(r"\b(?:tengo|edad(?:\s+es\s+de)?|soy de .*? tengo)?\s*(1[8-9]|[2-6][0-9]|7[0-5])\s*(?:ano|anos|anio|anios)?\b", text_for_numbers)
@@ -240,5 +291,11 @@ if "_CURRENT_TURN_PROFILE_HOTFIX_APPLIED" not in globals():
 
         if any(term in text_for_numbers for term in ("full", "quinta", "quinta rueda", "tracto")):
             _upsert_fact_local(facts, _hotfix_fact("experience", "fifth_wheel", "sí", 0.85))
+
+        # fulero / fulera = fifth-wheel operator in Mexican slang
+        if any(term in text_for_numbers for term in ("fulero", "fulera", "fuleros")):
+            _upsert_fact_local(facts, _hotfix_fact("experience", "fifth_wheel", "sí", 0.88))
+            if years_match:
+                _upsert_fact_local(facts, _hotfix_fact("experience", "years", years_match.group(1), 0.88))
 
         return facts
