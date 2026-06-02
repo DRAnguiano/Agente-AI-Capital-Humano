@@ -845,11 +845,19 @@ _FUNNEL_STEPS: list[dict] = [
         ],
     },
     {
-        "keys": {"experience.fifth_wheel"},
+        "keys": {"experience.years"},
         "variants": [
-            "¿Cuántos años lleva manejando quinta rueda o full?",
-            "Para su perfil, ¿qué experiencia tiene en quinta rueda o tracto?",
-            "¿Cuánto tiempo tiene de experiencia en quinta rueda?",
+            "¿Cuántos años tiene de experiencia como operador?",
+            "Para su perfil, ¿cuántos años lleva manejando de manera profesional?",
+            "¿Cuánto tiempo tiene de experiencia al volante?",
+        ],
+    },
+    {
+        "keys": {"experience.vehicle_type"},
+        "variants": [
+            "¿Esa experiencia es principalmente en quinta rueda/full o en camión sencillo?",
+            "¿Ha operado quinta rueda o full, o principalmente camión sencillo?",
+            "¿Su experiencia es en quinta rueda, full o camión sencillo?",
         ],
     },
     {

@@ -312,7 +312,7 @@ SET n.canonical = 'Sonora',
 MERGE (n:VehicleType {id: 'vehicle_quinta_rueda'})
 SET n.canonical = 'quinta rueda',
     n.category = 'single_trailer',
-    n.aliases = ['quinta rueda', '5ta rueda', 'kinta rueda', 'sencillo', 'tracto camion', 'tracto camión'],
+    n.aliases = ['quinta rueda', '5ta rueda', 'kinta rueda', 'tracto camion', 'tracto camión'],
     n.profile_fact_group = 'experience',
     n.profile_fact_key = 'vehicle_type',
     n.profile_fact_value = 'quinta_rueda',

@@ -292,6 +292,16 @@ def process_chatwoot_debounced_message(
             should_prioritize_current_turn,
         )
         from app.chatwoot_note_sync import sync_chatwoot_candidate_note
+        from app.lead_memory.repository import get_lead_memory
+
+        # Pre-load context before orchestrator so we can read the last bot message
+        conversation_key_for_facts = make_conversation_key("chatwoot", str(channel_user_id))
+        pre_memory = get_lead_memory(conversation_key=conversation_key_for_facts)
+        last_bot_message = None
+        for _m in reversed(pre_memory.get("messages") or []):
+            if isinstance(_m, dict) and _m.get("role") == "assistant":
+                last_bot_message = str(_m.get("message") or "")[:500]
+                break
 
         result = run_hr_graph_message(
             channel="chatwoot",
@@ -302,10 +312,54 @@ def process_chatwoot_debounced_message(
             external_message_id=external_message_id,
         )
 
-        current_turn_facts = extract_current_turn_facts(combined_content)
+        current_turn_facts = extract_current_turn_facts(combined_content, last_bot_message)
 
-        if should_prioritize_current_turn(combined_content) and current_turn_facts:
-            guarded_reply = build_current_turn_ack(combined_content, current_turn_facts)
+        if should_prioritize_current_turn(combined_content, last_bot_message) and current_turn_facts:
+            lead_memory = get_lead_memory(conversation_key=conversation_key_for_facts)
+            saved_facts = {
+                f"{row['fact_group']}.{row['fact_key']}": row['fact_value']
+                for row in (lead_memory.get("facts") or [])
+            }
+            lead_key_for_ctx = (
+                (lead_memory.get("lead") or {}).get("lead_key")
+                or conversation_key_for_facts
+            )
+            merged_facts = {**saved_facts, **current_turn_facts}
+            guarded_reply = build_current_turn_ack(combined_content, merged_facts, last_bot_message)
+
+            # Persist context-inferred facts (e.g. "si" → apto vigente) so funnel doesn't re-ask
+            if lead_key_for_ctx:
+                from app.lead_memory.repository import upsert_lead_fact, save_lead_message as _slm
+                context_new = {
+                    k: v for k, v in current_turn_facts.items()
+                    if k not in saved_facts
+                    and k in {"medical.apto_status", "license.status", "documents.labor_letters"}
+                }
+                for _k, _v in context_new.items():
+                    _parts = _k.split(".", 1)
+                    if len(_parts) == 2:
+                        try:
+                            upsert_lead_fact(
+                                lead_key=lead_key_for_ctx,
+                                fact_group=_parts[0],
+                                fact_key=_parts[1],
+                                fact_value=str(_v),
+                                confidence=0.75,
+                                source="guard_context",
+                                source_text=combined_content[:300],
+                            )
+                        except Exception:
+                            pass
+                # Save guard reply so next turn has correct last_bot_message context
+                try:
+                    _slm(
+                        lead_key=lead_key_for_ctx,
+                        conversation_key=conversation_key_for_facts,
+                        role="assistant",
+                        message=guarded_reply,
+                    )
+                except Exception:
+                    pass
 
             result.update(
                 {

@@ -188,15 +188,38 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     if not years_m:
         years_m = re.search(r"\bcon\s+(\d{1,2})\s*(?:ano|anos|anio|anios)\b", text)
 
-    if years_m and any(t in text for t in DRIVING_TERMS):
-        upsert("experience", "years", years_m.group(1), 0.85)
+    months_m = (
+        re.search(r"\b(\d{1,2})\s*meses?\b", text)
+        if not years_m else None
+    )
 
-    # Quinta rueda / sencillo
-    if any(t in text for t in ("quinta rueda", "5ta rueda", "kinta rueda", "sencillo")):
+    # Build duration label with unit so Chatwoot note shows "10 años" not just "10"
+    if years_m:
+        _dur_label = f"{years_m.group(1)} años"
+        _dur_match = years_m
+    elif months_m:
+        _dur_label = f"{months_m.group(1)} meses"
+        _dur_match = months_m
+    else:
+        _dur_label = None
+        _dur_match = None
+
+    if _dur_label and any(t in text for t in DRIVING_TERMS):
+        upsert("experience", "years", _dur_label, 0.85)
+
+    # Quinta rueda
+    if any(t in text for t in ("quinta rueda", "5ta rueda", "kinta rueda")):
         upsert("experience", "vehicle_type", "quinta_rueda", 0.85)
         upsert("experience", "fifth_wheel", "sí", 0.85)
-        if years_m:
-            upsert("experience", "years", years_m.group(1), 0.90)
+        if _dur_label:
+            upsert("experience", "years", _dur_label, 0.90)
+
+    # Camión sencillo — NOT quinta rueda/full
+    if "sencillo" in text:
+        upsert("experience", "vehicle_type", "sencillo", 0.85)
+        upsert("experience", "fifth_wheel", "no", 0.85)
+        if _dur_label:
+            upsert("experience", "years", _dur_label, 0.90)
 
     # Full / fulero (double-articulated — distinct from quinta rueda)
     if any(t in text for t in ("fulero", "fulera", "fuleros")):
