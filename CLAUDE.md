@@ -4,16 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Agente AI Capital Humano Transmontes** — not just a chatbot, but a near-autonomous recruiting operations system for fifth-wheel/full truck operators. The bot's name is **Mundo**. The goal: a recruiter opens Chatwoot and sees a complete, actionable candidate profile (name, phone, city, age, license, medical fitness, experience, documents, foráneo flag, travel need, missing fields, next action, candidate temperature) — without having to read the full chat. The AI captures, classifies, and prepares; the human validates, decides, and closes.
+**Agente AI Capital Humano Transmontes** — recruiting operations system for fifth-wheel/full truck operators. The bot's name is **Mundo**. Goal: a recruiter opens Chatwoot and sees a complete, actionable candidate profile (name, phone, city, age, license, medical fitness, experience, documents, foráneo flag, travel need, missing fields, next action, candidate temperature) — without reading the full chat.
 
-GitHub repo: `DRAnguiano/Agente-AI-Capital-Humano`  
+GitHub repo: `DRAnguiano/Agente-AI-Capital-Humano`
 Active branch: `migration/langgraph-step1`
 
 ## Commands
 
 ### Run locally (Docker — primary workflow)
-
-Always use `docker compose` (no hyphen — `docker-compose` is the old v1 CLI, not installed here).
 
 ```bash
 # Start all services (FastAPI, Postgres, Chatwoot, Redis, Nginx, ngrok)
@@ -22,11 +20,12 @@ docker compose up -d --build
 # Neo4j runs as an orphan container from its own compose file
 docker compose -f docker-compose.neo4j.yml up -d neo4j
 
-# Rebuild API + worker only (faster iteration)
-docker compose build api && docker compose up -d api worker
+# Rebuild API + worker + beat only (faster iteration)
+docker compose build api && docker compose up -d api worker beat
 
-# Start n8n (lab profile, optional)
-docker compose --profile lab up -d n8n
+# Apply Neo4j seed (geo/vehicle nodes — idempotent)
+docker cp db/neo4j_seed_geo_vehicle.cypher hr_neo4j:/tmp/seed.cypher
+docker exec hr_neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD --file /tmp/seed.cypher
 ```
 
 ### Validate syntax before rebuilding
@@ -34,7 +33,6 @@ docker compose --profile lab up -d n8n
 python3 -m py_compile \
   app/app.py \
   app/tasks_chatwoot.py \
-  app/chatwoot_note_sync.py \
   app/graphs/hr_graph.py \
   app/orchestrators/knowledge_orchestrator.py \
   app/knowledge/current_turn.py \
@@ -46,90 +44,96 @@ python3 -m py_compile \
 
 ### Useful API calls
 ```bash
-# Health check
 curl http://localhost:8000/health
 
-# Reindex documents in data/
-curl -X POST http://localhost:8000/reindex \
-  -H "X-API-Key: ${REINDEX_API_KEY}"
-
-# Test the main orchestrator
 curl -X POST http://localhost:8000/orchestrate/message \
   -H "Content-Type: application/json" \
   -d '{"channel":"test_input_nodes","channel_user_id":"test1","message":"Hola, quiero aplicar"}'
 
-# Smoke-test the knowledge orchestrator
-bash scripts/test_knowledge_smoke_10.sh
-bash scripts/demo_knowledge_5.sh
-```
-
-### Apply DB patches (run inside postgres container or via psql)
-```bash
-# Migrations live in db/ — apply in numeric order
-psql $DATABASE_URL -f db/init_hr_memory.sql
-psql $DATABASE_URL -f db/003_lead_memory_v2.sql
-# ... etc
+# Smoke test webhook + debounce (use real CHATWOOT_WEBHOOK_TOKEN)
+curl -X POST http://localhost:8000/chatwoot/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Chatwoot-Webhook-Token: $CHATWOOT_WEBHOOK_TOKEN" \
+  -d '{"event":"message_created","message_type":"incoming","id":1,"account":{"id":1},"conversation":{"id":63},"inbox":{"id":1,"channel":"Channel::Telegram"},"content":"soy de torreon","meta":{"sender":{"id":63,"name":"Test","phone_number":"+521800000001"}}}'
 ```
 
 ### Logs
 ```bash
 docker logs hr_rag_api -f
-docker logs hr_worker -f   # Celery debounce worker
+docker logs hr_worker -f
 
-# Filter for key demo/sync events in the worker
-docker logs --tail=300 hr_worker 2>&1 | \
-  grep -Ei "DEMO_7_QUESTIONS_OVERRIDE|DEMO_DIRECT_LEAD_PERSISTED|DEMO_DIRECT_LEAD_PERSIST_ERROR|CHATWOOT_NOTE_SYNC_OK|CHATWOOT_NOTE_SYNC_ERROR"
+# Filter for key events
+docker logs --tail=200 hr_worker 2>&1 | \
+  grep -Ei "CURRENT_TURN_GUARD|CHATWOOT_NOTE_SYNC|RATE_LIMITED|SCHEDULER|ERROR"
+```
+
+### Apply DB migrations
+```bash
+# SQL migrations live in db/ — apply in numeric order
+psql $DATABASE_URL -f db/init_hr_memory.sql
+# ... up to latest
+
+# Pending city/location migrations live in sql/ (006–012), not yet applied
 ```
 
 ## Architecture
 
-### Active message path (`HR_GRAPH_MODE=knowledge`)
+### Active message path (only path — legacy removed)
 
-When `INBOUND_DEBOUNCE_ENABLED=true` (production/demo default), the real entry point is the **Celery worker**, not the webhook handler directly:
+When `INBOUND_DEBOUNCE_ENABLED=true` (production default):
 
 ```
 Telegram / WhatsApp → Chatwoot
   → POST /chatwoot/webhook (app/app.py)
+  → Redis rate limit check (30 req/min per channel_user_id, db 2)
   → app/tasks_chatwoot.py  [Celery worker, queue=inbound, debounce=6s]
+  → current_turn guard (extract_current_turn_facts → may override reply)
   → app/graphs/hr_graph.py  run_hr_graph_message()
   → app/orchestrators/knowledge_orchestrator.py  handle_message()
-  → app/knowledge/  (Neo4j term lookup + RAG context)
+  → app/knowledge/neo4j_client.py  (term resolution + profile facts)
+  → app/knowledge/context_builder.py  (RAG if route=rag)
   → app/lead_memory/  (rh_leads_v2, rh_lead_facts_v2 in Postgres)
-  → app/chatwoot_note_sync.py  → Chatwoot private note + labels
+  → app/chatwoot_note_sync.py  → Chatwoot public reply + private note + labels
 ```
-
-When debounce is off, the webhook calls `run_hr_graph_message()` directly.
 
 **Priority rule:** current turn message > lead_memory facts > Neo4j knowledge graph > RAG/ChromaDB > LLM generation.
 
-### Legacy path (`HR_GRAPH_MODE=legacy`, default for now)
+### Profile fact extraction (single source of truth)
 
 ```
-app/app.py → app/graphs/hr_graph.py → app/orchestrator.py
+Neo4j GeoArea/VehicleType nodes  →  extract_profile_facts_from_neo4j()
+  ↓ (covers city, state, vehicle_type)
+app/lead_memory/profile_extractor.py  extract_profile_facts()
+  ↓ (covers license, apto, experience, documents, age — regex fallback for geo)
+Merged in knowledge_orchestrator._store_lead_memory_updates()
+  ↓
+rh_lead_facts_v2 (Postgres)
 ```
 
-`app/orchestrator.py` is the old imperative orchestrator — kept for compatibility. New logic must NOT go here.
+`current_turn.extract_current_turn_facts()` is a thin wrapper over
+`profile_extractor.extract_profile_facts_as_dict()` used only by the debounce
+guard in `tasks_chatwoot.py`.
 
 ### Key modules
 
 | Module | Role |
 |---|---|
-| `app/graphs/hr_graph.py` | Entry point; routes to knowledge or legacy mode via `HR_GRAPH_MODE` env var |
-| `app/graphs/hr_state.py` | `HRState` TypedDict — shared state for all LangGraph nodes |
-| `app/orchestrators/knowledge_orchestrator.py` | Active brain in knowledge mode |
-| `app/knowledge/neo4j_client.py` | Read-only Neo4j client; resolves slang/terms to routing contracts |
+| `app/app.py` | FastAPI entry point; webhook handler with Redis rate limiting |
+| `app/graphs/hr_graph.py` | Thin entry point (27 lines) — calls knowledge_orchestrator directly |
+| `app/orchestrators/knowledge_orchestrator.py` | Active brain: routing, reply, memory, funnel nudge |
+| `app/knowledge/neo4j_client.py` | Neo4j term resolution + profile fact extraction (GeoArea/VehicleType) |
 | `app/knowledge/context_builder.py` | ChromaDB RAG retrieval + LLM prompt assembly |
-| `app/knowledge/current_turn.py` | Deterministic extraction of candidate facts from the current message |
+| `app/knowledge/current_turn.py` | Debounce guard helper — thin wrapper over profile_extractor |
+| `app/knowledge/text_normalizer.py` | Normalization + alias matching (used by Neo4j client) |
+| `app/lead_memory/profile_extractor.py` | Single regex extractor for license/apto/experience/docs/age |
 | `app/lead_memory/repository.py` | PostgreSQL persistence: identity, facts, events, summary |
-| `app/lead_memory/profile_extractor.py` | LLM-assisted field extraction from conversation history |
-| `app/chatwoot_note_sync.py` | Builds and posts private notes + labels to Chatwoot after each reply |
-| `app/indexer.py` | ChromaDB indexing; `call_llm()` for Groq/Cohere; embedding via BAAI/bge-m3 |
+| `app/chatwoot_note_sync.py` | Builds and posts private notes + labels to Chatwoot |
+| `app/indexer.py` | ChromaDB indexing; `call_llm()` for Groq/Cohere (timeout: 8s) |
 | `app/db.py` | PostgreSQL context manager; conversation + candidate CRUD |
 | `app/persona_config.py` | System prompt for Mundo |
 | `app/settings.py` | All env-var config read at import time |
-| `app/tasks_chatwoot.py` | Celery tasks for inbound message debounce |
-| `app/graphs/hr_nodes_*.py` | Individual LangGraph nodes (classifier, RAG, profile, handoff, etc.) |
-| `app/graphs/hr_routes.py` | LangGraph conditional edge functions |
+| `app/tasks_chatwoot.py` | Celery tasks: inbound debounce + Chatwoot send |
+| `app/followup/` | Celery Beat follow-up scheduler (rh_seguimiento_tareas) |
 
 ### Infrastructure services
 
@@ -137,98 +141,66 @@ app/app.py → app/graphs/hr_graph.py → app/orchestrator.py
 |---|---|---|
 | FastAPI (`hr_rag_api`) | 8000 | Main API |
 | PostgreSQL (`hr_postgres`) | 5432 | Conversations, candidates, lead memory |
-| Chatwoot Rails | 3000 | Agent inbox; receives webhook, displays notes |
-| Chatwoot Postgres (pgvector) | — | Chatwoot's own data |
-| Chatwoot Redis | — | Chatwoot Sidekiq + Celery broker (shared) |
-| Celery worker (`hr_worker`) | — | Debounce inbound messages (queue: `inbound`) |
-| Neo4j | 7474/7687 | Knowledge graph — **orphan container**, started via `docker-compose.neo4j.yml` separately |
-| Nginx (`public-gateway`) | 80 | Reverse-proxy: ngrok → Chatwoot or API |
+| Chatwoot Rails | 3000 | Agent inbox |
+| Celery worker (`hr_worker`) | — | Debounce inbound (queue: `inbound`) |
+| Celery Beat (`hr_beat`) | — | Follow-up scheduler (every 5/15 min) |
+| Neo4j (`hr_neo4j`) | 7474/7687 | Knowledge graph — orphan container via `docker-compose.neo4j.yml` |
+| Nginx (`public-gateway`) | 80 | Reverse-proxy + rate limiting (10 req/s per IP) |
 | ngrok | 4040 | Public HTTPS tunnel |
-| n8n (lab) | 5678 | Optional automation / channel experiments |
+| Redis (`chatwoot_redis`) | 6379 | Celery broker (db 1) + rate limit counters (db 2) |
 
-#### Nginx routing fix (critical)
-Chatwoot breaks if Nginx strips the URI path. The `proxy_pass` directives in `deploy/nginx/public-gateway.conf` **must** use `$request_uri` to preserve full paths:
+### Nginx routing (critical)
 
-```nginx
-proxy_pass $chatwoot$request_uri;
-proxy_pass $hr_api$request_uri;
-```
+`proxy_pass` must use `$request_uri` to preserve full paths (Chatwoot breaks otherwise).
+Rate limiting: `limit_req_zone` at 10 req/s per IP, burst 20, in `deploy/nginx/public-gateway.conf`.
 
-Validate with:
-```bash
-docker exec public-gateway grep -n "proxy_pass" /etc/nginx/conf.d/default.conf
-# Must show $request_uri on both lines
+### Neo4j schema
 
-# Sanity check — expect HTTP 401, not a routing error
-curl -i "https://${NGROK_DOMAIN}/api/v1/accounts/1/cache_keys"
-```
+`GeoArea` nodes (29): city and state-level with `aliases`, `profile_fact_group/key/value`, `confidence`.
+`VehicleType` nodes (2): `vehicle_quinta_rueda`, `vehicle_full` with unambiguous aliases only.
+`Term` nodes: HR concepts (routes, pay, documents) linked to `Intent → Route`.
 
-### Recruiting stages
-
-`START → NEW_LEAD → ASK_CITY → ASK_LICENSE → ASK_EXPERIENCE → ASK_APTO → ASK_AVAILABILITY → PROFILE_READY`
-
-Special stages: `CLARIFY_AMBIGUOUS_SLANG`, `HUMAN_REVIEW_REQUIRED`.
+Seed file: `db/neo4j_seed_geo_vehicle.cypher` (idempotent MERGE — safe to re-run).
 
 ## Environment variables
 
-Critical vars (see `.env`):
-
 ```
 # LLM
-LLM_PROVIDER=groq|cohere
+LLM_PROVIDER=groq
 GROQ_API_KEY / GROQ_MODEL=llama-3.3-70b-versatile / GROQ_MAX_TOKENS=350
-COHERE_API_KEY / COHERE_MODEL
-TEMPERATURE=0.10
-
-# Routing
-HR_GRAPH_MODE=knowledge|legacy
-EMBEDDING_MODEL=BAAI/bge-m3
+GROQ_TIMEOUT_SECONDS=8        # prevents stuck workers under flood
 
 # Databases
-POSTGRES_HOST=postgres / POSTGRES_DB=hrdb / POSTGRES_USER=hr_david / POSTGRES_PASSWORD
-NEO4J_ENABLED=true / NEO4J_URI=bolt://neo4j:7687 / NEO4J_USER / NEO4J_PASSWORD / NEO4J_DATABASE=neo4j
+POSTGRES_HOST=postgres / POSTGRES_DB=hrdb
+NEO4J_URI=bolt://neo4j:7687 / NEO4J_ENABLED=true
 
 # Chatwoot
-CHATWOOT_BASE_URL=http://chatwoot_rails:3000   # internal Docker URL
+CHATWOOT_BASE_URL=http://chatwoot_rails:3000
 CHATWOOT_API_TOKEN / CHATWOOT_WEBHOOK_TOKEN
-TELEGRAM_CHATWOOT_BASE_URL=https://${NGROK_DOMAIN}  # public URL for Telegram
-
-# Public exposure
-NGROK_AUTHTOKEN / NGROK_DOMAIN
+NGROK_DOMAIN=unhazardous-carie-nonfeatured.ngrok-free.dev
 
 # Celery debounce
-INBOUND_DEBOUNCE_ENABLED=true
-INBOUND_DEBOUNCE_SECONDS=6
-INBOUND_DEBOUNCE_TTL_SECONDS=900
+INBOUND_DEBOUNCE_ENABLED=true / INBOUND_DEBOUNCE_SECONDS=6
 CELERY_BROKER_URL=redis://chatwoot_redis:6379/1
-CELERY_RESULT_BACKEND=redis://chatwoot_redis:6379/1
+
+# Rate limiting
+WEBHOOK_RATE_LIMIT_ENABLED=true
+WEBHOOK_RATE_LIMIT_MAX_PER_MINUTE=30    # Redis db 2, per channel_user_id
 
 # RAG
-KNOWLEDGE_RAG_GENERATION_ENABLED=true
-RAG_MIN_SCORE=0.25
-RERANK_ENABLED=false
-WEB_SEARCH_ENABLED=false
-UNKNOWN_TERM_WEB_SEARCH_ENABLED=true
-UNKNOWN_TERM_WEB_USE_FOR_PUBLIC_ANSWER=false  # web result informs routing only
-
-# Bot identity
-FIRST_REPLY_INTRO_ENABLED=true
-ASSISTANT_PUBLIC_INTRO=Hola, soy Mundo, asistente de Capital Humano.
-
-# Security / debug
-REINDEX_API_KEY
-INCLUDE_ERROR_DETAILS=false
+KNOWLEDGE_RAG_GENERATION_ENABLED=true / RAG_MIN_SCORE=0.25
+EMBEDDING_MODEL=BAAI/bge-m3
 ```
 
 ## Key architectural constraints
 
-1. **Do not add new logic to `app/orchestrator.py`** — legacy only. New features go in `app/orchestrators/knowledge_orchestrator.py` or the `app/knowledge/` layer.
-2. **Deterministic extraction belongs in `app/knowledge/current_turn.py` or `app/lead_memory/profile_extractor.py`** — not scattered across multiple nodes.
-3. **RAG must not decide candidate facts** — facts come from `current_turn.py` and `lead_memory`. RAG is for answering HR policy/document questions.
-4. **The Chatwoot private note is display-only output**, never a source of truth.
-5. **LangGraph nodes in `app/graphs/hr_nodes_*.py`** are being migrated piecemeal — only touch them if they are on the active `knowledge` path.
+1. **`app/graphs/hr_graph.py` is 27 lines.** No mode switching, no legacy path.
+2. **Single profile extractor**: `app/lead_memory/profile_extractor.py`. Neo4j handles geo/vehicle. Regex handles the rest. No extraction logic scattered elsewhere.
+3. **RAG must not decide candidate facts** — facts come from Neo4j + profile_extractor. RAG answers HR policy questions only.
+4. **The Chatwoot private note is display-only**, never a source of truth.
+5. **`app/orchestrator.py` was deleted.** New logic goes in `app/orchestrators/knowledge_orchestrator.py` or `app/knowledge/`.
 6. **Do not ask the candidate something already answered** in the current conversation.
-7. **Do not send follow-ups outside 08:30–21:00** (Mexico City time) — not implemented yet, keep in mind for Celery Beat jobs.
+7. **`.cache/` must not be deleted** — Docker volume mount containing BAAI/bge-m3 (2.4 GB). Deleting forces a slow re-download.
 
 ## Lead memory tables (PostgreSQL)
 
@@ -238,12 +210,32 @@ INCLUDE_ERROR_DETAILS=false
 | `rh_lead_facts_v2` | Key-value facts extracted per lead |
 | `rh_lead_messages_v2` | Raw message log |
 | `rh_lead_events_v2` | Lifecycle events |
-| `v_rh_work_queue` | View used by Chatwoot webhook to pull labels, priority, recommended action |
+| `rh_seguimiento_tareas` | Follow-up tasks created by Celery Beat |
+| `v_rh_work_queue` | View: labels, priority, recommended action per lead |
 
-## Background review (future feature)
+## Recruiting stages
 
-When implemented: only public sources, no automatic rejection, human review required for any match, store evidence link + date, distinguish weak vs strong matches. The system must say "possible public match requires human review", never "candidate rejected".
+`new → interested → vacancy_info_shared → profile_hint_collected → profile_in_progress → documents_pending → documents_received → apto_pending_update → safety_review → followup_pending → human_review → closed`
 
-## Documents
+## What was cleaned up (2026-06-02)
 
-HR policy documents live in `DOCUMENTOS/` and are indexed into ChromaDB from `data/`. Place new PDFs or `.txt`/`.md` files in `data/` then call `POST /reindex` to rebuild the index.
+Deleted in audit session:
+- 23 `hr_nodes_*.py` (LangGraph experimental, never reached)
+- 7 dead graph helpers (`hr_hybrid_rules`, `hr_output_guard`, `hr_rag_optimized`, `hr_routes`, `hr_state`, `hr_timing`, `hr_trace`)
+- `app/orchestrator.py` (legacy) + `app/orchestrator_guard.py`
+- Dead env vars: `USE_LANGGRAPH_ORCHESTRATOR`, `HR_GRAPH_MODE`, `MESSAGE_CLASSIFIER_ENABLED`, all `WEB_SEARCH_*`, all `UNKNOWN_TERM_*`, all `TAVILY_*`
+- Root-level trash: `node_modules/` (486 MB), `.venv/` (1.6 GB), `docs/`, `_backup_langgraph_step1/`, `shared/`, test files
+
+Profile extractors consolidated: base + hotfix merged into one clean `extract_profile_facts()`. `current_turn.py` is now a thin wrapper.
+
+## Pending priorities
+
+1. **Friendly LLM verbosity**: still too chatty. Fix: add few-shot examples to `_answer_friendly_message()` prompt in `knowledge_orchestrator.py`.
+
+2. **"Cuando tenga la licencia llámenme"**: intent detection for `solicitud_llamada` is missing. Infrastructure (`rh_seguimiento_tareas`) exists but orchestrator doesn't detect this conversational intent.
+
+3. **Neo4j geo hierarchy**: when candidate says a state name ("soy de nuevo leon"), bot should ask which city. `candidate.state` is already saved but the funnel nudge copy doesn't reference it.
+
+4. **Telegram bot token expired**: regenerate via @BotFather, update `TELEGRAM_BOT_TOKEN` in `.env`, restart containers.
+
+5. **sql/ migrations (006–012)**: city catalog and location fields — not yet applied to hrdb. Apply when geo hierarchy feature is ready.
