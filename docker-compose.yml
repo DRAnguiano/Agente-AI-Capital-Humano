@@ -29,27 +29,10 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
-      POSTGRES_USER: ${POSTGRES_USER:-hr_david}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
-
-      # FastAPI habla con Chatwoot por red interna Docker.
-      CHATWOOT_BASE_URL: http://chatwoot_rails:3000
-
-      HF_HOME: /app/.cache
-      SENTENCE_TRANSFORMERS_HOME: /app/.cache
-
-      CELERY_BROKER_URL: redis://chatwoot_redis:6379/1
-      CELERY_RESULT_BACKEND: redis://chatwoot_redis:6379/1
-      FIRST_REPLY_INTRO_ENABLED: ${FIRST_REPLY_INTRO_ENABLED:-true}
-      ASSISTANT_PUBLIC_INTRO: ${ASSISTANT_PUBLIC_INTRO:-Hola, soy Mundo, asistente de Capital Humano.}
       ANONYMIZED_TELEMETRY: "false"
     ports:
       - "8000:8000"
     volumes:
-      - chroma_data:/app/chroma_db
       - chroma_bge_m3:/app/chroma_db_bge_m3
       - ./.cache:/app/.cache
       - ./data:/app/data
@@ -60,46 +43,6 @@ services:
       default:
         aliases:
           - api.localhost
-    restart: unless-stopped
-
-
-  #######################################
-  # CELERY BEAT / SEGUIMIENTO AUTOMÁTICO
-  #######################################
-  beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: hr-rag-api:latest
-    container_name: hr_beat
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
-      POSTGRES_USER: ${POSTGRES_USER:-hr_david}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
-
-      CHATWOOT_BASE_URL: http://chatwoot_rails:3000
-
-      HF_HOME: /app/.cache
-      SENTENCE_TRANSFORMERS_HOME: /app/.cache
-
-      CELERY_BROKER_URL: redis://chatwoot_redis:6379/1
-      CELERY_RESULT_BACKEND: redis://chatwoot_redis:6379/1
-      TZ: America/Monterrey
-      ANONYMIZED_TELEMETRY: "false"
-    command:
-      - sh
-      - -c
-      - celery -A app.tasks_seguimiento beat --loglevel=INFO -s /tmp/celerybeat-schedule
-    volumes:
-      - ./.cache:/app/.cache
-    depends_on:
-      - postgres
-      - chatwoot_redis
-      - worker
     restart: unless-stopped
 
   #######################################
@@ -114,28 +57,12 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
-      POSTGRES_USER: ${POSTGRES_USER:-hr_david}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
-
-      CHATWOOT_BASE_URL: http://chatwoot_rails:3000
-
-      HF_HOME: /app/.cache
-      SENTENCE_TRANSFORMERS_HOME: /app/.cache
-
-      CELERY_BROKER_URL: redis://chatwoot_redis:6379/1
-      CELERY_RESULT_BACKEND: redis://chatwoot_redis:6379/1
-      FIRST_REPLY_INTRO_ENABLED: ${FIRST_REPLY_INTRO_ENABLED:-true}
-      ASSISTANT_PUBLIC_INTRO: ${ASSISTANT_PUBLIC_INTRO:-Hola, soy Mundo, asistente de Capital Humano.}
       ANONYMIZED_TELEMETRY: "false"
     command:
       - sh
       - -c
       - celery -A app.tasks_chatwoot worker --loglevel=INFO -Q inbound
     volumes:
-      - chroma_data:/app/chroma_db
       - chroma_bge_m3:/app/chroma_db_bge_m3
       - ./.cache:/app/.cache
       - ./data:/app/data
@@ -143,6 +70,32 @@ services:
       - postgres
       - chatwoot_rails
       - chatwoot_redis
+    restart: unless-stopped
+
+  #######################################
+  # CELERY BEAT / SEGUIMIENTO AUTOMÁTICO
+  #######################################
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hr-rag-api:latest
+    container_name: hr_beat
+    env_file:
+      - .env
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+      TZ: America/Monterrey
+    command:
+      - sh
+      - -c
+      - celery -A app.tasks_seguimiento beat --loglevel=INFO -s /tmp/celerybeat-schedule
+    volumes:
+      - ./.cache:/app/.cache
+    depends_on:
+      - postgres
+      - chatwoot_redis
+      - worker
     restart: unless-stopped
 
   #######################################
@@ -184,11 +137,7 @@ services:
       INSTALLATION_ENV: docker
       RAILS_LOG_TO_STDOUT: "true"
       LOG_LEVEL: info
-
-      # Chatwoot público para Telegram.
-      # NGROK_DOMAIN debe venir desde .env.
       FRONTEND_URL: https://${NGROK_DOMAIN}
-
       POSTGRES_HOST: chatwoot_postgres
       POSTGRES_PORT: 5432
       POSTGRES_DATABASE: chatwoot
@@ -196,7 +145,6 @@ services:
       POSTGRES_USERNAME: chatwoot
       POSTGRES_USER: chatwoot
       POSTGRES_PASSWORD: chatwoot_password
-
       REDIS_URL: redis://chatwoot_redis:6379
       ACTIVE_STORAGE_SERVICE: local
       ENABLE_ACCOUNT_SIGNUP: "true"
@@ -227,9 +175,7 @@ services:
       INSTALLATION_ENV: docker
       RAILS_LOG_TO_STDOUT: "true"
       LOG_LEVEL: info
-
       FRONTEND_URL: https://${NGROK_DOMAIN}
-
       POSTGRES_HOST: chatwoot_postgres
       POSTGRES_PORT: 5432
       POSTGRES_DATABASE: chatwoot
@@ -237,7 +183,6 @@ services:
       POSTGRES_USERNAME: chatwoot
       POSTGRES_USER: chatwoot
       POSTGRES_PASSWORD: chatwoot_password
-
       REDIS_URL: redis://chatwoot_redis:6379
       ACTIVE_STORAGE_SERVICE: local
     command:
@@ -249,37 +194,6 @@ services:
     depends_on:
       - chatwoot_postgres
       - chatwoot_redis
-    restart: unless-stopped
-
-  #######################################
-  # N8N OPCIONAL / LABORATORIO / AUTOMATIZACIONES
-  #######################################
-  n8n:
-    profiles:
-      - lab
-    image: n8nio/n8n:latest
-    container_name: hr_n8n
-    env_file:
-      - .env
-    environment:
-      N8N_HOST: 0.0.0.0
-      N8N_PORT: 5678
-      N8N_PROTOCOL: http
-      NODE_ENV: production
-      GENERIC_TIMEZONE: America/Mexico_City
-
-      DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
-      DB_POSTGRESDB_PORT: 5432
-      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-hrdb}
-      DB_POSTGRESDB_USER: ${POSTGRES_USER:-hr_david}
-      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
-    ports:
-      - "5678:5678"
-    volumes:
-      - n8n_data:/home/node/.n8n
-    depends_on:
-      - postgres
     restart: unless-stopped
 
   #######################################
@@ -318,8 +232,37 @@ services:
       - public-gateway
     restart: unless-stopped
 
+  #######################################
+  # N8N OPCIONAL / LABORATORIO
+  #######################################
+  n8n:
+    profiles:
+      - lab
+    image: n8nio/n8n:latest
+    container_name: hr_n8n
+    env_file:
+      - .env
+    environment:
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      NODE_ENV: production
+      GENERIC_TIMEZONE: America/Mexico_City
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-hrdb}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-hr_david}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
 volumes:
-  chroma_data:
   chroma_bge_m3:
   n8n_data:
   pg_data:
