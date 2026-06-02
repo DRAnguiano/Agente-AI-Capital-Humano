@@ -608,11 +608,19 @@ def _store_lead_memory_updates(
     )
 
     # Extract profile facts from every message regardless of route/intent.
-    # This ensures city, license, experience, etc. are saved even when the
-    # candidate mentions them casually in smalltalk ("soy de Monterrey").
+    # Neo4j handles geo (city/state) and vehicle type; regex covers everything else.
     try:
+        from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
         from app.lead_memory.profile_extractor import extract_profile_facts
-        for pf in extract_profile_facts(message, intent):
+
+        neo4j_facts = extract_profile_facts_from_neo4j(message)
+        neo4j_keys = {(f["fact_group"], f["fact_key"]) for f in neo4j_facts}
+        regex_facts = [
+            f for f in extract_profile_facts(message, intent)
+            if (f["fact_group"], f["fact_key"]) not in neo4j_keys
+        ]
+
+        for pf in neo4j_facts + regex_facts:
             upsert_lead_fact(
                 lead_key=lead_key,
                 fact_group=pf["fact_group"],
@@ -895,9 +903,20 @@ def _build_funnel_nudge(
         if row.get("fact_group") and row.get("fact_key") and row.get("fact_value")
     }
     try:
+        from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
         from app.lead_memory.profile_extractor import extract_profile_facts
+
+        neo4j_facts = extract_profile_facts_from_neo4j(message)
+        neo4j_keys: set[str] = set()
+        for f in neo4j_facts:
+            k = f"{f['fact_group']}.{f['fact_key']}"
+            active_facts[k] = str(f["fact_value"])
+            neo4j_keys.add(k)
+
         for f in extract_profile_facts(message, intent or None):
-            active_facts[f"{f['fact_group']}.{f['fact_key']}"] = str(f["fact_value"])
+            k = f"{f['fact_group']}.{f['fact_key']}"
+            if k not in neo4j_keys:
+                active_facts[k] = str(f["fact_value"])
     except Exception:
         pass
 

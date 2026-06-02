@@ -194,6 +194,56 @@ class Neo4jKnowledgeClient:
             "normalized_message": normalize_text(message),
         }
 
+    def fetch_profile_nodes(self) -> list[dict[str, Any]]:
+        """Return all GeoArea and VehicleType nodes used for profile fact extraction."""
+        query = """
+        MATCH (n)
+        WHERE n:GeoArea OR n:VehicleType
+        RETURN
+          n.id AS id,
+          labels(n)[0] AS node_type,
+          coalesce(n.aliases, []) AS aliases,
+          n.profile_fact_group AS fact_group,
+          n.profile_fact_key AS fact_key,
+          n.profile_fact_value AS fact_value,
+          coalesce(n.confidence, 0.9) AS confidence
+        """
+        with self.driver.session(database=self.database) as session:
+            rows = session.run(query)
+            return [dict(row) for row in rows]
+
+    def extract_profile_facts_from_neo4j(self, message: str) -> list[dict[str, Any]]:
+        """Match GeoArea/VehicleType aliases in message, return profile facts.
+
+        Returns the same {fact_group, fact_key, fact_value, confidence} dicts as
+        profile_extractor.extract_profile_facts(), so callers can merge both sources.
+        Higher-confidence match wins when two nodes produce the same fact_group+key.
+        """
+        normalized = normalize_text(message)
+        facts: list[dict[str, Any]] = []
+
+        for row in self.fetch_profile_nodes():
+            aliases = [str(x) for x in row.get("aliases") or []]
+            normalized_aliases = normalize_aliases(aliases)
+            if any(contains_alias(normalized, a) for a in normalized_aliases):
+                facts.append(
+                    {
+                        "fact_group": str(row["fact_group"] or ""),
+                        "fact_key": str(row["fact_key"] or ""),
+                        "fact_value": str(row["fact_value"] or ""),
+                        "confidence": float(row.get("confidence") or 0.9),
+                        "neo4j_node_id": str(row["id"] or ""),
+                    }
+                )
+
+        # Dedup: highest confidence wins for each (fact_group, fact_key) pair.
+        dedup: dict[tuple[str, str], dict[str, Any]] = {}
+        for f in facts:
+            key = (f["fact_group"], f["fact_key"])
+            if key not in dedup or f["confidence"] > dedup[key]["confidence"]:
+                dedup[key] = f
+        return list(dedup.values())
+
     def resolve_message(self, message: str, conversation_state: dict[str, Any] | None = None) -> dict[str, Any]:
         matches = self._matches_for_message(message)
         best = self._pick_best_match(matches)
@@ -225,3 +275,7 @@ def get_knowledge_client() -> Neo4jKnowledgeClient:
 
 def resolve_message(message: str, conversation_state: dict[str, Any] | None = None) -> dict[str, Any]:
     return get_knowledge_client().resolve_message(message, conversation_state=conversation_state)
+
+
+def extract_profile_facts_from_neo4j(message: str) -> list[dict[str, Any]]:
+    return get_knowledge_client().extract_profile_facts_from_neo4j(message)

@@ -1,18 +1,10 @@
 import re
-import unicodedata
 from typing import Any
+
+from app.knowledge.text_normalizer import normalize_text
 
 
 LOCAL_LAGUNA = ["torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"]
-
-
-def normalize_text(text: str | None) -> str:
-    value = (text or "").strip().lower()
-    value = unicodedata.normalize("NFD", value)
-    value = "".join(ch for ch in value if unicodedata.category(ch) != "Mn")
-    value = re.sub(r"[^a-z0-9\s,+.-]", " ", value)
-    value = re.sub(r"\s+", " ", value)
-    return value.strip()
 
 
 def is_question(text: str | None) -> bool:
@@ -24,78 +16,29 @@ def is_question(text: str | None) -> bool:
 
 
 def extract_current_turn_facts(message: str | None) -> dict[str, Any]:
-    """
-    Extrae hechos determinísticos del mensaje actual.
+    """Dict view of profile facts for the debounce guard in tasks_chatwoot.
 
-    Regla de arquitectura: los hechos del turno actual tienen prioridad sobre memoria/RAG.
-    Esta capa cubre faltas comunes y lenguaje natural corto de candidatos traileros.
+    Delegates extraction to profile_extractor (single source of truth) and adds
+    the debounce-specific fields: interest.payment, interest.routes,
+    location.is_local_laguna.
     """
+    from app.lead_memory.profile_extractor import extract_profile_facts_as_dict
+
     raw = (message or "").strip()
+    if not raw:
+        return {}
+
+    facts = extract_profile_facts_as_dict(raw)
     text = normalize_text(raw)
-    facts: dict[str, Any] = {}
 
-    if not text:
-        return facts
-
-    age_match = re.search(r"\b(1[8-9]|[2-6][0-9]|7[0-5])\s*(anos|anios|años)?\b", text)
-    if age_match:
-        facts["candidate.age"] = int(age_match.group(1))
-
-    # Ciudad con patrones frecuentes.
-    city_patterns = [
-        r"\b(?:soy de|soi de|vivo en|vivo por|estoy en|ando en|radico en|resido en|me ubico en)\s+([a-z\s]+?)(?:\s+y\b|,|\.|$)",
-        r"\ben\s+(torreon|gomez palacio|lerdo|matamoros|san luis potosi|slp|monterrey|saltillo|durango)\b",
-    ]
-    for pattern in city_patterns:
-        match = re.search(pattern, text)
-        if match:
-            city = match.group(1).strip()
-            city = {"slp": "San Luis Potosí", "torreon": "Torreón", "gomez palacio": "Gómez Palacio"}.get(city, city.title())
-            facts["candidate.city"] = city
-            facts["location.is_local_laguna"] = normalize_text(city) in LOCAL_LAGUNA
-            break
-
-    license_match = re.search(r"\b(?:licencia\s*)?(?:tipo\s*)?([abe])\b", text)
-    if license_match and ("licencia" in text or "tipo" in text):
-        facts["license.category"] = license_match.group(1).upper()
-        facts["license.status"] = "vigente" if any(word in text for word in ["vigente", "todo vigente", "vigentes"]) else "mencionada"
-
-    if any(phrase in text for phrase in ["todo vigente", "todos vigentes", "documentacion vigente", "documentos vigentes", "papeles vigentes"]):
-        facts["documents.general_status"] = "vigente"
-        facts["license.status"] = "vigente"
-        facts["medical.apto_status"] = "vigente"
-
-    if "apto" in text or "medico" in text:
-        if any(word in text for word in ["vigente", "si", "sí", "tengo", "cuento"]):
-            facts["medical.apto_status"] = "vigente"
-        elif any(word in text for word in ["vencido", "no tengo", "no cuento"]):
-            facts["medical.apto_status"] = "no_vigente"
-
-    if "carta" in text or "cartas" in text or "laboral" in text or "laborales" in text:
-        if any(word in text for word in ["tengo", "cuento", "si", "sí"]):
-            facts["documents.labor_letters"] = "sí"
-        elif "no" in text:
-            facts["documents.labor_letters"] = "no"
-
-    if any(term in text for term in ["quinta", "quinta rueda", "full", "tracto", "trailer", "trailer"]):
-        if any(word in text for word in ["si", "sí", "tengo", "manejo", "manejando", "experiencia"]):
-            facts["experience.fifth_wheel"] = "sí"
-
-    years_match = re.search(r"\b(\d{1,2})\s*(anos|anios|años|año)\b", text)
-    if years_match and any(term in text for term in ["experiencia", "manej", "quinta", "full", "tracto"]):
-        facts["experience.years"] = years_match.group(1)
-
-    if any(phrase in text for phrase in ["me interesa", "si me interesa", "sí me interesa", "me agrada", "si jalo", "jalo"]):
-        facts["candidate.vacancy_accepted"] = "sí"
-
-    if any(phrase in text for phrase in ["voy manejando", "vengo manejando", "ando manejando", "al rato", "mas tarde", "más tarde"]):
-        facts["candidate.availability_status"] = "en_ruta_o_no_disponible_ahora"
-
-    if any(phrase in text for phrase in ["cuanto pagan", "cuanto pagan", "pago", "sueldo", "compensacion", "kilometro", "km"]):
+    # Fields only needed by the debounce guard, not persisted to lead_memory.
+    if any(t in text for t in ("cuanto pagan", "pago", "sueldo", "compensacion", "kilometro", "km")):
         facts["interest.payment"] = "asked"
-
-    if any(phrase in text for phrase in ["que rutas", "rutas tienen", "bases", "cedis", "monterrey"]):
+    if any(t in text for t in ("que rutas", "rutas tienen", "bases", "cedis")):
         facts["interest.routes"] = "asked"
+
+    city_norm = normalize_text(facts.get("candidate.city") or "")
+    facts["location.is_local_laguna"] = city_norm in LOCAL_LAGUNA
 
     return facts
 
