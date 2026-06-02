@@ -693,7 +693,8 @@ def call_groq_llm(prompt: str) -> str:
         return "Error: falta configurar GROQ_API_KEY."
 
     try:
-        timeout = httpx.Timeout(60.0, connect=20.0)
+        timeout_secs = float(os.getenv("GROQ_TIMEOUT_SECONDS", "8"))
+        timeout = httpx.Timeout(timeout_secs, connect=5.0)
 
         with httpx.Client(timeout=timeout) as http_client:
             client = Groq(api_key=api_key, http_client=http_client)

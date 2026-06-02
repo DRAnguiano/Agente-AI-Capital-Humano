@@ -18,6 +18,22 @@ from .chatwoot_note_sync import sync_chatwoot_candidate_note
 
 app = FastAPI(default_response_class=ORJSONResponse)
 
+_rl_redis_client = None
+
+
+def _rate_limit_redis():
+    """Lazy singleton Redis client on db 2 (separate from Celery on db 1)."""
+    global _rl_redis_client
+    if _rl_redis_client is None:
+        try:
+            import redis as _r
+            url = os.getenv("CELERY_BROKER_URL", "redis://chatwoot_redis:6379/1")
+            rl_url = re.sub(r"/\d+$", "/2", url)
+            _rl_redis_client = _r.from_url(rl_url, decode_responses=True)
+        except Exception:
+            pass
+    return _rl_redis_client
+
 
 def _sanitize(text: str):
     if not text:
@@ -873,6 +889,28 @@ async def chatwoot_webhook(
     )
 
     username = contact.get("name") or f"Chatwoot Contact {channel_user_id}"
+
+    # ── Rate limit: max N messages per channel_user_id per 60 s ─────────────
+    if os.getenv("WEBHOOK_RATE_LIMIT_ENABLED", "true").strip().lower() not in {"0", "false", "no", "n", "off"}:
+        try:
+            _rl = _rate_limit_redis()
+            if _rl is not None:
+                _rl_key = f"rate:webhook:{channel_user_id}"
+                _rl_count = _rl.incr(_rl_key)
+                if _rl_count == 1:
+                    _rl.expire(_rl_key, 60)
+                _rl_max = int(os.getenv("WEBHOOK_RATE_LIMIT_MAX_PER_MINUTE", "30"))
+                if _rl_count > _rl_max:
+                    print(
+                        f"[RATE_LIMITED] channel_user_id={channel_user_id} count={_rl_count}",
+                        flush=True,
+                    )
+                    return JSONResponse(
+                        status_code=429,
+                        content={"status": "rate_limited", "retry_after": 60},
+                    )
+        except Exception:
+            pass  # never block the webhook on rate limit errors
 
     if os.getenv("INBOUND_DEBOUNCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "y", "on"}:
         try:
