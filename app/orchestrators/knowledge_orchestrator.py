@@ -888,7 +888,12 @@ def _build_funnel_nudge(
 
     # Merge persisted facts with facts explicitly stated in the current message
     # so we never ask something the candidate just answered.
-    active_facts: dict[str, str] = dict(lead_memory.get("active_facts") or {})
+    # get_lead_memory returns {"facts": [{"fact_group":..., "fact_key":..., ...}]}
+    active_facts: dict[str, str] = {
+        f"{row['fact_group']}.{row['fact_key']}": str(row["fact_value"])
+        for row in (lead_memory.get("facts") or [])
+        if row.get("fact_group") and row.get("fact_key") and row.get("fact_value")
+    }
     try:
         from app.lead_memory.profile_extractor import extract_profile_facts
         for f in extract_profile_facts(message, intent or None):
