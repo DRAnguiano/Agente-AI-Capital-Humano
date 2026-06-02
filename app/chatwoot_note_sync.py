@@ -199,7 +199,11 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     # Specific document status labels instead of generic "documentos"
     has_license    = bool(facts.get("license.category"))
     has_medical    = facts.get("medical.apto_status") in {"vigente", "sí", "si"}
-    has_experience = facts.get("experience.fifth_wheel") in {"sí", "si", "yes", "true"}
+    has_experience = (
+        facts.get("experience.fifth_wheel") in {"sí", "si", "yes", "true"}
+        or bool(facts.get("experience.vehicle_type"))
+        or bool(facts.get("experience.years"))
+    )
     has_letters    = facts.get("documents.labor_letters_status") in {"available", "sí", "si"} or \
                      facts.get("documents.labor_letters") in {"available", "sí", "si"}
 
@@ -258,6 +262,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     message = _text(fallback_last_message or last.get("message"), "Sin mensaje reciente")[:500]
 
     fifth_wheel_raw = _fact(facts, "experience.fifth_wheel")
+    vehicle_type_raw = _fact(facts, "experience.vehicle_type", default="")
     years = _fact(facts, "experience.years")
     license_category = _fact(facts, "license.category")
     license_exp_text = _fact(facts, "license.expiration_text", default="")
@@ -268,7 +273,12 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     availability_raw = _fact(facts, "candidate.availability_status")
     payment_raw = _fact(facts, "interest.payment", default="No detectado")
 
-    fifth_wheel = _human_fact(fifth_wheel_raw)
+    if vehicle_type_raw == "sencillo":
+        fifth_wheel = "Sencillo (escuelita – evalúa Cap. Humano)"
+    elif vehicle_type_raw in ("quinta_rueda", "full"):
+        fifth_wheel = "Sí"
+    else:
+        fifth_wheel = _human_fact(fifth_wheel_raw)
     medical_status = _human_fact(medical_status_raw)
     documents_status = _human_fact(documents_status_raw)
     availability = _human_fact(availability_raw)
@@ -300,6 +310,8 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         blocker = "Esperando envío documental"
     elif not has_experience:
         blocker = "Falta confirmar experiencia en quinta rueda/full"
+    elif vehicle_type_raw == "sencillo":
+        blocker = "Experiencia en sencillo (escuelita) – Capital Humano valida viabilidad"
     elif not has_license:
         blocker = "Falta validar licencia federal/tipo"
     elif not has_medical:
