@@ -132,11 +132,18 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
 
     # Experience.
     years_match = re.search(r"\b(\d{1,2})\s*(?:anos|años)\b", text)
-    if years_match and any(term in text for term in ("manejando", "manejo", "experiencia", "full", "quinta", "5ta")):
+    if years_match and any(term in text for term in ("manejando", "manejo", "experiencia", "full", "quinta", "5ta", "fulero", "fulera", "tracto")):
         facts.append(_fact("experience", "years", years_match.group(1), 0.8))
 
-    if any(term in text for term in ("full", "quinta rueda", "5ta rueda", "quinta", "kinta", "fulero", "fulera", "tracto", "tractocamion", "tractocamión")):
+    # Quinta rueda / sencillo: single-trailer truck
+    if any(term in text for term in ("quinta rueda", "5ta rueda", "kinta rueda", "sencillo")):
+        facts.append(_fact("experience", "vehicle_type", "quinta_rueda", 0.85))
         facts.append(_fact("experience", "fifth_wheel", "sí", 0.8))
+
+    # Full / fulero: double-articulated truck (two trailers) — DIFFERENT from quinta rueda
+    if any(term in text for term in ("fulero", "fulera", "fuleros", "full")):
+        if any(term in text for term in ("manejo", "manej", "opero", "operar", "experiencia", "anos", "trabajo")):
+            facts.append(_fact("experience", "vehicle_type", "full", 0.85))
 
     if any(term in text for term in ("carretera mexicana", "republica", "república", "foraneo", "foráneo")):
         facts.append(_fact("experience", "carretera_mexicana", "sí", 0.75))
@@ -245,8 +252,9 @@ if "_CURRENT_TURN_PROFILE_HOTFIX_APPLIED" not in globals():
             _upsert_fact_local(facts, _hotfix_fact("candidate", "city", "San Luis Potosí", 0.95))
         elif "monterrey" in text_for_numbers or "monterey" in text_for_numbers or "mty" in text_for_numbers:
             _upsert_fact_local(facts, _hotfix_fact("candidate", "city", "Monterrey", 0.95))
-        elif "nuevo leon" in text_for_numbers or "nuevo leon" in text_for_numbers:
-            _upsert_fact_local(facts, _hotfix_fact("candidate", "city", "Nuevo León", 0.90))
+        elif "nuevo leon" in text_for_numbers or "nl" == text_for_numbers.strip():
+            # Nuevo León is a STATE — save state, not city, so bot asks which city
+            _upsert_fact_local(facts, _hotfix_fact("candidate", "state", "Nuevo León", 0.90))
 
         # "Ambas / los dos / las dos" + expiration time → apply to BOTH license and apto.
         ambas_match = re.search(
@@ -292,9 +300,9 @@ if "_CURRENT_TURN_PROFILE_HOTFIX_APPLIED" not in globals():
         if any(term in text_for_numbers for term in ("full", "quinta", "quinta rueda", "tracto")):
             _upsert_fact_local(facts, _hotfix_fact("experience", "fifth_wheel", "sí", 0.85))
 
-        # fulero / fulera = fifth-wheel operator in Mexican slang
+        # fulero / fulera = double-articulated full truck (NOT the same as quinta rueda/sencillo)
         if any(term in text_for_numbers for term in ("fulero", "fulera", "fuleros")):
-            _upsert_fact_local(facts, _hotfix_fact("experience", "fifth_wheel", "sí", 0.88))
+            _upsert_fact_local(facts, _hotfix_fact("experience", "vehicle_type", "full", 0.88))
             if years_match:
                 _upsert_fact_local(facts, _hotfix_fact("experience", "years", years_match.group(1), 0.88))
 
