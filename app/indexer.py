@@ -774,12 +774,16 @@ def call_cohere_llm(prompt: str) -> str:
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
 
 
-def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0) -> str:
+def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0,
+                   model: str | None = None) -> str:
     """Llama a Groq en JSON mode para clasificación determinista.
 
     Devuelve el string JSON crudo (el caller lo parsea/valida). Distinta de
     call_llm: usa response_format json_object, temperatura ~0 y un system message
     propio (no el de Mundo conversacional). No reemplaza call_llm.
+
+    model: por defecto GROQ_MODEL. Para clasificación conviene un modelo chico
+    (ej. llama-3.1-8b-instant): más barato en tokens y más rápido.
     """
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -792,7 +796,7 @@ def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0
         with httpx.Client(timeout=timeout) as http_client:
             client = Groq(api_key=api_key, http_client=http_client)
             completion = client.chat.completions.create(
-                model=GROQ_MODEL,
+                model=model or GROQ_MODEL,
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt},
