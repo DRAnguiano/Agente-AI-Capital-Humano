@@ -36,7 +36,7 @@ SET r.label = row.label;
 UNWIND [
   {
     id:'static_greeting',
-    text:'Hola, soy Mundo de Capital Humano. ¿Te interesa la vacante de operador de quinta rueda?'
+    text:'Hola, soy Mundo del equipo de reclutamiento de Transmontes. ¿Le interesa la vacante de operador de quinta rueda?'
   },
   {
     id:'static_on_route',
@@ -44,11 +44,11 @@ UNWIND [
   },
   {
     id:'static_callback',
-    text:'Claro, lo dejo anotado para que Capital Humano pueda darte seguimiento por llamada.'
+    text:'Claro, lo dejo anotado para que nuestro equipo pueda darte seguimiento por llamada.'
   },
   {
     id:'human_handoff_default',
-    text:'Ese punto debe revisarlo Capital Humano antes de continuar. Lo dejo anotado para seguimiento.'
+    text:'Ese punto debe revisarlo nuestro equipo antes de continuar. Lo dejo anotado para seguimiento.'
   },
   {
     id:'dropoff_recovery',
@@ -60,7 +60,7 @@ UNWIND [
   },
   {
     id:'policy_zero_tolerance_review',
-    text:'Nuestra empresa tiene política de 0 tolerancia en sustancias o alcohol relacionados con operación. Ese punto lo revisa Capital Humano antes de continuar.'
+    text:'Nuestra empresa tiene política de 0 tolerancia en sustancias o alcohol relacionados con operación. Ese punto lo revisa nuestro equipo antes de continuar.'
   }
 ] AS row
 MERGE (t:ReplyTemplate {id: row.id})
@@ -131,7 +131,7 @@ UNWIND [
     id:'no_hiring_promise',
     label:'No prometer contratación',
     risk_level:'low',
-    public_guidance:'No prometas contratación ni selección; solo informa que Capital Humano valida el avance.'
+    public_guidance:'No prometas contratación ni selección; solo informa que nuestro equipo valida el avance.'
   },
   {
     id:'pay_must_come_from_internal_source',
@@ -143,7 +143,7 @@ UNWIND [
     id:'zero_tolerance_review',
     label:'Cero tolerancia operativa',
     risk_level:'high',
-    public_guidance:'En temas de sustancias, alcohol o seguridad operativa, responde con cuidado y escala a Capital Humano cuando aplique.'
+    public_guidance:'En temas de sustancias, alcohol o seguridad operativa, responde con cuidado y escala a nuestro equipo cuando aplique.'
   }
 ] AS row
 MERGE (policy:Policy {id: row.id})

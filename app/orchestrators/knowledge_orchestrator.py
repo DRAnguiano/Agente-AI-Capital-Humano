@@ -405,39 +405,70 @@ def _format_lead_memory_for_prompt(memory: dict[str, Any] | None) -> str:
         msg = str(row.get("message") or "")[:180]
         recent.append(f"{role}: {msg}")
 
+    # NO incluir next_best_action aquí: es una instrucción operativa para el
+    # reclutador humano (ej. "invitar a enviar documentos"). El LLM la obedece
+    # convirtiéndola en preguntas/peticiones. Solo contexto descriptivo.
     return (
         f"Etapa RH: {lead.get('funnel_stage_label') or lead.get('funnel_stage') or 'N/D'}. "
-        f"Siguiente acción: {lead.get('next_best_action') or 'N/D'}. "
         f"Resumen: {lead.get('memory_summary') or 'N/D'}. "
         f"Hechos: {fact_text}. "
         f"Historial reciente: {' | '.join(recent) if recent else 'Sin historial previo útil.'}"
     )
 
 
+def _is_strong_candidate(lead_memory: dict[str, Any] | None) -> bool:
+    """True si el candidato ya tiene 3+ hechos clave de perfil registrados."""
+    if not lead_memory:
+        return False
+    key_facts = {
+        "candidate.city", "license.category", "license.status",
+        "medical.apto_status", "experience.years", "experience.fifth_wheel",
+        "documents.labor_letters_status",
+    }
+    active = {
+        f"{r.get('fact_group')}.{r.get('fact_key')}"
+        for r in (lead_memory.get("facts") or [])
+        if r.get("fact_value")
+    }
+    return len(active & key_facts) >= 3
+
+
 def _answer_friendly_message(message: str, contract: dict[str, Any], lead_memory: dict[str, Any] | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     memory_text = _format_lead_memory_for_prompt(lead_memory)
-    prompt = f"""
-Eres Mundo, asistente de reclutamiento de Transmontes. Hablas como reclutador mexicano: directo, amable, sin rodeos.
+    strong = _is_strong_candidate(lead_memory)
 
-REGLAS ESTRICTAS:
-- Máximo 2 oraciones. Nada más.
-- No repitas lo que el candidato acaba de decir.
-- No uses "¡Hola de nuevo!", "¡Genial!", "¡Excelente!", "Me alegra saber que..."
-- No hagas preguntas sobre cómo afecta su ubicación a su disponibilidad.
-- No expliques la empresa ni el proceso si no te lo preguntaron.
-- No prometas contratación ni menciones salarios exactos que no conozcas.
-- Si el candidato menciona una ciudad, solo di "Anotado, [ciudad]." y sigue.
-- Si el candidato dice algo que no tiene que ver con el trabajo, responde en máximo una oración y regresa al proceso.
+    tono_extra = (
+        "Este candidato ya tiene buen perfil. Cierra con una frase corta que lo anime, "
+        "tipo 'Con ese perfil nos interesa conocerle' o 'Va por buen camino'."
+        if strong else
+        "Responde corto y cordial."
+    )
+
+    prompt = f"""
+Eres Mundo, del equipo de reclutamiento de Transmontes. Reclutador mexicano: directo, cálido, breve.
+
+TU ÚNICO TRABAJO: hacer un comentario corto y amable. Confirmar, animar o reaccionar a lo que dijo el candidato. Nada más.
+
+El sistema se encarga solo de pedir los datos del proceso. Tú JAMÁS pides datos ni haces preguntas: solo reaccionas con un comentario afirmativo y cierras.
+
+Así suena bien (afirmaciones, nunca preguntas):
+- Candidato: "4 años como operador" → "Cuatro años ya son experiencia de peso para esta chamba."
+- Candidato: "ya tengo toda mi documentación lista" → "Excelente, con eso avanzamos rápido."
+- Candidato: "me interesa la vacante" → "Qué bueno, aquí lo apoyamos para que avance."
+- Candidato: "y cuánto lleva la empresa?" → "Transmontes tiene años en el transporte de carga."
+- Candidato: "soy de Monterrey" → "Anotado, Monterrey."
+
+Reglas: máximo 2 oraciones; nunca termines con '?'; no repitas lo que dijo el candidato; no prometas sueldo ni contratación; nada de "¡Genial!" ni "¡Excelente!" al inicio. {tono_extra}
 
 Contexto del lead: {memory_text}
 Mensaje del candidato: {message!r}
 
-RESPUESTA (máximo 2 oraciones):
+Tu comentario (afirmación corta, sin preguntas):
 """.strip()
 
     if not _env_bool("KNOWLEDGE_FRIENDLY_LLM_GENERATION_ENABLED", True):
-        debug_reply = "Puedo salirme tantito del guion, pero sin inventarte datos. ¿Quieres que revisemos pago, documentos o requisitos?"
+        debug_reply = "Aquí andamos, sin inventarte datos."
         return {
             "reply": debug_reply,
             "llm_prompt_chars": len(prompt),
@@ -454,7 +485,7 @@ RESPUESTA (máximo 2 oraciones):
     reply = _clean_reply(raw_reply)
 
     if not reply:
-        reply = "Aquí ando, listo para ayudarte sin inventarte datos. ¿Revisamos pago, documentos o requisitos?"
+        reply = "Aquí andamos, con gusto seguimos con tu proceso."
 
     return {
         "reply": reply,
