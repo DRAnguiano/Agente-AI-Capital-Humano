@@ -24,6 +24,15 @@ def _facts_to_known(lead_memory: dict[str, Any] | None) -> dict[str, str]:
     return known
 
 
+def _last_bot_question(lead_memory: dict[str, Any] | None) -> str | None:
+    """Última pregunta que hizo el bot (último mensaje assistant), para contexto elíptico."""
+    messages = (lead_memory or {}).get("messages") or []
+    for row in reversed(messages):
+        if isinstance(row, dict) and row.get("role") != "user" and row.get("message"):
+            return str(row["message"])
+    return None
+
+
 def run_shadow(message: str, lead_memory: dict[str, Any] | None, actual_reply: str) -> None:
     """Ejecuta el pipeline en shadow y loggea la comparación. Nunca propaga errores."""
     try:
@@ -33,8 +42,9 @@ def run_shadow(message: str, lead_memory: dict[str, Any] | None, actual_reply: s
 
         started = time.perf_counter()
         known = _facts_to_known(lead_memory)
+        last_q = _last_bot_question(lead_memory)
 
-        classification = classify_message(message)
+        classification = classify_message(message, last_bot_question=last_q)
         enriched = enrich_classification(classification)
         plan = plan_and_respond(enriched, message, known)
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)

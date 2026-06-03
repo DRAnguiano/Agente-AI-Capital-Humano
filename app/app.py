@@ -337,6 +337,7 @@ def orchestrate(body: OrchestrateMessageBody, x_api_key: str | None = Header(def
 class ClassifyBody(BaseModel):
     message: str
     known_facts: dict | None = None
+    last_bot_question: str | None = None
 
 
 @app.post("/classify")
@@ -352,7 +353,7 @@ def classify(body: ClassifyBody, x_api_key: str | None = Header(default=None)):
         from .knowledge.intent_classifier import classify_message
         from .knowledge.intent_enricher import enrich_classification
         from .knowledge.intent_orchestrator import plan_and_respond
-        classification = classify_message(body.message)
+        classification = classify_message(body.message, last_bot_question=body.last_bot_question)
         enriched = enrich_classification(classification)
         plan = plan_and_respond(enriched, body.message, body.known_facts)
         return {"classification": classification, "enriched": enriched, "plan": plan}

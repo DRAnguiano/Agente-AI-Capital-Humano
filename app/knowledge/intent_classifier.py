@@ -99,8 +99,27 @@ REGLAS:
 3. Solo pon un answer si el candidato AFIRMA el dato. Una pregunta no es un answer.
 4. confidence: qué tan seguro estás de ese answer (0.0-1.0).
 5. Responde SOLO el JSON, sin texto extra.
+6. CONTEXTO: si se te da la última pregunta que hizo el bot, úsala para interpretar
+   respuestas cortas o elípticas. Ej: si el bot preguntó "¿cuántos años maneja?" y el
+   candidato responde "ya hace más de 10 años", eso es experience.years=10, NO un saludo.
+   Si preguntó "¿su apto está vigente?" y responde "sí claro", eso es apto_status=vigente.
+   El "evidence" sigue siendo el texto literal de la respuesta (ej. "más de 10 años", "sí claro").
 
 EJEMPLOS:
+
+CONTEXTO (última pregunta del bot): "¿Cuántos años tiene manejando?"
+Mensaje: "uhh ya llovio, ya hace más de 10 años señor mundo"
+{"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"experience.years","value":"10","evidence":"más de 10 años","confidence":0.9}],"questions":[]}
+
+CONTEXTO (última pregunta del bot): "¿Su apto médico está vigente?"
+Mensaje: "si claro"
+{"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"medical.apto_status","value":"vigente","evidence":"si claro","confidence":0.85}],"questions":[]}
+
+CONTEXTO (última pregunta del bot): "¿Ha manejado sencillo, full o ambos?"
+Mensaje: "puro full siempre"
+{"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"experience.vehicle_type","value":"full","evidence":"puro full","confidence":0.92}],"questions":[]}
+
+(sin contexto previo)
 
 Mensaje: "Sí me interesa, pero ¿cuánto pagan?"
 {"message_type":"compound","primary_intent":"candidate_interest","secondary_intents":["pay_question"],"answers":[],"questions":[{"intent":"pay_question","evidence":"cuánto pagan","is_admission":false}]}
@@ -190,8 +209,11 @@ def validate_classification(raw: dict[str, Any], message: str) -> dict[str, Any]
     return result
 
 
-def classify_message(message: str) -> dict[str, Any]:
+def classify_message(message: str, last_bot_question: str | None = None) -> dict[str, Any]:
     """Clasifica un mensaje en el contrato multi-intent validado.
+
+    last_bot_question: la última pregunta que hizo el bot. Permite interpretar
+    respuestas elípticas ("ya hace 10 años", "sí claro") según lo que se preguntó.
 
     Devuelve el dict validado. En error de parseo/LLM devuelve un fallback seguro
     con _error para trazabilidad.
@@ -200,7 +222,15 @@ def classify_message(message: str) -> dict[str, Any]:
     if not msg:
         return _empty_classification("empty_message")
 
-    raw_json = call_groq_json(msg, CLASSIFIER_SYSTEM, temperature=0.0)
+    if last_bot_question:
+        user_content = (
+            f'CONTEXTO (última pregunta del bot): "{last_bot_question.strip()}"\n'
+            f'Mensaje: "{msg}"'
+        )
+    else:
+        user_content = msg
+
+    raw_json = call_groq_json(user_content, CLASSIFIER_SYSTEM, temperature=0.0)
 
     try:
         raw = json.loads(raw_json)
