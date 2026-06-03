@@ -1175,6 +1175,15 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
 
     save_message(conversation_key, "assistant", reply)
 
+    # Shadow mode multi-intent (Fase 4): corre el pipeline nuevo en paralelo y
+    # loggea qué habría respondido, sin afectar la respuesta real. Flag-gated.
+    if _env_bool("MULTI_INTENT_SHADOW", False):
+        try:
+            from app.knowledge.intent_shadow import run_shadow
+            run_shadow(message, lead_memory_before, reply)
+        except Exception as exc:
+            log.warning("[MULTI_INTENT_SHADOW] no se pudo ejecutar: %s", exc)
+
     timings = {"total_ms": round((time.perf_counter() - started) * 1000, 2)}
     if rag_result and isinstance(rag_result.get("timings"), dict):
         timings.update(rag_result["timings"])
