@@ -774,6 +774,40 @@ def call_cohere_llm(prompt: str) -> str:
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
 
 
+def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0) -> str:
+    """Llama a Groq en JSON mode para clasificación determinista.
+
+    Devuelve el string JSON crudo (el caller lo parsea/valida). Distinta de
+    call_llm: usa response_format json_object, temperatura ~0 y un system message
+    propio (no el de Mundo conversacional). No reemplaza call_llm.
+    """
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return '{"error": "missing_groq_api_key"}'
+
+    try:
+        timeout_secs = float(os.getenv("GROQ_JSON_TIMEOUT_SECONDS", "10"))
+        timeout = httpx.Timeout(timeout_secs, connect=5.0)
+
+        with httpx.Client(timeout=timeout) as http_client:
+            client = Groq(api_key=api_key, http_client=http_client)
+            completion = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=temperature,
+                max_tokens=GROQ_MAX_TOKENS,
+                response_format={"type": "json_object"},
+            )
+        return completion.choices[0].message.content or "{}"
+
+    except Exception as exc:
+        print(f"[groq_json] Error: {type(exc).__name__}: {exc}", flush=True)
+        return f'{{"error": "{type(exc).__name__}"}}'
+
+
 def call_llm(prompt: str) -> str:
     provider = os.environ.get("LLM_PROVIDER", LLM_PROVIDER).strip().lower()
 

@@ -334,6 +334,27 @@ def orchestrate(body: OrchestrateMessageBody, x_api_key: str | None = Header(def
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
 
 
+class ClassifyBody(BaseModel):
+    message: str
+
+
+@app.post("/classify")
+def classify(body: ClassifyBody, x_api_key: str | None = Header(default=None)):
+    """Endpoint de prueba del clasificador multi-intent (Fase 1).
+
+    Aislado: no toca el flujo de orquestación. Sirve para validar que el LLM
+    clasifica bien los mensajes compuestos antes de conectarlo.
+    """
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    try:
+        from .knowledge.intent_classifier import classify_message
+        return classify_message(body.message)
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": _public_error(exc)})
+
+
 def _extract_chatwoot_contact(payload: dict) -> dict:
     """
     Extrae datos del contacto desde distintas formas de payload de Chatwoot.
