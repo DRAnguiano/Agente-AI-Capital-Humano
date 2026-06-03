@@ -349,7 +349,10 @@ def classify(body: ClassifyBody, x_api_key: str | None = Header(default=None)):
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         from .knowledge.intent_classifier import classify_message
-        return classify_message(body.message)
+        from .knowledge.intent_enricher import enrich_classification
+        classification = classify_message(body.message)
+        enriched = enrich_classification(classification)
+        return {"classification": classification, "enriched": enriched}
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
