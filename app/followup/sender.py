@@ -1,7 +1,6 @@
 """Sender: despacha tareas pendientes dentro de la ventana operativa."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from typing import Any
@@ -30,10 +29,10 @@ def _base_url() -> str:
     return os.getenv("CHATWOOT_BASE_URL", "").strip().rstrip("/")
 
 
-async def _enviar_mensaje(account_id: str, conversation_id: str, content: str) -> dict:
+def _enviar_mensaje(account_id: str, conversation_id: str, content: str) -> dict:
     url = f"{_base_url()}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages"
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        r = await client.post(
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(
             url,
             headers=_chatwoot_headers(),
             json={"content": content, "message_type": "outgoing", "private": False},
@@ -42,10 +41,10 @@ async def _enviar_mensaje(account_id: str, conversation_id: str, content: str) -
         return r.json()
 
 
-async def _enviar_nota_privada(account_id: str, conversation_id: str, content: str) -> dict:
+def _enviar_nota_privada(account_id: str, conversation_id: str, content: str) -> dict:
     url = f"{_base_url()}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages"
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        r = await client.post(
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(
             url,
             headers=_chatwoot_headers(),
             json={"content": content, "message_type": "outgoing", "private": True},
@@ -168,15 +167,23 @@ def run_sender() -> dict[str, Any]:
 
         try:
             if tipo == "nota_interna":
-                asyncio.run(_enviar_nota_privada(account_id, conversation_id, mensaje))
+                _enviar_nota_privada(account_id, conversation_id, mensaje)
             else:
-                asyncio.run(_enviar_mensaje(account_id, conversation_id, mensaje))
+                _enviar_mensaje(account_id, conversation_id, mensaje)
 
             _marcar_tarea(task_id, "enviado")
             enviados.append({"task_id": task_id, "lead_key": lead_key, "tipo": tipo})
             log.info("[SENDER] Enviado task_id=%d lead=%s tipo=%s intento=%d", task_id, lead_key, tipo, intento)
 
             # Si se agotaron los intentos → marcar lead como perdido
+            # [RIESGO] Esta acción es IRREVERSIBLE: cambia lead_status a 'lost'
+            # sin confirmación humana ni período de gracia. Un lead que
+            # simplemente no tuvo señal (sin batería, sin internet varios días)
+            # queda marcado como perdido de forma permanente.
+            # [MEJORA] Antes de marcar 'lost': (a) crear un registro en
+            # rh_human_handoffs con reason='max_followup_reached' y (b) enviar
+            # nota privada al equipo para que lo valide antes de cerrar.
+            # TODO: agregar validación humana antes de marcar lost.
             if tipo == "mensaje_seguimiento" and intento >= max_int:
                 _marcar_lead_perdido(lead_key)
 

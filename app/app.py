@@ -140,7 +140,47 @@ def _public_error(exc: Exception):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    checks: dict = {}
+    all_ok = True
+
+    # ── Postgres ──────────────────────────────────────────────────────────────
+    try:
+        t0 = time.time()
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 AS ok")
+        checks["postgres"] = {"ok": True, "ms": round((time.time() - t0) * 1000, 1)}
+    except Exception as exc:
+        checks["postgres"] = {"ok": False, "error": str(exc)[:120]}
+        all_ok = False
+
+    # ── Neo4j ─────────────────────────────────────────────────────────────────
+    try:
+        t0 = time.time()
+        from .knowledge.neo4j_client import get_knowledge_client
+        neo4j_ok = get_knowledge_client().healthcheck()
+        checks["neo4j"] = {"ok": bool(neo4j_ok.get("ok")), "ms": round((time.time() - t0) * 1000, 1)}
+        if not neo4j_ok.get("ok"):
+            all_ok = False
+    except Exception as exc:
+        checks["neo4j"] = {"ok": False, "error": str(exc)[:120]}
+        all_ok = False
+
+    # ── ChromaDB ──────────────────────────────────────────────────────────────
+    try:
+        t0 = time.time()
+        from .indexer import _get_collection
+        col = _get_collection()
+        checks["chromadb"] = {"ok": True, "docs": col.count(), "ms": round((time.time() - t0) * 1000, 1)}
+    except Exception as exc:
+        checks["chromadb"] = {"ok": False, "error": str(exc)[:120]}
+        all_ok = False
+
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "ok" if all_ok else "degraded", "checks": checks},
+    )
 
 
 class ReindexBody(BaseModel):
@@ -196,6 +236,15 @@ def ask(body: AskBody, x_api_key: str | None = Header(default=None)):
     Endpoint RAG original.
     Lo conservamos para compatibilidad con el workflow actual.
     """
+    # [NOTA] Este endpoint es legacy — hace RAG directo sin perfil ni memoria de
+    # lead. Fue el primer endpoint del sistema antes del orquestador.
+    # En el flujo normal de Chatwoot/Telegram nunca se llama; solo se usa en
+    # pruebas manuales o integraciones antiguas.
+    # [RIESGO] Si alguien lo llama en paralelo con el webhook, puede generar
+    # respuestas inconsistentes con el perfil guardado en Postgres porque no
+    # lee ni escribe lead_memory.
+    # [MEJORA] Documentar en README que este endpoint está deprecado.
+    # No eliminar aún hasta confirmar que ninguna integración externa lo usa.
     if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
@@ -917,6 +966,13 @@ async def chatwoot_webhook(
         except Exception:
             pass  # never block the webhook on rate limit errors
 
+    # [NOTA] INBOUND_DEBOUNCE_ENABLED está OFF por defecto (valor "false").
+    # Cuando está OFF, el mensaje va directo al orquestador en este mismo request
+    # y se bypasea toda la lógica del worker: current_turn guard, deduplicación
+    # de mensajes rápidos y el manejo especial del primer mensaje.
+    # [MEJORA] Activar en .env: INBOUND_DEBOUNCE_ENABLED=true
+    # Esto mueve el procesamiento al worker Celery (tasks_chatwoot.py), que tiene
+    # la lógica más completa, y libera el webhook para responder en <100ms.
     if os.getenv("INBOUND_DEBOUNCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "y", "on"}:
         try:
             from .tasks_chatwoot import enqueue_chatwoot_message
@@ -972,6 +1028,17 @@ async def chatwoot_webhook(
             )
 
 
+    # [RIESGO] Todo lo que sigue (orquestador + 2 llamadas HTTP a Chatwoot) se
+    # ejecuta de forma síncrona dentro del handler async ANTES de devolver 200.
+    # Si el total tarda más de ~25-30s, Chatwoot reintenta el webhook y el
+    # candidato recibe el mensaje duplicado.
+    # Desglose del tiempo típico por operación:
+    #   run_hr_graph_message  → Neo4j + Postgres + LLM: 3-8s
+    #   _send_chatwoot_message → HTTP Chatwoot: 0.5-2s
+    #   sync_chatwoot_candidate_note → Postgres + 2x HTTP Chatwoot: 1-4s
+    # Total: 4-14s en condiciones normales. Puede escalar con latencia de red.
+    # [MEJORA] Activar INBOUND_DEBOUNCE_ENABLED=true para que todo esto ocurra
+    # en el worker Celery y el webhook responda en <200ms.
     try:
         result = run_hr_graph_message(
             channel="chatwoot",

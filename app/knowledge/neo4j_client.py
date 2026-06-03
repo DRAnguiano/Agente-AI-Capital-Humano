@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import time
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
@@ -8,6 +10,8 @@ from typing import Any
 from neo4j import GraphDatabase
 
 from app.knowledge.text_normalizer import contains_alias, normalize_aliases, normalize_text
+
+log = logging.getLogger(__name__)
 
 
 RISK_RANK = {"low": 1, "medium": 2, "high": 3}
@@ -40,6 +44,11 @@ class Neo4jKnowledgeClient:
     graph and returns a clean decision contract for the FastAPI orchestrator.
     """
 
+    # TTL de caché en segundos. Configurable via NEO4J_TERMS_CACHE_TTL en .env.
+    # Default 300s (5 min) — los Term/GeoArea nodes cambian solo cuando el equipo
+    # actualiza el grafo manualmente, no por actividad de candidatos.
+    _CACHE_TTL: float = float(os.getenv("NEO4J_TERMS_CACHE_TTL", "300"))
+
     def __init__(
         self,
         uri: str | None = None,
@@ -51,6 +60,11 @@ class Neo4jKnowledgeClient:
         self.user = user or os.getenv("NEO4J_USER", "neo4j")
         self.password = password or os.getenv("NEO4J_PASSWORD", "")
         self.database = database or os.getenv("NEO4J_DATABASE", "neo4j")
+        # Caché en memoria por instancia (un proceso = una instancia vía _DEFAULT_CLIENT).
+        self._terms_cache: list[dict[str, Any]] | None = None
+        self._terms_cache_ts: float = 0.0
+        self._profile_nodes_cache: list[dict[str, Any]] | None = None
+        self._profile_nodes_cache_ts: float = 0.0
 
     @cached_property
     def driver(self):
@@ -66,6 +80,11 @@ class Neo4jKnowledgeClient:
         return {"ok": value == 1, "uri": self.uri, "database": self.database}
 
     def fetch_terms(self) -> list[dict[str, Any]]:
+        now = time.time()
+        if self._terms_cache is not None and (now - self._terms_cache_ts) < self._CACHE_TTL:
+            log.debug("[NEO4J_CACHE] terms cache hit (age %.0fs)", now - self._terms_cache_ts)
+            return self._terms_cache
+
         query = """
         MATCH (t:Term)
         OPTIONAL MATCH (t)-[:SUGGESTS_INTENT]->(i:Intent)-[:ROUTES_TO]->(r:Route)
@@ -93,7 +112,12 @@ class Neo4jKnowledgeClient:
         """
         with self.driver.session(database=self.database) as session:
             rows = session.run(query)
-            return [dict(row) for row in rows]
+            result = [dict(row) for row in rows]
+
+        self._terms_cache = result
+        self._terms_cache_ts = time.time()
+        log.info("[NEO4J_CACHE] terms refreshed (%d rows)", len(result))
+        return result
 
     def _matches_for_message(self, message: str) -> list[KnowledgeMatch]:
         normalized_message = normalize_text(message)
@@ -196,6 +220,11 @@ class Neo4jKnowledgeClient:
 
     def fetch_profile_nodes(self) -> list[dict[str, Any]]:
         """Return all GeoArea and VehicleType nodes used for profile fact extraction."""
+        now = time.time()
+        if self._profile_nodes_cache is not None and (now - self._profile_nodes_cache_ts) < self._CACHE_TTL:
+            log.debug("[NEO4J_CACHE] profile_nodes cache hit (age %.0fs)", now - self._profile_nodes_cache_ts)
+            return self._profile_nodes_cache
+
         query = """
         MATCH (n)
         WHERE n:GeoArea OR n:VehicleType
@@ -210,7 +239,12 @@ class Neo4jKnowledgeClient:
         """
         with self.driver.session(database=self.database) as session:
             rows = session.run(query)
-            return [dict(row) for row in rows]
+            result = [dict(row) for row in rows]
+
+        self._profile_nodes_cache = result
+        self._profile_nodes_cache_ts = time.time()
+        log.info("[NEO4J_CACHE] profile_nodes refreshed (%d rows)", len(result))
+        return result
 
     def extract_profile_facts_from_neo4j(self, message: str) -> list[dict[str, Any]]:
         """Match GeoArea/VehicleType aliases in message, return profile facts.
@@ -245,22 +279,31 @@ class Neo4jKnowledgeClient:
         return list(dedup.values())
 
     def resolve_message(self, message: str, conversation_state: dict[str, Any] | None = None) -> dict[str, Any]:
-        matches = self._matches_for_message(message)
-        best = self._pick_best_match(matches)
-        contract = self._contract_from_match(best, message)
-        contract["all_matches"] = [
-            {
-                "term_id": item.term_id,
-                "intent": item.intent,
-                "route": item.route,
-                "risk_level": item.risk_level,
-                "matched_aliases": item.matched_aliases,
-                "preferred_sources": item.preferred_sources,
-            }
-            for item in matches[:10]
-        ]
-        contract["conversation_stage"] = (conversation_state or {}).get("current_stage")
-        return contract
+        try:
+            matches = self._matches_for_message(message)
+            best = self._pick_best_match(matches)
+            contract = self._contract_from_match(best, message)
+            contract["all_matches"] = [
+                {
+                    "term_id": item.term_id,
+                    "intent": item.intent,
+                    "route": item.route,
+                    "risk_level": item.risk_level,
+                    "matched_aliases": item.matched_aliases,
+                    "preferred_sources": item.preferred_sources,
+                }
+                for item in matches[:10]
+            ]
+            contract["conversation_stage"] = (conversation_state or {}).get("current_stage")
+            return contract
+        except Exception as exc:
+            # Neo4j caído o lento: devolver contrato de fallback seguro para que
+            # el bot pueda responder al candidato en lugar de generar un 500.
+            log.error("[NEO4J_FALLBACK] resolve_message falló, usando fallback: %s", exc)
+            fallback = self._contract_from_match(None, message)
+            fallback["conversation_stage"] = (conversation_state or {}).get("current_stage")
+            fallback["neo4j_error"] = str(exc)[:200]
+            return fallback
 
 
 _DEFAULT_CLIENT: Neo4jKnowledgeClient | None = None

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 import os
 import random
 import re
 import time
+
+
+log = logging.getLogger(__name__)
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -35,12 +39,12 @@ CONTROLLED_FALLBACK_REPLY = (
 
 NO_CONTEXT_REPLY = (
     "No encontré información interna suficiente para responder eso con seguridad. "
-    "Lo correcto es que Capital Humano lo valide antes de confirmarte el dato."
+    "Para ese dato llámenos de 8:00 a 17:30 hrs y le confirmamos."
 )
 
 DOCUMENT_ACK_REPLY = (
-    "Perfecto, gracias por avisar. Lo dejo registrado para que Capital Humano pueda "
-    "validarlo y darte el siguiente paso del proceso."
+    "Perfecto, gracias por avisar. Lo dejo registrado para que nuestro equipo "
+    "lo valide y le indique el siguiente paso."
 )
 
 FAREWELL_REPLY = (
@@ -49,7 +53,7 @@ FAREWELL_REPLY = (
 )
 
 GREETING_REPLY = (
-    "Hola, soy Mundo de Capital Humano de Transmontes. "
+    "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
     "¿Le interesa la vacante de operador de quinta rueda?"
 )
 
@@ -153,7 +157,7 @@ def _controlled_reply_from_contract(contract: dict[str, Any]) -> str:
     if contract.get("requires_clarification"):
         return CONTROLLED_CLARIFICATION_REPLY
     if contract.get("requires_human"):
-        return "Ese punto debe revisarlo Capital Humano antes de continuar. Lo dejo anotado para seguimiento."
+        return "Ese punto debe revisarlo nuestro equipo antes de continuar. Lo dejo anotado para seguimiento."
     return CONTROLLED_FALLBACK_REPLY
 
 
@@ -268,7 +272,6 @@ def _save_call_preference_note(
 ) -> None:
     """Guarda nota privada en Chatwoot con el horario preferido del candidato."""
     try:
-        import asyncio
         from app.followup.templates import nota_horario_llamada
         from app.followup.sender import _ids_chatwoot, _enviar_nota_privada
 
@@ -280,7 +283,7 @@ def _save_call_preference_note(
         nota = nota_horario_llamada(nombre, message, etapa, telefono)
         account_id, conversation_id = _ids_chatwoot(lead_key)
         if account_id and conversation_id:
-            asyncio.run(_enviar_nota_privada(account_id, conversation_id, nota))
+            _enviar_nota_privada(account_id, conversation_id, nota)
             print(f"[CALL_PREF_SAVED] lead={lead_key}", flush=True)
     except Exception as exc:
         print(f"[CALL_PREF_ERROR] lead={lead_key} error={exc}", flush=True)
@@ -551,11 +554,11 @@ def _next_action_for_stage(stage: str, contract: dict[str, Any]) -> str | None:
     if stage == "documents_pending":
         return "Invitar al candidato a enviar documentos cuando tenga oportunidad, sin presionarlo."
     if stage == "documents_received":
-        return "Capital Humano debe validar documentos recibidos."
+        return "Nuestro equipo debe validar documentos recibidos."
     if stage == "followup_pending":
         return "Mantener seguimiento abierto para retomar conversación."
     if stage == "safety_review":
-        return "Responder con política interna y validar con Capital Humano si escala."
+        return "Responder con política interna y validar con el equipo si escala."
     if intent == "payment_compensation":
         return "Resolver dudas de pago/ruta y luego avanzar suavemente a documentos."
     return None
@@ -631,8 +634,8 @@ def _store_lead_memory_updates(
                 source_text=message,
             )
             facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("[FACTS_EXTRACTION] lead=%s error=%s", lead_key, exc)
 
     if any(term in text for term in ("quinta rueda", "5ta rueda", "5ta", "kinta rueda")):
         upsert_lead_fact(
@@ -914,6 +917,12 @@ def _build_funnel_nudge(
         from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
         from app.lead_memory.profile_extractor import extract_profile_facts
 
+        # [RIESGO] extract_profile_facts_from_neo4j llama a fetch_profile_nodes()
+        # que hace una query completa a Neo4j. Este mismo método ya se llama en
+        # _store_lead_memory_updates para el mismo mensaje en el mismo request.
+        # Son 2 queries redundantes a Neo4j por mensaje.
+        # TODO: pasar los neo4j_facts ya calculados como parámetro desde
+        # handle_message para evitar la segunda query.
         neo4j_facts = extract_profile_facts_from_neo4j(message)
         neo4j_keys: set[str] = set()
         for f in neo4j_facts:
@@ -925,8 +934,8 @@ def _build_funnel_nudge(
             k = f"{f['fact_group']}.{f['fact_key']}"
             if k not in neo4j_keys:
                 active_facts[k] = str(f["fact_value"])
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
 
     for step in _FUNNEL_STEPS:
         if any(k not in active_facts for k in step["keys"]):
@@ -965,6 +974,27 @@ def _maybe_save_call_preference(
 
 def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     """Resolve a candidate message through Neo4j and optionally answer with controlled RAG."""
+    # [NOTA] Esta función tiene ~240 líneas y 6 responsabilidades distintas:
+    #   1. Persistencia de conversación (upsert_conversation, get_conversation_state)
+    #   2. Persistencia de lead (upsert_lead_identity, get_lead_memory)
+    #   3. Resolución Neo4j + guardas deterministas (resolve_message + overrides)
+    #   4. Generación de respuesta (RAG / friendly LLM / template / ACK)
+    #   5. Escritura de memoria (stage, facts, events, summary)
+    #   6. Construcción del payload de respuesta
+    #
+    # [RIESGO] Abre ~10 conexiones TCP a Postgres en serie por mensaje:
+    #   upsert_conversation → get_conversation_state → upsert_lead_identity →
+    #   get_lead_memory → save_message → (facts: N × upsert_lead_fact) →
+    #   log_lead_event → update_lead_summary → get_lead_memory → update_stage →
+    #   save_message (assistant). Cada una abre y cierra su propia conexión TCP.
+    #   Con pool esto costaría 0 overhead adicional.
+    #
+    # [MEJORA - largo plazo] Separar en 3 módulos cuando se retome la migración LangGraph:
+    #   - conversation_writer.py  → responsabilidades 1 y 2
+    #   - answer_builder.py       → responsabilidad 4
+    #   - memory_writer.py        → responsabilidad 5
+    # No hacer ahora — el sistema funciona y el cambio es arquitectónico.
+    # Registrado como deuda técnica para la rama migration/langgraph-step2.
     started = time.perf_counter()
     channel = str(payload.get("channel") or "api").strip()
     channel_user_id = str(payload.get("channel_user_id") or "unknown").strip()

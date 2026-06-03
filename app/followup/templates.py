@@ -123,16 +123,29 @@ _PLANTILLAS: dict[str, list[str]] = {
     ],
     # Flujo especial: profile_ready / human_review → coordinar llamada
     "profile_ready": [
-        "Hola {nombre}, su información ya está lista para revisión de Capital Humano. "
-        "Para que puedan hablar con usted, ¿le parece si le hacemos una llamada? "
-        "Si es así, ¿en qué horario de lunes a sábado le viene mejor contestar?",
+        "Hola {nombre}, su información ya está lista para revisión. "
+        "¿Le parece si le hacemos una llamada para platicar los detalles? "
+        "¿En qué horario de lunes a sábado le viene mejor contestar?",
+
+        "Hola {nombre}, seguimos pendientes de coordinar su llamada. "
+        "¿Tiene disponibilidad esta semana para que le marquemos?",
     ],
     "human_review": [
-        "Hola {nombre}, Capital Humano tiene su perfil para revisión. "
+        "Hola {nombre}, su perfil está listo para revisión. "
         "Para coordinar, ¿le parece si le hacemos una llamada? "
         "¿En qué horario de lunes a sábado está disponible para contestar?",
+
+        "Hola {nombre}, aún tenemos su caso pendiente de llamada. "
+        "¿Podría indicarnos un horario disponible esta semana para contactarle?",
     ],
 }
+
+# [NOTA] Las siguientes etapas existen en ETAPA_DISPLAY pero NO están en _PLANTILLAS:
+#   - documents_received
+#   - safety_review
+# Cuando un lead llega a estas etapas, get_template() cae al fallback "followup_pending",
+# que envía un mensaje genérico en lugar de uno apropiado para esa etapa.
+# [MEJORA] Agregar plantillas específicas o excluirlas explícitamente del scheduler.
 
 
 def get_template(etapa: str, intento: int) -> str | None:
@@ -172,5 +185,5 @@ def nota_horario_llamada(nombre: str | None, mensaje_candidato: str, etapa: str,
         f"Teléfono: {telefono_display}\n"
         f"Disponibilidad indicada: \"{mensaje_seguro}\"\n"
         f"Etapa: {etapa_label}\n\n"
-        "Por favor coordinar llamada de Capital Humano en el horario indicado."
+        "Por favor coordinar llamada del equipo en el horario indicado."
     )

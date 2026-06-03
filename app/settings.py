@@ -65,7 +65,7 @@ COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r-plus-08-2024")
 COHERE_MAX_TOKENS = _env_int("COHERE_MAX_TOKENS", GROQ_MAX_TOKENS)
 
 # Generación
-TEMPERATURE = _env_float("TEMPERATURE", 0.15)
+TEMPERATURE = _env_float("TEMPERATURE", 0.5)
 
 
 # =========================

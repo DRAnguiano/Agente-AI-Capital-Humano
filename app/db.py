@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import contextmanager
 from typing import Any
@@ -5,12 +6,59 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
 
+
+log = logging.getLogger(__name__)
 
 RISK_RANK = {"low": 1, "medium": 2, "high": 3}
 
+# Tamaño del pool configurable via .env.
+# min=2: siempre hay 2 conexiones listas; max=10: techo bajo carga.
+_POOL_MIN = int(os.getenv("POSTGRES_POOL_MIN", "2"))
+_POOL_MAX = int(os.getenv("POSTGRES_POOL_MAX", "10"))
+
+_pool: ConnectionPool | None = None
+
+
+def _db_conninfo() -> str:
+    host     = os.getenv("POSTGRES_HOST", "postgres")
+    port     = os.getenv("POSTGRES_PORT", "5432")
+    dbname   = os.getenv("POSTGRES_DB", "hrdb")
+    user     = os.getenv("POSTGRES_USER", "hr_david")
+    password = os.getenv("POSTGRES_PASSWORD", "")
+    timeout  = os.getenv("POSTGRES_CONNECT_TIMEOUT", "5")
+    return (
+        f"host={host} port={port} dbname={dbname} "
+        f"user={user} password={password} connect_timeout={timeout}"
+    )
+
+
+def _get_pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = ConnectionPool(
+            conninfo=_db_conninfo(),
+            min_size=_POOL_MIN,
+            max_size=_POOL_MAX,
+            kwargs={"row_factory": dict_row},
+            open=True,
+        )
+        log.info("[DB_POOL] Pool inicializado min=%d max=%d", _POOL_MIN, _POOL_MAX)
+    return _pool
+
+
+@contextmanager
+def get_conn():
+    # Pool de conexiones: sin overhead TCP por llamada.
+    # La interfaz es idéntica al get_conn() anterior — todos los callers
+    # siguen usando "with get_conn() as conn:" sin cambios.
+    with _get_pool().connection() as conn:
+        yield conn
+
 
 def _db_config() -> dict[str, Any]:
+    # Mantenido por compatibilidad con cualquier código que lo llame directamente.
     return {
         "host": os.getenv("POSTGRES_HOST", "postgres"),
         "port": int(os.getenv("POSTGRES_PORT", "5432")),
@@ -19,19 +67,6 @@ def _db_config() -> dict[str, Any]:
         "password": os.getenv("POSTGRES_PASSWORD", ""),
         "connect_timeout": int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "5")),
     }
-
-
-@contextmanager
-def get_conn():
-    conn = psycopg.connect(**_db_config(), row_factory=dict_row)
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def make_conversation_key(channel: str, channel_user_id: str) -> str:

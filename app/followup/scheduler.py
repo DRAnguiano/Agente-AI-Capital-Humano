@@ -109,9 +109,25 @@ def run_scheduler() -> dict[str, Any]:
     """Lee v_temperatura_leads y crea tareas para leads enfriando/fríos.
 
     Devuelve resumen de tareas creadas y omitidas.
+    Si ocurre un error (vista caída, migración pendiente, permiso revocado),
+    loggea el error y devuelve un dict vacío en lugar de propagar la excepción.
     """
     creadas: list[dict] = []
     omitidas: list[dict] = []
+    try:
+        return _run_scheduler_inner(creadas, omitidas)
+    except Exception as exc:
+        log.error("[SCHEDULER] run_scheduler falló — revisar v_temperatura_leads: %s", exc)
+        return {
+            "creadas": 0,
+            "omitidas": 0,
+            "error": str(exc)[:200],
+            "detalle_creadas": [],
+            "detalle_omitidas": [],
+        }
+
+
+def _run_scheduler_inner(creadas: list[dict], omitidas: list[dict]) -> dict[str, Any]:
 
     with get_conn() as conn:
         # --- Leads en cooling / cold (seguimiento normal) ---
@@ -218,4 +234,5 @@ def run_scheduler() -> dict[str, Any]:
         "omitidas": len(omitidas),
         "detalle_creadas": creadas,
         "detalle_omitidas": omitidas,
+        "error": None,
     }

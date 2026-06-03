@@ -1,5 +1,30 @@
 services:
   #######################################
+  # NEO4J GRAFO DE CONOCIMIENTO RH
+  #######################################
+  neo4j:
+    image: neo4j:5-community
+    container_name: hr_neo4j
+    environment:
+      # No usar env_file aquí — Neo4j 5 interpreta todas las vars NEO4J_* como
+      # config y las vars extra del .env (HEAP_INITIAL, etc.) causan error.
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./app/knowledge:/var/lib/neo4j/import
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  #######################################
   # POSTGRES PRINCIPAL RH / FASTAPI
   #######################################
   postgres:
@@ -12,6 +37,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-hr_david}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
     ports:
+      # [RIESGO] El puerto 5432 está expuesto al host. En desarrollo está bien,
+      # pero en un servidor compartido o VPS esto expone la BD directamente.
+      # TODO: en producción remover esta sección ports: y acceder solo
+      # desde la red interna de Docker (los contenedores ya se ven entre sí).
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
@@ -38,7 +67,9 @@ services:
       - ./data:/app/data
     depends_on:
       - postgres
+      - neo4j
       - chatwoot_rails
+      - chatwoot_redis
     networks:
       default:
         aliases:
@@ -68,6 +99,7 @@ services:
       - ./data:/app/data
     depends_on:
       - postgres
+      - neo4j
       - chatwoot_rails
       - chatwoot_redis
     restart: unless-stopped
@@ -266,6 +298,8 @@ volumes:
   chroma_bge_m3:
   n8n_data:
   pg_data:
+  neo4j_data:
+  neo4j_logs:
   chatwoot_pg_data:
   chatwoot_redis_data:
   chatwoot_storage:
