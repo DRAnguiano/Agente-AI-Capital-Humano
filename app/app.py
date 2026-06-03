@@ -13,7 +13,7 @@ from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_
 from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
-from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY
+from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY, INTERNAL_API_KEY
 from .chatwoot_note_sync import sync_chatwoot_candidate_note
 
 app = FastAPI(default_response_class=ORJSONResponse)
@@ -191,11 +191,13 @@ class OrchestrateMessageBody(BaseModel):
 
 
 @app.post("/ask")
-def ask(body: AskBody):
+def ask(body: AskBody, x_api_key: str | None = Header(default=None)):
     """
     Endpoint RAG original.
     Lo conservamos para compatibilidad con el workflow actual.
     """
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         question = body.q.strip()
         history_text = body.history.strip() if body.history else "No hay historial previo."
@@ -252,7 +254,7 @@ RESPUESTA:
 
 
 @app.post("/orchestrate/message")
-def orchestrate(body: OrchestrateMessageBody):
+def orchestrate(body: OrchestrateMessageBody, x_api_key: str | None = Header(default=None)):
     """
     Endpoint principal del sistema.
 
@@ -266,6 +268,8 @@ def orchestrate(body: OrchestrateMessageBody):
     - guarda eventos analíticos
     - devuelve respuesta lista para Telegram/Chatwoot/WhatsApp
     """
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         result = run_hr_graph_message(
             channel=body.channel,
@@ -795,7 +799,8 @@ async def chatwoot_webhook(
     expected_token = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "").strip()
     received_token = x_chatwoot_webhook_token or token
 
-    if expected_token and received_token != expected_token:
+    # Fail-closed: si no hay token configurado, o no coincide, se rechaza.
+    if not expected_token or received_token != expected_token:
         return JSONResponse(
             status_code=401,
             content={

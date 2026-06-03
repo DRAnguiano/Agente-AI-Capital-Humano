@@ -314,7 +314,11 @@ def process_chatwoot_debounced_message(
 
         current_turn_facts = extract_current_turn_facts(combined_content, last_bot_message)
 
-        if should_prioritize_current_turn(combined_content, last_bot_message) and current_turn_facts:
+        if (
+            not result.get("requires_human")
+            and should_prioritize_current_turn(combined_content, last_bot_message)
+            and current_turn_facts
+        ):
             lead_memory = get_lead_memory(conversation_key=conversation_key_for_facts)
             saved_facts = {
                 f"{row['fact_group']}.{row['fact_key']}": row['fact_value']
@@ -405,13 +409,31 @@ def process_chatwoot_debounced_message(
                 "orchestrator_result": result,
             }
 
-        chatwoot_response = asyncio.run(
-            _send_chatwoot_message(
-                account_id=account_id,
-                conversation_id=conversation_id,
-                content=reply,
+        # Handoff humano: el bot deja de responder al candidato, pero la nota
+        # privada + labels sí se generan para que el reclutador tome el caso.
+        public_reply_suppressed = bool(result.get("requires_human"))
+        if public_reply_suppressed:
+            print(
+                "[HUMAN_HANDOFF_NO_PUBLIC_REPLY]",
+                json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "channel_user_id": channel_user_id,
+                        "reason": "requires_human",
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
             )
-        )
+            chatwoot_response = {}
+        else:
+            chatwoot_response = asyncio.run(
+                _send_chatwoot_message(
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    content=reply,
+                )
+            )
 
         conversation_key = make_conversation_key("chatwoot", str(channel_user_id))
 
@@ -540,7 +562,7 @@ def process_chatwoot_debounced_message(
         return {
             "status": "ok",
             "processed": True,
-            "sent_to_chatwoot": True,
+            "sent_to_chatwoot": not public_reply_suppressed,
             "batch_size": len(messages),
             "combined_content": combined_content,
             "chatwoot_message_id": chatwoot_response.get("id"),

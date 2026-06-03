@@ -52,14 +52,33 @@ def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str
     'si de hace 6 meses me queda todavia' → infer medical.apto_status=vigente.
     """
     t = norm_message.strip()
-    is_yes = (
+
+    # Negaciones / desinterés: si aparecen, NO se interpreta como confirmación.
+    # Cubre "ya no", "ya conseguí trabajo", "ya me hablaron de otro trabajo", etc.
+    _neg_hints = {
+        "no", "nel", "nop", "tampoco", "nunca",
+        "otro", "otra",
+        "consegui", "conseguí", "encontre", "encontré",
+        "vencido", "vencida", "vencio", "venció", "caducado", "caducada",
+    }
+    has_negation = any(tok in _neg_hints for tok in t.split())
+
+    strong_yes = (
         t == "si"
         or (t.startswith("si ") and not t.startswith("si no "))
         or t.startswith("si,")
         or t.startswith("claro")
         or t.startswith("correcto")
         or t.startswith("exacto")
+        or t in {"simon", "sip"}
     )
+    # Confirmaciones suaves/ambiguas: solo válidas si no hay negación en el mensaje.
+    soft_yes = (
+        t in {"ok", "okay", "oka", "va", "sale", "dale", "ya"}
+        or t.startswith(("ok ", "va ", "sale ", "dale ", "ya "))
+    )
+    # La negación bloquea cualquier confirmación (incluye "si no, ...").
+    is_yes = (strong_yes or soft_yes) and not has_negation
     if not is_yes:
         return {}
 

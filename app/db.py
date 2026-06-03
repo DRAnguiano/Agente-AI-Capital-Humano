@@ -17,6 +17,7 @@ def _db_config() -> dict[str, Any]:
         "dbname": os.getenv("POSTGRES_DB", "hrdb"),
         "user": os.getenv("POSTGRES_USER", "hr_david"),
         "password": os.getenv("POSTGRES_PASSWORD", ""),
+        "connect_timeout": int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "5")),
     }
 
 
