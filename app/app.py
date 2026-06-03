@@ -336,23 +336,26 @@ def orchestrate(body: OrchestrateMessageBody, x_api_key: str | None = Header(def
 
 class ClassifyBody(BaseModel):
     message: str
+    known_facts: dict | None = None
 
 
 @app.post("/classify")
 def classify(body: ClassifyBody, x_api_key: str | None = Header(default=None)):
-    """Endpoint de prueba del clasificador multi-intent (Fase 1).
+    """Endpoint de prueba del pipeline multi-intent (Fases 1-3).
 
-    Aislado: no toca el flujo de orquestación. Sirve para validar que el LLM
-    clasifica bien los mensajes compuestos antes de conectarlo.
+    Aislado: no persiste ni envía a Chatwoot. Devuelve clasificación, enriquecimiento
+    y el plan+respuesta. known_facts simula los campos ya conocidos del lead.
     """
     if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         from .knowledge.intent_classifier import classify_message
         from .knowledge.intent_enricher import enrich_classification
+        from .knowledge.intent_orchestrator import plan_and_respond
         classification = classify_message(body.message)
         enriched = enrich_classification(classification)
-        return {"classification": classification, "enriched": enriched}
+        plan = plan_and_respond(enriched, body.message, body.known_facts)
+        return {"classification": classification, "enriched": enriched, "plan": plan}
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
