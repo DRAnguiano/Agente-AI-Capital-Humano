@@ -77,6 +77,8 @@ def core_completeness(facts: dict[str, Any]) -> int:
 # ── Respuestas a signals (voz de equipo, esquema v1 §6) ──────────────────────
 
 _SIGNAL_REPLIES: dict[str, str] = {
+    "greeting": "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
+                "¿Le interesa la vacante de operador de quinta rueda?",
     "on_route": "10-4, sin problema. Cuando tenga oportunidad seguimos por aquí.",
     "farewell": "Gracias, que tenga buen día y maneje con cuidado. Aquí seguimos cuando guste retomar.",
     "dropoff": "Gracias por avisarnos. Si más adelante quiere retomar, con gusto lo apoyamos.",
@@ -89,7 +91,9 @@ _SIGNAL_REPLIES: dict[str, str] = {
 _HANDOFF_REPLY = "Ese punto lo revisa nuestro equipo directamente. Lo dejo anotado para que le den seguimiento."
 
 # Signals que NO deben continuar con la pregunta del funnel.
-_NO_FUNNEL_SIGNALS = {"on_route", "farewell", "dropoff", "out_of_scope", "complaint", "reingreso"}
+# greeting incluido: la presentación ya invita ("¿le interesa la vacante?"); no
+# encimar una pregunta de perfil en el primer contacto.
+_NO_FUNNEL_SIGNALS = {"greeting", "on_route", "farewell", "dropoff", "out_of_scope", "complaint", "reingreso"}
 
 
 def _generate_rag_answer(question: dict[str, Any], message: str) -> str:

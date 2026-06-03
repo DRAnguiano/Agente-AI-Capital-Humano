@@ -90,7 +90,9 @@ INTENTS DE SEÑAL (van en "primary_intent"/"secondary_intents", NO generan quest
 INTENTS DE ESCALAMIENTO (primary_intent):
 - reingreso: ya trabajó antes en la empresa.
 - out_of_scope: pregunta por otra vacante (mecánico, etc.) o tema ajeno a operador.
-- complaint: molesto, queja, "ya me hablaron de otro lado".
+- complaint: SOLO queja real sobre el servicio/proceso: demora ("llevo días esperando",
+  "nadie me responde"), repetición ("ya me preguntó eso 3 veces"), o fuga ("ya me hablaron
+  de otro lado"). El humor, presumir, el orgullo o comentarios coloridos NO son complaint.
 
 CAMPOS para "answers" (datos de perfil que el candidato AFIRMA):
 - candidate.city (ciudad), experience.vehicle_type (sencillo|full|ambos|ninguno),
@@ -149,6 +151,16 @@ Mensaje: "tienen vacantes de mecanico?"
 
 Mensaje: "4 años manejando, tengo 2 cartas"
 {"message_type":"compound","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"experience.years","value":"4","evidence":"4 años","confidence":0.92},{"field":"documents.proof","value":"cartas","evidence":"2 cartas","confidence":0.9}],"questions":[]}
+
+Mensaje: "ni que fuera el checo perez, pero me considero un profesional"
+{"message_type":"simple","primary_intent":"acknowledgement","secondary_intents":[],"answers":[],"questions":[]}
+
+Mensaje: "ya me dijo 3 veces la misma pregunta"
+{"message_type":"simple","primary_intent":"complaint","secondary_intents":[],"answers":[],"questions":[]}
+
+Mensaje largo con varias afirmaciones + pregunta (extrae TODOS los datos afirmados, no solo uno):
+"si mi licencia y apto estan vigentes, y soy de laredo, oiga me puedo quedar en los dormitorios?"
+{"message_type":"compound","primary_intent":"candidate_answer","secondary_intents":["logistics_question"],"answers":[{"field":"license.status","value":"vigente","evidence":"licencia y apto estan vigentes","confidence":0.9},{"field":"medical.apto_status","value":"vigente","evidence":"apto estan vigentes","confidence":0.9},{"field":"candidate.city","value":"laredo","evidence":"soy de laredo","confidence":0.9}],"questions":[{"intent":"logistics_question","evidence":"me puedo quedar en los dormitorios","is_admission":false}]}
 """
 
 
