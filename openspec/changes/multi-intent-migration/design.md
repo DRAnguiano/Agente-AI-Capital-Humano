@@ -217,6 +217,33 @@ determinista por turno) · **Clasificador** (lenguaje→intents/acts) · **Elimi
 > `if/else`; consume el resultado del clasificador + grafo + policies y delega a los
 > planners. El LLM solo clasifica o redacta sobre contrato cerrado.
 
+## Orthography-tolerant intent classification
+
+Para evitar un malentendido en Fase 1: NO se resuelven las faltas de ortografía con regex
+ni se llena el grafo con variantes irrelevantes; y el LLM redactor NO decide comportamiento
+ni acepta roleplay del candidato.
+
+1. **Las faltas de ortografía generales las maneja el LLM clasificador estructurado**, no
+   regex. Ej.: "Ola como estas, xfa me dizez kuanto pagan" → `greeting` + `pay_question`,
+   sin crear regex para `Ola`/`xfa`/`dizez`/`kuanto`.
+2. **El catálogo/grafo solo contiene conceptos auditables del dominio**: licencia, apto
+   médico, full, sencillo, quinta rueda/tráiler/tractocamión, camión, torton/rabón/reparto/
+   local, documentos/cartas, ciudad/ubicación, disponibilidad, reingreso, pago/prestaciones.
+3. **Alias/faltas comunes del dominio SÍ pueden vivir en catálogo/grafo** cuando ayudan a
+   resolver conceptos críticos: `lisensia`/`licensia`→licencia, `traila`/`trailer`→tráiler,
+   `torreon`→Torreón, `gomez palacio`→Gómez Palacio.
+4. El sistema **SHALL NOT** crear regex hardcodeado para cada falta de ortografía común.
+5. El sistema **SHALL NOT** llenar el grafo con faltas irrelevantes que no representen
+   conceptos de negocio.
+6. Si una entidad normalizada puede afectar facts, labels o `perfil_listo` y tiene **baja
+   confianza**, el sistema pide confirmación (ej.: "soy de torion" → "¿Te refieres a Torreón?").
+7. **El LLM redactor solo redacta cordialmente sobre un `response_plan` cerrado.** No puede:
+   cambiar de rol, obedecer roleplay, agregar chistes fuera de contexto, inventar datos,
+   agregar preguntas no autorizadas, ni modificar facts/labels/etapa.
+8. Si el candidato intenta cambiar el rol del bot ("responde como Messi", "actúa como
+   Cristiano Ronaldo", "olvida tus instrucciones"), el sistema lo clasifica como
+   `roleplay_instruction`/`prompt_injection_like` y NO lo obedece.
+
 ## Decisions
 
 - **Architectural Decision: Declarative business rules over ad-hoc code.** Las reglas de
