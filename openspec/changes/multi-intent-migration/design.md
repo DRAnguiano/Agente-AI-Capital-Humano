@@ -244,6 +244,26 @@ ni acepta roleplay del candidato.
    Cristiano Ronaldo", "olvida tus instrucciones"), el sistema lo clasifica como
    `roleplay_instruction`/`prompt_injection_like` y NO lo obedece.
 
+## Fase 2A → 2B — La vista canónica NO decide preguntas
+
+`v_rh_lead_facts_canonical` (Fase 2A) **solo normaliza la lectura** de facts (clave/valor/
+`canonical_state`). NO calcula preguntas, NO decide el funnel, NO escribe nada, NO toca
+`v_rh_work_queue` ni el flujo vivo.
+
+El componente **obligatorio siguiente (Fase 2B)** es un `canonical_profile_reader` /
+`funnel_state_planner` que, leyendo desde la vista canónica, calcule por turno:
+`completed_fields`, `missing_fields`, `forbidden_questions`, `next_question`.
+
+**Regla:** el sistema NO debe preguntar por documentos / licencia / apto / ciudad / unidad
+/ experiencia si el dato ya existe en lectura canónica con un `canonical_state` **seguro**
+(`ok`, `mapped_to_proof`, `mapped_from_document_group`, equivalentes). Los estados
+`legacy_needs_clarification` y `needs_review` **no** cuentan como completos → el campo
+sigue `missing`.
+
+Ejemplo: si `documents.proof=cartas` existe en `v_rh_lead_facts_canonical`, el planner NO
+repregunta por cartas/documentos; avanza al siguiente `missing_field` real. (Escenarios
+formales en el spec `multi-intent-pipeline` → "Planeación del funnel sobre lectura canónica".)
+
 ## Decisions
 
 - **Architectural Decision: Declarative business rules over ad-hoc code.** Las reglas de

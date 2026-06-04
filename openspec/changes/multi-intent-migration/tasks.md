@@ -121,6 +121,8 @@ Casos reales de regresión (fixtures `/classify`):
 - [ ] 10b.12 Crear fact `candidate.availability_to_attend` (≠ viajar) + label `disponible_acudir` en el planner
 - [x] 10b.13 Vocabulario `vehicle_type` = full|sencillo|ambos|ninguno (sin `quinta_rueda`); "quinta rueda"/tráiler/tractocamión = experiencia compatible, NO valor — `app/knowledge/domain_catalog.py` + `app/lead_memory/profile_extractor.py` (camino vivo) · Fase 1B commit `c6e345d` · verificado en producción
 - [ ] 10b.14 Actualizar `v_rh_work_queue` y vistas dependientes tras los renombres de `fact_key` — `db/`/`sql/`
+- [ ] 10b.15 **Fase 2A** — Vista de compatibilidad de LECTURA `v_rh_lead_facts_canonical` (no destructiva; expone `canonical_group/key/value/state` + raw). Diseñada read-only; pendiente de aplicar/probar manual. NO toca datos, NO toca `v_rh_work_queue`, NO toca flujo vivo.
+- [ ] 10b.16 **Fase 2B** — `canonical_profile_reader`/`funnel_state_planner` lee la vista canónica y calcula `completed/missing/forbidden_fields` + `next_question`; NO repregunta campos con `canonical_state` seguro; `legacy_needs_clarification`/`needs_review` siguen missing. (La vista NO decide preguntas.)
 
 ## 10c. Nota privada simplificada + taxonomía de labels (pendiente)
 
