@@ -33,3 +33,7 @@ package-lock.json
 
 # Toolchains locales — nunca versionar (Node, etc.)
 .tools/
+
+# Respaldos manuales de DB (pg_dump) — no versionar
+schema_pre_*.sql
+facts_pre_*.sql
