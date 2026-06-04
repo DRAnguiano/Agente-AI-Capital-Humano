@@ -30,3 +30,6 @@ _backup_rag_docs_*/
 .npmrc
 package.json
 package-lock.json
+
+# Toolchains locales — nunca versionar (Node, etc.)
+.tools/
