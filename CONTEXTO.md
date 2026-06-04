@@ -80,7 +80,7 @@ psql $DATABASE_URL -f db/init_hr_memory.sql
 
 ### Active message path (only path — legacy removed)
 
-When `INBOUND_DEBOUNCE_ENABLED=true` (production default):
+When `INBOUND_DEBOUNCE_ENABLED=true` (code default is `false` in `app/app.py`; enabled in production via `.env`):
 
 ```
 Telegram / WhatsApp → Chatwoot
@@ -180,7 +180,7 @@ CHATWOOT_API_TOKEN / CHATWOOT_WEBHOOK_TOKEN
 NGROK_DOMAIN=unhazardous-carie-nonfeatured.ngrok-free.dev
 
 # Celery debounce
-INBOUND_DEBOUNCE_ENABLED=true / INBOUND_DEBOUNCE_SECONDS=6
+INBOUND_DEBOUNCE_ENABLED=true / INBOUND_DEBOUNCE_SECONDS=6    # code default false; set true in .env
 CELERY_BROKER_URL=redis://chatwoot_redis:6379/1
 
 # Rate limiting

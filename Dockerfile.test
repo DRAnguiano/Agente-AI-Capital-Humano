@@ -1,0 +1,12 @@
+# Imagen SOLO para tests. Extiende la imagen de producción y añade dev-deps.
+# No modifica el Dockerfile de producción ni la imagen hr-rag-api:latest.
+# Requiere que hr-rag-api:latest exista (build del servicio api).
+FROM hr-rag-api:latest
+
+COPY requirements-dev.txt /app/requirements-dev.txt
+RUN pip install --no-cache-dir -r /app/requirements-dev.txt
+
+# app/ y tests/ se montan read-only desde el repo en docker-compose (servicio
+# api-test), por eso aquí no se copian: los tests corren contra la fuente de
+# verdad (el repo), no contra un snapshot horneado.
+CMD ["python", "-m", "pytest", "tests", "-q"]

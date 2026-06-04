@@ -26,7 +26,12 @@ CONFIDENCE_THRESHOLD = float(os.getenv("INTENT_CONFIDENCE_THRESHOLD", "0.85"))
 # preferred_sources = nombre de archivo tal cual el metadata 'source' en Chroma.
 INTENT_POLICIES: dict[str, dict[str, Any]] = {
     "pay_question": {
-        "requires_rag": True, "requires_human": False, "risk_level": "low",
+        "requires_rag": True, "requires_human": False, "risk_level": "medium",
+        # Fase 0 / F30: "conditional" no puede ir en requires_human (rompería el
+        # agregado booleano any()). La condicional se expresa con este flag y la
+        # acción real (sin fuente autorizada → derivar a CH) se implementa en la
+        # ruta de respuesta RAG (task 5.2, Fase 4).
+        "requires_human_if_no_authorized_source": True,
         "preferred_sources": ["01_pago_prestaciones.md"],
     },
     "logistics_question": {

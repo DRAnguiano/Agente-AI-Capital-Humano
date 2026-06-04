@@ -46,23 +46,8 @@ def _risk(value: str | None) -> str:
     return {"low": "Bajo", "medium": "Medio", "high": "Alto"}.get((value or "").lower(), value or "No disponible")
 
 
-def _temperatura(last_seen_at) -> str:
-    if not last_seen_at:
-        return "N/D"
-    from datetime import datetime, timezone
-    ts = last_seen_at
-    if hasattr(ts, "tzinfo") and ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    horas = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-    if horas < 24:
-        return "🔥 Caliente"
-    if horas < 72:
-        return "😊 Tibio"
-    if horas < 168:
-        return "🌤 Enfriando"
-    if horas < 504:
-        return "❄️ Frío"
-    return "💤 Perdido"
+# _temperatura eliminado (Fase 0 / F26): la "temperatura" del lead es subjetiva si no
+# está estrictamente calculada; se deprecó y ya no se muestra en la nota privada.
 
 
 def _stage(value: str | None) -> str:
@@ -320,7 +305,6 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         blocker = "Falta confirmar ciudad de residencia"
 
     requires_human = "Sí" if lead.get("requires_human") else "No"
-    temperatura = _temperatura(lead.get("last_seen_at"))
 
     return (
         "🤖 Nota IA: Seguimiento de candidato\n\n"
@@ -348,8 +332,6 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         f"Bloqueo actual: {blocker}\n"
         f"Riesgo: {_risk(lead.get('risk_level'))}\n"
         f"Requiere humano: {requires_human}\n\n"
-        "🌡️ Temperatura\n"
-        f"{temperatura}\n\n"
         "⏭️ Siguiente acción\n"
         f"{next_action}\n\n"
         "🏷️ Labels\n"

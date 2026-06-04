@@ -150,7 +150,6 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         if (
             "vigente" in text
             or re.search(r"\bvence\s+en\s+\d+\s+(?:ano|anos|anio|anios)\b", text)
-            or "no le veo el problema" in text
         ):
             upsert("medical", "apto_status", "vigente", 0.95)
             upsert("document", "apto_status", "vigente", 0.95)

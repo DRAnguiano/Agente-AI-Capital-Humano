@@ -77,6 +77,27 @@ services:
     restart: unless-stopped
 
   #######################################
+  # API-TEST — solo perfil "test"; NO arranca en `docker compose up`.
+  # No afecta api/worker/beat. Los tests corren contra el repo (read-only).
+  #######################################
+  api-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: hr-rag-api-test:latest
+    profiles: ["test"]
+    env_file:
+      - .env
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+    working_dir: /app
+    volumes:
+      - ./app:/app/app:ro
+      - ./tests:/app/tests:ro
+    networks:
+      default:
+
+  #######################################
   # CELERY WORKER / DEBOUNCE INBOUND CHATWOOT
   #######################################
   worker:
