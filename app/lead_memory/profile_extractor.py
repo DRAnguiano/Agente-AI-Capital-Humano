@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from app.knowledge.text_normalizer import normalize_text
+from app.knowledge.normalize_domain_values import normalize_vehicle
 
 
 # Geo fallback — used when Neo4j is unavailable.
@@ -206,31 +207,24 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     if _dur_label and any(t in text for t in DRIVING_TERMS):
         upsert("experience", "years", _dur_label, 0.85)
 
-    # Quinta rueda
-    if any(t in text for t in ("quinta rueda", "5ta rueda", "kinta rueda")):
-        upsert("experience", "vehicle_type", "quinta_rueda", 0.85)
+    # ── Tipo de unidad / experiencia (catálogo de dominio, sin regex de negocio) ──
+    # Fase 1B / F8: full|sencillo se confirman como vehicle_type. quinta rueda / tráiler /
+    # traila / tractocamión son experiencia COMPATIBLE pero NO vehicle_type final (el funnel
+    # pedirá full o sencillo). camión es ambiguo; torton/rabón/reparto/local/camioneta no son
+    # objetivo → no se infiere vehicle_type. La resolución vive en domain_catalog (datos).
+    veh = normalize_vehicle(message)
+    if veh and veh.value:                  # full | sencillo confirmados
+        upsert("experience", "vehicle_type", veh.value, 0.88)
         upsert("experience", "fifth_wheel", "sí", 0.85)
         if _dur_label:
             upsert("experience", "years", _dur_label, 0.90)
-
-    # Camión sencillo — NOT quinta rueda/full
-    if "sencillo" in text:
-        upsert("experience", "vehicle_type", "sencillo", 0.85)
-        upsert("experience", "fifth_wheel", "no", 0.85)
+    elif veh and veh.target_experience:    # quinta rueda / tráiler / traila / tractocamión
+        # experiencia compatible (campo legacy existente); NO se fija vehicle_type
+        upsert("experience", "fifth_wheel", "sí", 0.80)
         if _dur_label:
             upsert("experience", "years", _dur_label, 0.90)
-
-    # Full / fulero (double-articulated — distinct from quinta rueda)
-    if any(t in text for t in ("fulero", "fulera", "fuleros")):
-        upsert("experience", "vehicle_type", "full", 0.88)
-        upsert("experience", "fifth_wheel", "sí", 0.85)
-        if years_m:
-            upsert("experience", "years", years_m.group(1), 0.88)
-
-    # General fifth_wheel signal (lower confidence — no explicit type)
-    if any(t in text for t in ("quinta", "full", "tracto", "trailer")):
-        if any(t in text for t in ("si", "sí", "tengo", "manejo", "manejando", "experiencia")):
-            upsert("experience", "fifth_wheel", "sí", 0.75)
+    # camión (ambiguo) y torton/rabón/reparto/carga local/camioneta (no objetivo):
+    # NO se infiere vehicle_type ni fifth_wheel.
 
     if any(t in text for t in ("carretera mexicana", "republica", "república", "foraneo", "foráneo")):
         upsert("experience", "carretera_mexicana", "sí", 0.75)
