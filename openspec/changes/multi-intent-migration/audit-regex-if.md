@@ -22,8 +22,8 @@
 | F4 | 121–146 | vigencia licencia/apto por keywords | RN | Policy (vigencia) | Regla condicional de vigencia | Marcar vigente algo vencido → `perfil_listo` falso | **P0** | policy + naming | vigente/vencido/trámite por campo |
 | F5 | 130–132 | "vence en N años = vigente" | RN | Policy (vigencia) | Regla temporal de vigencia | Clasificar mal vigencia futura | P1 | policy | "vence en 2 años" → vigente |
 | F6 | 153 | `"no le veo el problema"` → apto vigente | EL | Eliminar | Frase frágil, no es evidencia de apto vigente | Si se conserva: falso apto vigente | P1 (quick win) | — | ese mensaje NO marca apto vigente |
-| F7 | 183–234 | experiencia/unidad por keywords+regex | RN | Catálogo/Grafo (`VehicleType`) + Planner | Vocabulario de unidad = grafo (`normalize_domain_values`) | Clasificar mal la unidad | **P0** | grafo + naming | fixtures full/sencillo/torton |
-| F8 | 211–212 | `quinta rueda → vehicle_type=quinta_rueda` | RN | Catálogo/Grafo (+ corregir regla) | ⚠️ contradice spec: debe ser `needs_clarification` + `falta_unidad` | Aplicar `objetivo_full_sencillo` indebido | **P0** | grafo + spec (ya fija) | "soy operador de quinta rueda" → needs_clarification |
+| F7 | 183–234 | experiencia/unidad por keywords+regex | RN | Catálogo/Grafo (`VehicleType`) + Planner | Vocabulario de unidad = grafo (`normalize_domain_values`) | Clasificar mal la unidad | **P0** | grafo + naming | fixtures full/sencillo/torton — **PARCIALMENTE RESUELTO (Fase 1B, c6e345d):** la unidad ya se resuelve vía `normalize_vehicle`/`domain_catalog`. PENDIENTE: licencia/apto siguen regex (deuda). |
+| F8 | 211–212 | `quinta rueda → vehicle_type=quinta_rueda` | RN | Catálogo/Grafo (+ corregir regla) | era ⚠️ contradice spec | Aplicar `objetivo_full_sencillo` indebido | **P0** | — | **RESUELTO en camino vivo (Fase 1B, c6e345d):** `profile_extractor` ya NO escribe `vehicle_type=quinta_rueda`; queda `fifth_wheel="sí"` (compatible). Verificado en producción. |
 | F9 | 197–208 | `experience.years = "10 años"` (string) | RN | Planner + naming | Canónico = entero + `unit` | Comparaciones/UI rotas | P1 | naming/SQL | "10 años" → years=10, unit=years |
 | F10 | 240–261 | documentos/interés/disponibilidad por keywords | RN | Clasificador (intents) + Catálogo/Grafo | Son intents de lenguaje | "documentos completos" falso | P1 | clasificador + naming `documents.proof` | "si tengo cartas" → documents.proof=cartas |
 | F11 | 264–268 | edad por regex | ES | Extractor técnico (conservar) | Extracción simple acotada (18–75) | Choque con "X años" de experiencia | P2 | — | "tengo 27" → age=27, NO years |
@@ -105,7 +105,10 @@ Y por **Neo4j**: **F1, F3, F7, F8, F29** (conceptos/aliases/políticas en grafo)
 
 ## Contradicciones código ↔ spec (resumen)
 
-1. F8 — `quinta rueda → vehicle_type=quinta_rueda` (debe ser `needs_clarification`).
+> Nota (Fase 1B, c6e345d): el extractor del camino vivo ahora consume
+> `normalize_vehicle`/`domain_catalog` para la **unidad** (menos regex de negocio).
+
+1. F8 — `quinta rueda → vehicle_type=quinta_rueda` → **RESUELTO** (Fase 1B, c6e345d): ya no se escribe; verificado en producción.
 2. F3/F9/F10/F12/F22 — claves legacy (`license.category`, `documents.labor_letters_status`,
    `experience.fifth_wheel`, `experience.years` string) vs mapa canónico.
 3. F30 — `pay_question` = `low`/`rag` vs `medium`/`conditional`.

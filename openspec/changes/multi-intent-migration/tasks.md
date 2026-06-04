@@ -1,6 +1,12 @@
 > Convención: cada tarea `[x]` cita evidencia como `archivo · función/símbolo · verificación`.
-> Verificación disponible hoy: endpoint `POST /classify` (app/app.py:343) y log
-> `[MULTI_INTENT_SHADOW]`. No hay suite de pruebas automatizada todavía (ver tarea 9.x).
+> Verificación disponible hoy: endpoint `POST /classify` (app/app.py:343), log
+> `[MULTI_INTENT_SHADOW]`, y suite pytest en `tests/` (corre en `api-test`).
+>
+> ESTADO DE FASES (2026-06-04):
+> - Fase 0 (F6/F26/F30): **desplegada y validada en producción**.
+> - Fase 1A (domain_catalog + normalize/disambiguate/contextual + intents roleplay): **en repo/test** (commit `8262c7d`); aislada, no en el flujo vivo (activa en cutover).
+> - Fase 1B (F8 en camino vivo: `profile_extractor` consume `domain_catalog`): **desplegada y validada en producción** (commit `c6e345d`).
+> - Evidencia: pytest **29 passed** (api-test) · `openspec validate --specs` 7 passed · `multi-intent-migration` valid · producción verificada (`normalize_vehicle` presente en el contenedor; `vehicle_type=quinta_rueda` ya no se escribe).
 
 ## 1. Fase 1 — Clasificador (hecho)
 
@@ -47,9 +53,9 @@
 
 ## 7. Desambiguación y corrección de facts + estados (pendiente)
 
-- [ ] 7.1a Etapa `normalize_domain_values`: valores claros (full/sencillo/licencia/B/E/apto/vigente/...); `quinta rueda`/`tráiler`/`tractocamión` → `needs_clarification` (no full/sencillo); `camión` → ambiguo; `torton`/`rabón`/`reparto`/`local` → no objetivo
-- [ ] 7.1b Etapa `disambiguate_numeric_units`: solo números/cantidades (10/3/27/2028) según `last_bot_question`; sin contexto → aclarar
-- [ ] 7.1c Etapa `contextual_answer_classifier`: sí/no/"sí pero"/"no sé si"/"depende"/elípticas con intención + `last_bot_question` + estado del funnel (sin regex global; persistir solo si se sabe el campo)
+- [x] 7.1a **(PARCIAL — solo unidad/vehicle)** Etapa `normalize_domain_values` + `domain_catalog`: full/sencillo→confirmed; quinta rueda/tráiler/tractocamión→needs_clarification; camión→ambiguo; torton/rabón/reparto/local/camioneta→no objetivo — `app/knowledge/normalize_domain_values.py`·`domain_catalog.py` · tests Fase 1A · commit `8262c7d`. **PENDIENTE:** normalización de licencia/B/E/apto/vigente/documentos (siguen como regex en `profile_extractor`).
+- [x] 7.1b Etapa `disambiguate_numeric_units`: números según `last_bot_question`; sin contexto → aclarar — `app/knowledge/disambiguate_numeric_units.py` · tests deterministas · commit `8262c7d`
+- [x] 7.1c Etapa `contextual_answer_classifier`: sí/no/elípticas con `last_bot_question` + estado del funnel (sin regex global; persiste solo si sabe el campo) — `app/knowledge/contextual_answer_classifier.py` · tests · commit `8262c7d`
 - [ ] 7.2 Etapa `detect_fact_corrections`: dato nuevo | incompleto | corrección | contradicción
 - [ ] 7.3 Etapa `resolve_fact_conflicts`: contradicción sin confirmación → `needs_confirmation` (no sobrescribe)
 - [ ] 7.4 Corrección explícita ("me equivoqué, son 10 años") → `corrected` + auditoría
@@ -61,7 +67,8 @@
 - [ ] 8.1 Calcular por turno `completed_fields`, `missing_fields`, `forbidden_questions`, `next_question`, `facts_before`, `facts_after`
 - [ ] 8.2 El sistema fija `next_question`; el LLM (70B) solo la redacta (no elige campo)
 - [ ] 8.3 Traza de auditoría: `facts_before`, `candidate_corrections`, `facts_pending_confirmation`, `facts_after`, `missing_fields`, `forbidden_questions`, `next_question`, `confirmation_question`
-- [ ] 8.4 Formalizar intents/fields nuevos: `availability`, `general_vacancy_info_request`, reclamo de memoria
+- [x] 8.4a Intents meta `roleplay_instruction`/`prompt_injection_like` añadidos al clasificador + reglas de prompt (ortografía / roleplay no obedecido) — `app/knowledge/intent_classifier.py` (`META_INTENTS`) · commit `8262c7d`
+- [ ] 8.4b Formalizar fields/intents pendientes: `availability`, `general_vacancy_info_request`, reclamo de memoria
 - [ ] 8.5 Caso `/classify`: "10 años de full estoy disponible" → years=10, vehicle_type=full, availability=available, sin repreguntar unidad
 - [ ] 8.6 Caso `/classify`: "¿que mas le falta?" → responde `missing_fields` del planner
 
@@ -75,11 +82,11 @@ Casos reales de regresión (fixtures `/classify`):
 - [ ] 9.3.1 "10 años de full estoy disponible" → `experience_years=10`, `vehicle_type=full`, `availability=available`; no repreguntar unidad
 - [ ] 9.3.2 "si tengo cartas" → registrar cartas/documentos; no repetir pregunta de unidad
 - [ ] 9.3.3 "ya te habia dicho que full" → `memory_complaint_or_correction`; confirmar `vehicle_type=full`; no repetir
-- [ ] 9.3.4 "full" → interpretar con `last_bot_question`; no activar RAG; respuesta corta
-- [ ] 9.3.5 "10" → sin contexto claro, pedir aclaración
-- [ ] 9.3.6 "camión" → pedir aclaración (full/sencillo/reparto/local)
-- [ ] 9.3.7 "soy operador de quinta rueda" → experiencia compatible; preguntar full o sencillo si falta `vehicle_type`
-- [ ] 9.3.8 "manejo tráiler" → `vehicle_domain=trailer`, `needs_clarification`
+- [x] 9.3.4 "full" con `last_bot_question` de unidad → `vehicle_type=full` — cobertura **determinista** (`contextual_answer_classifier`/`normalize_vehicle`, Fase 1A). `/classify` LLM pendiente.
+- [x] 9.3.5 "10" sin contexto → no guarda, pide aclaración — cobertura **determinista** (`disambiguate_numeric_units`, Fase 1A). `/classify` LLM pendiente.
+- [x] 9.3.6 "camión" → ambiguo, no infiere full/sencillo — cobertura **determinista** (`normalize_vehicle` + `profile_extractor`, Fase 1A/1B). `/classify` LLM pendiente.
+- [x] 9.3.7 "soy operador de quinta rueda" → compatible, sin `vehicle_type` final — cobertura **determinista** (Fase 1A/1B). `/classify` LLM pendiente.
+- [x] 9.3.8 "manejo tráiler" → `needs_clarification`, sin `vehicle_type` — cobertura **determinista** (Fase 1A/1B). `/classify` LLM pendiente.
 - [ ] 9.3.9 "hola como esta el clima" → out_of_scope; no iniciar perfilamiento
 - [ ] 9.3.10 "Hola. ¿Puedo obtener más información sobre esto?" → `general_vacancy_info_request`; no documentos pendientes
 - [ ] 9.3.11 "no se crea creo que tengo en realidad 10 años" → `correction_candidate`/`needs_confirmation`; no sobrescribir
@@ -112,7 +119,7 @@ Casos reales de regresión (fixtures `/classify`):
 - [ ] 10b.10 Migración SQL: renombrar `fact_key` `license.category` → `license.type` en `rh_lead_facts_v2` (conservar valores B/E/A/C) — `db/` nueva migración
 - [ ] 10b.11 Migración SQL: consolidar `documents.labor_letters_status`/`labor_letters`/`general_status`/`submission_status`/`availability_claim` → `documents.proof` (cartas|semanas_imss|ninguno) — `db/` nueva migración
 - [ ] 10b.12 Crear fact `candidate.availability_to_attend` (≠ viajar) + label `disponible_acudir` en el planner
-- [ ] 10b.13 Fijar vocabulario `vehicle_type` = full|sencillo|ambos|ninguno (sin `quinta_rueda`); mapear "quinta rueda" → rol objetivo, no valor — `app/knowledge/intent_classifier.py` (ANSWER_FIELDS/prompt)
+- [x] 10b.13 Vocabulario `vehicle_type` = full|sencillo|ambos|ninguno (sin `quinta_rueda`); "quinta rueda"/tráiler/tractocamión = experiencia compatible, NO valor — `app/knowledge/domain_catalog.py` + `app/lead_memory/profile_extractor.py` (camino vivo) · Fase 1B commit `c6e345d` · verificado en producción
 - [ ] 10b.14 Actualizar `v_rh_work_queue` y vistas dependientes tras los renombres de `fact_key` — `db/`/`sql/`
 
 ## 10c. Nota privada simplificada + taxonomía de labels (pendiente)
