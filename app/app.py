@@ -441,6 +441,51 @@ def _extract_chatwoot_channel_label(payload: dict) -> str:
     return "Chatwoot"
 
 
+# Reply canned del media_guard (G4). Genérico, sin leer BD ni planner.
+_MEDIA_GUARD_REPLY = (
+    "Gracias por compartirlo. Por el momento no puedo revisar documentos, imágenes, "
+    "audios o stickers por este medio. Para continuar con su registro, por favor "
+    "respóndame en texto la información solicitada."
+)
+
+
+def _chatwoot_has_media(payload: dict) -> bool:
+    """True si el evento entrante de Chatwoot trae attachments (media), agnóstico al canal.
+
+    Cubre imagen, documento, archivo, audio, video y sticker: Chatwoot los expone en
+    `attachments` con `file_type`/`data_url`, independiente del canal (Telegram/WhatsApp/...).
+    Revisa la ruta top-level y una ruta anidada (`message.attachments`) por robustez ante
+    variaciones del payload.
+    """
+    def _any_media(items) -> bool:
+        if not isinstance(items, list):
+            return False
+        media_keys = {
+            "file_type",
+            "data_url",
+            "thumb_url",
+            "extension",
+            "file_size",
+            "id",
+            "message_id",
+        }
+        return any(
+            isinstance(a, dict)
+            and (
+                any(a.get(k) for k in media_keys)
+                or bool(a)
+            )
+            for a in items
+        )
+
+    if _any_media(payload.get("attachments")):
+        return True
+    message = payload.get("message")
+    if isinstance(message, dict) and _any_media(message.get("attachments")):
+        return True
+    return False
+
+
 async def _send_chatwoot_message(
     account_id: int | str,
     conversation_id: int | str,
@@ -947,6 +992,51 @@ async def chatwoot_webhook(
             "status": "ignored",
             "reason": "not_incoming",
             "message_type": message_type,
+        }
+
+    # ── media_guard (G4): attachments → no extraer, no encolar, no orquestar ──
+    # Agnóstico al canal (Telegram demo / WhatsApp futuro entran por Chatwoot).
+    # Va ANTES de empty_content: los mensajes solo-media traen content vacío.
+    if _chatwoot_has_media(payload):
+        if not account_id or not conversation_id:
+            return {"status": "ignored", "reason": "media_without_ids"}
+        _top_att = payload.get("attachments")
+        _msg_att = (payload.get("message") or {}).get("attachments")
+        attachments_count = (
+            (len(_top_att) if isinstance(_top_att, list) else 0)
+            + (len(_msg_att) if isinstance(_msg_att, list) else 0)
+        )
+        sent = False
+        try:
+            await _send_chatwoot_message(
+                account_id=account_id,
+                conversation_id=conversation_id,
+                content=_MEDIA_GUARD_REPLY,
+            )
+            sent = True
+        except Exception:
+            traceback.print_exc()
+        print(
+            "[CHATWOOT_MEDIA_GUARD]",
+            json.dumps(
+                {
+                    "account_id": account_id,
+                    "conversation_id": conversation_id,
+                    "message_id": message_id,
+                    "channel_label": channel_label,
+                    "attachments": attachments_count,
+                    "had_caption": bool(content),
+                    "sent": sent,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        return {
+            "status": "media_guard",
+            "sent_to_chatwoot": sent,
+            "extracted": False,
+            "enqueued": False,
         }
 
     if not content:
