@@ -568,3 +568,35 @@ ahora; si **no hay fecha clara de vencimiento** NO SHALL inferirse vigencia (que
 #### Scenario: sin fecha de vencimiento no infiere vigencia
 - **GIVEN** `license`/`apto` sin fecha clara de vencimiento
 - **THEN** `needs_confirmation` + `reason=expiry_unknown` → `aclaracion_pendiente`; NO se infiere vigencia
+
+### Requirement: Manejo de media sin OCR/document-understanding
+
+El sistema SHALL NOT producir facts estructurados, labels, cambios de elegibilidad ni de
+`profile_ready` a partir de ningún archivo, imagen, documento, sticker, audio u otra media
+enviada por el candidato mientras no exista una capa validada de OCR/document-understanding.
+El sistema SHALL NOT inferir tipo de licencia, vigencia, apto médico ni ningún otro fact a
+partir de media; SHALL NOT marcar el perfil como completo por media; y SHALL NOT afirmar que
+validó o revisó la media o contenido enviado por ese medio. La media puede permanecer
+registrada por la plataforma/canal como mensaje o adjunto crudo para trazabilidad, si ese
+registro ya existe, pero eso no autoriza crear facts, labels, elegibilidad ni cambios de
+`profile_ready`.
+
+#### Scenario: Imagen de licencia no fija facts
+- **WHEN** el candidato envía una foto o archivo de su licencia
+- **THEN** el sistema NO persiste `license.type` ni `license.status` desde la media
+- **AND** NO marca el campo de licencia como completado
+
+#### Scenario: Media no infiere vigencia ni apto
+- **WHEN** el candidato envía una imagen o documento de su apto médico o comprobante de vigencia
+- **THEN** el sistema NO infiere `medical.apto_status` ni vigencia desde la media
+- **AND** el campo permanece según su estado previo (missing/needs_confirmation)
+
+#### Scenario: No afirmar validación documental
+- **WHEN** llega cualquier media o contenido enviado por el candidato (documento, imagen, archivo)
+- **THEN** el sistema NO declara que revisó o validó la media
+- **AND** NO marca `profile_ready` por la sola recepción de media
+
+#### Scenario: Sticker o audio no interpretable
+- **WHEN** el candidato envía un sticker, audio u otra media no interpretable
+- **THEN** el sistema no persiste facts nuevos
+- **AND** retoma una sola pregunta pendiente determinada por la capa de orquestación/planner aplicable

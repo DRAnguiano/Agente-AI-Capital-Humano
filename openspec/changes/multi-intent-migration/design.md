@@ -35,6 +35,10 @@ desambiguación de respuestas cortas.
 - No se cambia el contrato HTTP externo (`/chatwoot/webhook`, `/orchestrate/message`).
 - No se elimina todavía el `knowledge_orchestrator`; el cutover es un paso posterior.
 - No se migra aún `INTENT_POLICIES` a Neo4j (queda como deuda explícita).
+- No se interpreta media (imágenes, archivos, documentos, stickers, audio) como fuente de
+  facts, labels, elegibilidad ni `profile_ready` mientras no exista una capa
+  OCR/document-understanding validada. El bot agradece, aclara que por ahora no puede
+  revisar la media o contenido enviado por ese medio y pide la respuesta en texto.
 
 ## Pipeline (orden de etapas)
 
