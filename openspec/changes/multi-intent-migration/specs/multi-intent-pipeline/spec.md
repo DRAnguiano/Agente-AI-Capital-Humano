@@ -245,6 +245,15 @@ claridad del acto:
 - Si hay **contradicción sin intención clara de corrección**, el sistema SHALL marcar
   `conflict` y no cambiar labels finales hasta resolverlo.
 
+Antes de declarar `conflict` o `needs_confirmation`, el sistema SHALL normalizar ambos
+valores —mayúsculas/minúsculas, acentos, cantidad en dígitos o en palabras, y unidad
+explícita o unidad implícita resoluble dentro de F— y compararlos dentro del dominio del
+campo activo F aplicable. Un mismo valor expresado en distinta forma NO SHALL generar
+`conflict`. Valores realmente distintos para el mismo F SHALL ir a `conflict` o
+`needs_confirmation`, salvo que exista una corrección explícita confiable. Sin un F confiable
+aplicable, el sistema SHALL NOT persistir, SHALL NOT generar conflicto estructurado y SHALL
+NOT inferir el campo destino.
+
 Tras cualquier corrección **confirmada**, el sistema SHALL recalcular `missing_fields`,
 labels y nota privada desde Postgres. El LLM NO SHALL confirmar un cambio por sí mismo.
 
@@ -277,6 +286,12 @@ labels y nota privada desde Postgres. El LLM NO SHALL confirmar un cambio por s�
 - **WHEN** aparece un dato nuevo que contradice el anterior sin intención clara de corrección
 - **THEN** el sistema marca `conflict`
 - **AND** no cambia labels finales hasta resolverlo
+
+#### Scenario: Mismo valor en distinta forma no genera conflicto
+- **GIVEN** Postgres contiene un fact confirmado para un campo del perfil
+- **WHEN** llega un valor nuevo que, tras normalizar (caja, acentos, dígitos/palabras, unidad), es equivalente al previo dentro del dominio de F
+- **THEN** el sistema NO marca `conflict` ni `needs_confirmation`
+- **AND** no repregunta por ese campo
 
 ### Requirement: Funnel state planner
 
