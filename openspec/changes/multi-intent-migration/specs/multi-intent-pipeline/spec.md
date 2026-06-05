@@ -462,3 +462,37 @@ SHALL completar el campo (sigue `missing`).
 - **WHEN** el sistema calcula el estado
 - **THEN** `medical.apto_status` se considera según su propio valor
 - **AND** el sistema NO infiere vigencia del apto
+
+### Requirement: Gate de profile_ready = 6 campos núcleo (decisión 2C.0)
+
+`profile_ready` SHALL determinarse por exactamente 6 campos núcleo: `license.type`,
+`medical.apto_status`, `documents.proof`, `candidate.city`, `experience.vehicle_type`,
+`experience.years`. `candidate.availability_to_attend` NO SHALL formar parte del gate: es un
+paso de **agenda post-perfil** y se confirma solo con evidencia explícita del candidato
+(fecha/franja). `candidate.availability_to_attend_candidate` es evidencia candidata y NO
+SHALL promoverse a confirmada sin evidencia explícita. Además, `experience.vehicle_type` NO
+SHALL reclasificarse automáticamente desde `quinta_rueda`/`fifth_wheel`/`operador_5ta_rueda`:
+permanece `missing`/`needs_clarification` (superficiado vía `falta_unidad`/`aclaracion_pendiente`)
+hasta que el candidato indique explícitamente full o sencillo.
+
+> Nota: el código de `funnel_state_planner.CORE_FIELDS` aún incluye `availability_to_attend`
+> en el gate; su alineación con esta decisión se implementa en 2C.1 (este requirement es la
+> decisión documentada, no el cambio de código).
+
+#### Scenario: Perfil listo con 6 núcleo sin disponibilidad
+- **GIVEN** los 6 campos núcleo están completos con estado seguro y sin conflicto
+- **AND** no existe `candidate.availability_to_attend` confirmado
+- **WHEN** el sistema calcula el estado
+- **THEN** `profile_ready=true`
+- **AND** la disponibilidad se trata como paso de agenda post-perfil
+
+#### Scenario: Disponibilidad candidata no afecta el gate
+- **GIVEN** existe solo `candidate.availability_to_attend_candidate` (review_availability_candidate)
+- **WHEN** el sistema calcula el gate de `profile_ready`
+- **THEN** no cuenta como campo núcleo ni se promueve a confirmada
+
+#### Scenario: Vehicle_type legacy no se reclasifica
+- **GIVEN** un lead con `quinta_rueda`/`fifth_wheel`/`operador_5ta_rueda` pero sin full/sencillo explícito
+- **WHEN** el sistema calcula el estado
+- **THEN** `experience.vehicle_type` permanece `missing`/`needs_clarification`
+- **AND** el sistema NO lo reclasifica a full ni sencillo (solo evidencia explícita lo completa)

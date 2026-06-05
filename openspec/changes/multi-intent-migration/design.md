@@ -278,6 +278,21 @@ formales en el spec `multi-intent-pipeline` → "Planeación del funnel sobre le
   devuelve `[]` y loguea un warning, sin lanzar excepción. Así el reader puede convivir con
   el flujo vivo (en shadow) aunque la vista aún no esté aplicada. El probe
   `canonical_view_exists()` consulta `information_schema` (TODO: cachear en cutover).
+- **Decisión 2C.0 — gate de `profile_ready` y backlog de unidad** (resuelve los 2 cuellos
+  detectados por el shadow 2B.4):
+  - **(1A) Disponibilidad fuera del gate:** `profile_ready` = los **6 campos núcleo** del
+    esquema v1 (`license.type`, `medical.apto_status`, `documents.proof`, `candidate.city`,
+    `experience.vehicle_type`, `experience.years`). `candidate.availability_to_attend` pasa a
+    **paso de agenda post-perfil**, se confirma solo con evidencia explícita; la evidencia
+    candidata (`availability_to_attend_candidate`) NO se promueve a confirmada. Esto
+    desbloquea `profile_ready` (que en 2B.4 era inalcanzable).
+  - **(2-review) Backlog de `vehicle_type`:** NO se reclasifica `quinta_rueda`/`fifth_wheel`/
+    `operador_5ta_rueda` a full/sencillo (viola "no inventar"). Permanece
+    `missing`/`needs_clarification`, superficiado por label `falta_unidad`/`aclaracion_pendiente`;
+    se completa solo con evidencia explícita del candidato. Revisión puntual de las 5 filas
+    `quinta_rueda` = **diagnóstico manual**, no migración automática.
+  - Implementación diferida: **2C.1** (alinear `CORE_FIELDS` a 6-núcleo + write-path de
+    disponibilidad), **2C.2** (surfacing por label). 2C.0 es **decisión documentada**.
 - **Shadow canónico offline = MEDICIÓN, no decisión (2B.4 Opción B):**
   `scripts/shadow_canonical_funnel.py` compara, solo en lectura, el `FunnelState` del planner
   contra el estado vivo (heurístico) sobre leads reales, en `api-test`. NO modifica nada, NO
