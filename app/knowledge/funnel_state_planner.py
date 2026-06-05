@@ -21,25 +21,21 @@ SAFE_STATES = {"ok", "mapped_to_proof", "mapped_from_document_group"}
 # No seguros: needs_review, legacy_needs_clarification, review_availability_candidate,
 # separate_delivery_state (informativo, NO documento probado).
 
-# ── Campos núcleo: orden base + pregunta canónica (DATOS, no if/else) ─────────
+# ── Campos núcleo (gate de profile_ready) = 6 (decisión 2C.0/2C.1) ────────────
 # El LLM NO decide estas preguntas; el planner las fija.
+# `candidate.availability_to_attend` queda FUERA del profile planner (ruido conversacional
+# legacy; se ignora). La agenda real ("call scheduling" / label `llamada_pendiente`) es una
+# fase futura aparte, NO parte de este planner.
 CORE_FIELDS: list[tuple[str, str]] = [
-    ("license.type",                    "¿Qué tipo de licencia federal tiene?"),
-    ("medical.apto_status",             "¿Su apto médico está vigente?"),
-    ("documents.proof",                 "¿Cuenta con cartas laborales o semanas del IMSS?"),
-    ("candidate.city",                  "¿Desde qué ciudad o estado nos escribe?"),
-    ("experience.vehicle_type",         "¿Maneja full o sencillo?"),
-    ("experience.years",                "¿Cuántos años tiene manejando?"),
-    ("candidate.availability_to_attend", "¿Cuándo tiene disponibilidad para acudir al proceso?"),
+    ("license.type",            "¿Qué tipo de licencia federal tiene?"),
+    ("medical.apto_status",     "¿Su apto médico está vigente?"),
+    ("documents.proof",         "¿Cuenta con cartas laborales o semanas del IMSS?"),
+    ("candidate.city",          "¿Desde qué ciudad o estado nos escribe?"),
+    ("experience.vehicle_type", "¿Maneja full o sencillo?"),
+    ("experience.years",        "¿Cuántos años tiene manejando?"),
 ]
 _QUESTION = dict(CORE_FIELDS)
 _ORDER = [f for f, _ in CORE_FIELDS]
-
-# Evidencia candidata por campo: clave que la vista produce en estado de revisión.
-# Nunca completa el campo núcleo; solo lo lleva a needs_confirmation.
-EVIDENCE_KEY: dict[str, str] = {
-    "candidate.availability_to_attend": "candidate.availability_to_attend_candidate",
-}
 
 
 @dataclass(frozen=True)
@@ -125,14 +121,9 @@ def compute_funnel_state(facts: list[CanonicalFact]) -> FunnelState:
             else:
                 st.needs_confirmation_fields.append(core)  # needs_review, etc.
         else:
-            # Sin fact del campo: ¿hay evidencia candidata (p. ej. availability)?
-            ev = EVIDENCE_KEY.get(core)
-            if ev and ev in by_field:
-                st.needs_confirmation_fields.append(core)
-                reason_map[core] = "review_availability_candidate"
-            else:
-                st.missing_fields.append(core)
-                reason_map[core] = "missing"
+            # Sin fact del campo → missing.
+            st.missing_fields.append(core)
+            reason_map[core] = "missing"
 
     # ── next_question por prioridad: conflict > needs_confirmation > missing ──
     nq_field = _select_next(st)
