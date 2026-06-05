@@ -178,21 +178,43 @@ SHALL clasificarse como experiencia no objetivo / ruta de validación.
 
 ### Requirement: Desambiguación de números y cantidades
 
-`disambiguate_numeric_units` SHALL resolver números o cantidades ambiguas (`10`, `3`,
-`27`, `2028`) usando `last_bot_question` y el estado del funnel. Un número aislado sin
-contexto claro NO SHALL persistirse como un fact.
+`disambiguate_numeric_units` SHALL interpretar una cantidad X expresada por el candidato y
+su unidad U (explícita o implícita, cuando exista) en función del campo activo F esperado
+por el sistema. F SHALL provenir de una de dos rutas: (1) una pregunta activa confiable
+(derivada de `last_bot_question` y del estado del funnel, a través de la capa de
+orquestación/planner aplicable); o (2) evidencia explícita y autocontenida del campo dentro
+del mensaje actual —campo y valor declarados explícitamente— sujeta a evidence/confidence y
+a la normalización aplicable. X/U SHALL persistirse como fact estructurado únicamente cuando
+exista un F confiable por alguna de esas dos rutas Y F admita esa cantidad dentro de su
+dominio. Sin F confiable por ninguna ruta, el sistema SHALL NOT persistir X como dato de
+perfil ni de vigencia, SHALL NOT inferir elegibilidad y SHALL NOT generar conflicto
+estructurado por la sola cantidad; en su lugar SHALL responder conversacionalmente cuando
+corresponda y continuar según la capa de orquestación/planner aplicable. Con F confiable,
+X/U SHALL interpretarse únicamente dentro del dominio permitido por F. La ruta (2) SHALL
+exigir evidencia explícita del propio campo y SHALL NOT autorizar inferencia cruzada entre
+campos (p. ej. inferir la unidad desde la licencia o la licencia desde la unidad) ni asumir
+un valor de unidad no declarado explícitamente.
 
-#### Scenario: Número sin contexto
-- **WHEN** el candidato escribe "10" y no hay una pregunta previa que lo contextualice
-- **THEN** el sistema NO guarda "10" como experiencia, edad, días ni meses; pide aclaración
+> Nota: esta requirement fija el contrato X/U/F; NO enumera formatos ni constituye un parser.
+> La normalización de valores para comparar contradicciones se trata por separado en la regla
+> de corrección/contradicción de facts.
 
-#### Scenario: Número con contexto de experiencia
-- **WHEN** el bot preguntó por años de experiencia y el candidato responde "10"
-- **THEN** el sistema interpreta `experience.years=10`, `unit=years`, con estado `inferred_from_context`
+#### Scenario: Cantidad sin campo activo aplicable
+- **WHEN** el candidato expresa una cantidad X (con o sin unidad U) y no existe un F confiable por ninguna de las dos rutas
+- **THEN** el sistema NO persiste X como dato de perfil, vigencia ni elegibilidad
+- **AND** NO genera conflicto estructurado por la sola cantidad
+- **AND** responde conversacionalmente si corresponde y continúa según la capa de orquestación/planner aplicable
 
-#### Scenario: Número interpretable por contexto distinto
-- **WHEN** el contexto indica edad ("27") o vencimiento de licencia ("2028")
-- **THEN** el sistema lo asigna al campo correspondiente solo si el contexto lo respalda; si no, pide aclaración
+#### Scenario: Campo activo por pregunta confiable (ruta 1)
+- **WHEN** existe una pregunta activa confiable que fija F y el candidato responde con X/U dentro del dominio de F
+- **THEN** el sistema interpreta X/U únicamente dentro del dominio permitido por F
+- **AND** el sistema puede persistir el fact correspondiente a F solo si cumple los guardrails de evidencia/confianza aplicables
+
+#### Scenario: Campo activo por evidencia explícita autocontenida (ruta 2)
+- **WHEN** el candidato declara explícitamente, sin pregunta activa previa, un campo del perfil y su valor de forma autocontenida que satisface evidence/confidence y la normalización aplicable
+- **THEN** el sistema puede persistir ese fact dentro del dominio de F solo si cumple los guardrails de evidencia/confianza aplicables
+- **AND** NO infiere la unidad desde la licencia ni la licencia desde la unidad
+- **AND** NO asume un valor de unidad no declarado explícitamente
 
 ### Requirement: Clasificación contextual de respuestas sí/no y elípticas
 
