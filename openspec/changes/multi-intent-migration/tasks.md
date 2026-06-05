@@ -176,3 +176,8 @@ Casos reales de regresión (fixtures `/classify`):
 - [x] 13.5 Auditar `app/chatwoot_note_sync.py` — `audit-regex-if.md` §3 (`_temperatura` EL; `_stage` PD)
 - [x] 13.6 Clasificar hallazgos (NT/ES/RN/PD/PL/EL) — `audit-regex-if.md` (tablas por archivo + resumen)
 - [x] 13.7 Producir el reporte priorizando RN dispersas — `audit-regex-if.md` (resumen + orden recomendado + 5 contradicciones)
+
+## 14. Media guard (G4) — implementación viva (hecho)
+
+- [x] **G4 media_guard vivo** — corte a nivel del webhook de Chatwoot (`app/app.py` · `chatwoot_webhook` + `_chatwoot_has_media`), **agnóstico al canal** (Telegram demo / WhatsApp futuro, ambos vía Chatwoot). Si el evento entrante trae `attachments` (top-level o `message.attachments`): responde texto canned, log `[CHATWOOT_MEDIA_GUARD]`, return temprano **antes** de `empty_content`/encolar/orquestador; NO extractor, NO encolar, NO `run_hr_graph_message`, NO facts, NO labels, NO `profile_ready`. Caption bloqueado en v1 (no se parsea como fact). Sin OCR/document-understanding. Spec (doc-only): `multi-intent-pipeline` ("Manejo de media sin OCR/document-understanding") + `message-orchestration` ("Respuesta conversacional ante media sin OCR") + `design.md` (Non-Goal). Tests: `tests/test_chatwoot_media_guard.py` (suite `56 passed`) + smoke test vivo (imagen/sticker/audio/documento/imagen+caption, 200 OK). Commits `018b5e5` (código+tests) · `6c35043` (CONTEXTO.md). NO tocó `knowledge_orchestrator`/`profile_extractor`/`funnel_state_planner`/labels/BD.
+- [ ] FUTURO **media v2** — captions explícitos y/o capa OCR/document-understanding validada (solo entonces la media podría producir facts). NO ahora.
