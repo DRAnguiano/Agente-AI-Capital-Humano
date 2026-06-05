@@ -264,6 +264,21 @@ Ejemplo: si `documents.proof=cartas` existe en `v_rh_lead_facts_canonical`, el p
 repregunta por cartas/documentos; avanza al siguiente `missing_field` real. (Escenarios
 formales en el spec `multi-intent-pipeline` → "Planeación del funnel sobre lectura canónica".)
 
+**Límites explícitos de Fase 2B.1** (`funnel_state_planner` puro):
+- `license.type` y `license.status` son facts **distintos**: tener `license.type`
+  completado NO implica licencia vigente. 2B.1 solo evalúa el **tipo**.
+- `medical.apto_status` (estado del apto) y la **vigencia** del apto son distintos: el
+  planner NO infiere vigencia si el fact no existe explícitamente.
+- Prioridad de `next_question`: `conflict_fields` > `needs_confirmation_fields` >
+  `missing_fields` (dentro de cada nivel, el orden de `CORE_FIELDS`).
+- 2B.1 NO lee la vista (recibe facts ya construidos), NO decide labels, NO redacta. El
+  `canonical_profile_reader` (2B.2) y la activación de la vista (2B.3) son pasos aparte.
+- **Degradación segura (2B.2):** `canonical_profile_reader.read_canonical_facts(lead_key)`
+  es shadow-safe — si `v_rh_lead_facts_canonical` no existe (o cualquier error de lectura)
+  devuelve `[]` y loguea un warning, sin lanzar excepción. Así el reader puede convivir con
+  el flujo vivo (en shadow) aunque la vista aún no esté aplicada. El probe
+  `canonical_view_exists()` consulta `information_schema` (TODO: cachear en cutover).
+
 ## Decisions
 
 - **Architectural Decision: Declarative business rules over ad-hoc code.** Las reglas de

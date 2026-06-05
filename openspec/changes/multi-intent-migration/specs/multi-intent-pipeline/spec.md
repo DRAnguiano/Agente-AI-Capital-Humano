@@ -434,3 +434,31 @@ SHALL completar el campo (sigue `missing`).
 - **WHEN** el sistema calcula faltantes
 - **THEN** `vehicle_type` sigue como missing
 - **AND** pregunta si maneja full o sencillo
+
+#### Scenario: Disponibilidad candidata no confirma
+- **GIVEN** la vista canónica contiene `candidate.availability_to_attend_candidate` con `canonical_state=review_availability_candidate`
+- **WHEN** el sistema calcula faltantes
+- **THEN** `candidate.availability_to_attend` queda en `needs_confirmation_fields` (no completado)
+- **AND** la siguiente pregunta pide confirmar disponibilidad
+
+#### Scenario: Conflicto de apto no se resuelve silenciosamente
+- **WHEN** hay `medical.apto_status` con dos valores canónicos distintos (uno `ok`, otro `mapped_from_document_group`)
+- **THEN** `medical.apto_status` va a `conflict_fields` y NO a `completed_fields`
+- **AND** el sistema no elige ganador sin regla explícita
+
+#### Scenario: Perfil completo
+- **WHEN** todos los campos núcleo están completos con estado seguro y sin conflicto
+- **THEN** no hay `next_question` de perfil
+- **AND** `profile_ready=true`
+
+#### Scenario: Límite — tipo de licencia no implica vigencia
+- **GIVEN** existe `license.type=B` con estado seguro pero no existe `license.status`
+- **WHEN** el sistema calcula el estado
+- **THEN** `license.type` se considera completado
+- **AND** el sistema NO infiere que la licencia esté vigente (`license.type` y `license.status` son facts distintos)
+
+#### Scenario: Límite — estado de apto no implica vigencia
+- **GIVEN** existe `medical.apto_status` con estado seguro pero no existe un fact explícito de vigencia del apto
+- **WHEN** el sistema calcula el estado
+- **THEN** `medical.apto_status` se considera según su propio valor
+- **AND** el sistema NO infiere vigencia del apto
