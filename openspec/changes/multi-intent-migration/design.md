@@ -278,6 +278,12 @@ formales en el spec `multi-intent-pipeline` → "Planeación del funnel sobre le
   devuelve `[]` y loguea un warning, sin lanzar excepción. Así el reader puede convivir con
   el flujo vivo (en shadow) aunque la vista aún no esté aplicada. El probe
   `canonical_view_exists()` consulta `information_schema` (TODO: cachear en cutover).
+- **Shadow canónico offline = MEDICIÓN, no decisión (2B.4 Opción B):**
+  `scripts/shadow_canonical_funnel.py` compara, solo en lectura, el `FunnelState` del planner
+  contra el estado vivo (heurístico) sobre leads reales, en `api-test`. NO modifica nada, NO
+  decide, NO hace wiring. Mide lo accionable: repreguntas evitables (`forbidden_questions`),
+  `conflict_fields` y `needs_confirmation_fields`. El shadow in-process en vivo (Opción A,
+  con rebuild detrás de flag) queda diferido.
 
 ## Decisions
 
