@@ -454,14 +454,26 @@ SHALL completar el campo (sigue `missing`).
 #### Scenario: Límite — tipo de licencia no implica vigencia
 - **GIVEN** existe `license.type=B` con estado seguro pero no existe `license.status`
 - **WHEN** el sistema calcula el estado
-- **THEN** `license.type` se considera completado
+- **THEN** `license.type` se considera completado (es la **categoría** `B`/`E`/…, no la vigencia)
 - **AND** el sistema NO infiere que la licencia esté vigente (`license.type` y `license.status` son facts distintos)
+
+#### Scenario: Límite — license.status vigente no satisface por sí solo la regla >3 meses
+- **GIVEN** existe `license.status=vigente` con estado seguro pero sin fecha ni texto de vencimiento interpretable
+- **WHEN** el sistema calcula el estado
+- **THEN** el planner NO infiere vigencia temporal suficiente (la regla oficial **>3 meses** no se evalúa aquí)
+- **AND** validar el umbral >3 meses corresponde al **validador futuro de compatibilidad/vigencia** (2C.0c), no a este planner
 
 #### Scenario: Límite — estado de apto no implica vigencia
 - **GIVEN** existe `medical.apto_status` con estado seguro pero no existe un fact explícito de vigencia del apto
 - **WHEN** el sistema calcula el estado
 - **THEN** `medical.apto_status` se considera según su propio valor
 - **AND** el sistema NO infiere vigencia del apto
+
+#### Scenario: Límite — apto_status vigente no satisface por sí solo la regla >3 meses
+- **GIVEN** existe `medical.apto_status=vigente` con estado seguro pero sin fecha ni texto de vencimiento interpretable
+- **WHEN** el sistema calcula el estado
+- **THEN** el planner NO infiere vigencia temporal suficiente del apto (la regla oficial **>3 meses** no se evalúa aquí)
+- **AND** si no hay fecha clara de vencimiento, NO se infiere vigencia suficiente; el umbral lo aplica el validador futuro (2C.0c)
 
 ### Requirement: Gate de profile_ready = 6 campos núcleo (decisión 2C.0)
 

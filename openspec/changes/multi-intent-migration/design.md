@@ -264,11 +264,21 @@ Ejemplo: si `documents.proof=cartas` existe en `v_rh_lead_facts_canonical`, el p
 repregunta por cartas/documentos; avanza al siguiente `missing_field` real. (Escenarios
 formales en el spec `multi-intent-pipeline` → "Planeación del funnel sobre lectura canónica".)
 
-**Límites explícitos de Fase 2B.1** (`funnel_state_planner` puro):
-- `license.type` y `license.status` son facts **distintos**: tener `license.type`
+**Límites explícitos de Fase 2B.1** (`funnel_state_planner` puro) — **tarea 10b.16d**:
+- **`license.type` es la categoría** (`B`\|`E`\|…), NO la vigencia. Tener `license.type`
   completado NO implica licencia vigente. 2B.1 solo evalúa el **tipo**.
-- `medical.apto_status` (estado del apto) y la **vigencia** del apto son distintos: el
-  planner NO infiere vigencia si el fact no existe explícitamente.
+- **`license.status`** es `vigente`\|`vencida`\|`tramite`\|…, pero por sí solo **NO valida la
+  regla oficial >3 meses**: `license.status=vigente` no demuestra que falten más de 3 meses
+  para el vencimiento.
+- **`medical.apto_status`** es `vigente`\|`vencido`\|`tramite`\|…, y al igual que
+  `license.status` por sí solo **NO valida la regla >3 meses**. El estado del apto y su
+  **vigencia temporal suficiente** son cosas distintas; el planner NO infiere vigencia si el
+  fact no existe explícitamente.
+- **Vigencia suficiente** requiere una **fecha o texto de vencimiento interpretable** + aplicar
+  la **regla oficial >3 meses** (ver 2C.0c). Si NO hay fecha clara, NO se infiere vigencia
+  suficiente (queda en aclaración).
+- Esto es **contrato del validador futuro de compatibilidad/vigencia**, NO se implementa en
+  2B.1/2C.1: el planner usa el valor del fact tal cual y NO calcula umbrales temporales.
 - Prioridad de `next_question`: `conflict_fields` > `needs_confirmation_fields` >
   `missing_fields` (dentro de cada nivel, el orden de `CORE_FIELDS`).
 - 2B.1 NO lee la vista (recibe facts ya construidos), NO decide labels, NO redacta. El
