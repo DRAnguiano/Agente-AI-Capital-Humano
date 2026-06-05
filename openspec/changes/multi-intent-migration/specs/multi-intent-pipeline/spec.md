@@ -605,6 +605,15 @@ ahora; si **no hay fecha clara de vencimiento** NO SHALL inferirse vigencia (que
 > `app/persona_config.py` queda como **deuda legacy** (la regla oficial es >3 meses); no se
 > corrige en esta fase.
 
+> Nota (decisión 2C.0d — diagnóstico read-only de cobertura y muestras reales de vencimiento):
+> no hay fecha de vencimiento estructurada
+> (`expires_at`/`apto_expires_at` = 0 filas) y la cobertura de vencimiento es casi nula (1 solo
+> texto observado). Por tanto la vigencia >3 meses queda **advisory, NO gate**: no bloquea
+> `profile_ready` hasta capturar una fecha parseable confiable. La compatibilidad licencia/unidad
+> NO se activa: el universo con ambos facts canónicos (`license.type` + `experience.vehicle_type`)
+> observado = 0. El parser contextual requiere `last_asked_field`/`current_question_field`
+> estructurado (hoy solo hay `last_bot_message` textual).
+
 #### Scenario: sencillo + licencia B (compatible)
 - **GIVEN** `experience.vehicle_type=sencillo` y `license.type=B` confirmados
 - **THEN** la combinación es compatible (no se marca aclaración)

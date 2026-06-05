@@ -340,6 +340,35 @@ formales en el spec `multi-intent-pipeline` → "Planeación del funnel sobre le
     → copy legacy a actualizar en fase aparte (no ahora).
   - El `funnel_state_planner` de 2C.1 aún no aplica esto (usa el valor del fact tal cual); se
     implementará como validador de compatibilidad/vigencia en una fase posterior.
+- **Decisión 2C.0d — vigencia advisory + prerrequisitos de datos observados** (basada en el
+  diagnóstico read-only de cobertura y muestras reales de vencimiento; datos observados, no
+  estimación):
+  - **Datos observados:** `license.expires_at`/`medical.apto_expires_at` son **ghost keys** con
+    **0 filas** (referenciadas en `db/007`/`db/008`, nunca pobladas por el writer vivo).
+    `license.status` = 13 leads, de los cuales **0** tienen fecha/texto de vencimiento.
+    `apto_status` (medical/document) = 26 leads; solo **1** tiene texto de vencimiento (el único
+    observado: `medical.apto_expiration_text = "vence en 2 años"`) y **25** no tienen fecha/texto.
+    La cobertura de vencimiento parseable es **casi nula**.
+  - **Vigencia = advisory, NO gate:** con estos datos, la regla **>3 meses** queda como **regla
+    futura de elegibilidad**: NO entra al gate de `profile_ready`, NO se vuelve séptimo campo, NO
+    bloquea por `expiry_unknown`. Se superficia como advisory (`aclaracion_pendiente`) solo
+    cuando exista una señal de fecha parseable; en su ausencia, advisory/captura futura. Evita
+    repetir el colapso de `availability`.
+  - **Prerrequisito para gate de vigencia:** poblar `expires_at`/`apto_expires_at` estructurados
+    (o un texto de vencimiento parseable confiable) antes de que la vigencia pueda ser gate.
+  - **Compat licencia/unidad = futuro/shadow, NO activar aún:** el universo canónico con **ambos**
+    facts (`license.type` + `experience.vehicle_type`) observado = **0** (solo licencia = 27;
+    solo unidad = 2). El validador `full+B` (2C.0c) NO se activa hasta tener universo real con
+    ambos facts; `full+B` queda como **aclaración futura** (`aclaracion_pendiente`), no descarte
+    automático ni bloqueo vivo.
+  - **Parser contextual — prerrequisito de campo activo:** existen mensajes reconstruibles
+    (assistant = 436, user = 413, ambos con timestamp), por lo que `last_bot_message` textual es
+    reconstruible y sirve como **apoyo/heurística futura**, pero NO como fuente fuerte para
+    persistencia por contexto. La interpretación contextual y la ruta 1 de X/U/F requieren un
+    `last_asked_field`/`current_question_field` **estructurado**, que hoy NO existe.
+  - **No reabre lo ya fijado:** G4 (media sin OCR), G1 (comprensión ≠ persistencia), G2 (X/U/F),
+    G3 (normalización antes de conflicto), G5 (intención primero + anti-loop) y C6 (availability
+    legacy) quedan documentados; se referencian, no se reabren.
 - **Fase futura — call_scheduling / callback** (NO se implementa ahora): concepto nuevo y
   correcto, separado del perfil. Label operativa **`llamada_pendiente`** = "el siguiente paso
   es contactar al candidato por llamada" (NO "disponible para acudir"; NO sustituye
