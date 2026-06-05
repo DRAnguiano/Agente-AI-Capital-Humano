@@ -435,11 +435,11 @@ SHALL completar el campo (sigue `missing`).
 - **THEN** `vehicle_type` sigue como missing
 - **AND** pregunta si maneja full o sencillo
 
-#### Scenario: Disponibilidad candidata no confirma
+#### Scenario: Disponibilidad ignorada por el profile planner (2C.1)
 - **GIVEN** la vista canónica contiene `candidate.availability_to_attend_candidate` con `canonical_state=review_availability_candidate`
-- **WHEN** el sistema calcula faltantes
-- **THEN** `candidate.availability_to_attend` queda en `needs_confirmation_fields` (no completado)
-- **AND** la siguiente pregunta pide confirmar disponibilidad
+- **WHEN** el `funnel_state_planner` calcula el estado
+- **THEN** el planner la **ignora**: no entra a `completed`/`missing`/`needs_confirmation`/`conflict` ni a `next_question`
+- **AND** no afecta `profile_ready` (availability_to_attend está fuera del profile planner)
 
 #### Scenario: Conflicto de apto no se resuelve silenciosamente
 - **WHEN** hay `medical.apto_status` con dos valores canónicos distintos (uno `ok`, otro `mapped_from_document_group`)
@@ -467,32 +467,92 @@ SHALL completar el campo (sigue `missing`).
 
 `profile_ready` SHALL determinarse por exactamente 6 campos núcleo: `license.type`,
 `medical.apto_status`, `documents.proof`, `candidate.city`, `experience.vehicle_type`,
-`experience.years`. `candidate.availability_to_attend` NO SHALL formar parte del gate: es un
-paso de **agenda post-perfil** y se confirma solo con evidencia explícita del candidato
-(fecha/franja). `candidate.availability_to_attend_candidate` es evidencia candidata y NO
-SHALL promoverse a confirmada sin evidencia explícita. Además, `experience.vehicle_type` NO
-SHALL reclasificarse automáticamente desde `quinta_rueda`/`fifth_wheel`/`operador_5ta_rueda`:
-permanece `missing`/`needs_clarification` (superficiado vía `falta_unidad`/`aclaracion_pendiente`)
-hasta que el candidato indique explícitamente full o sencillo.
+`experience.years`. `candidate.availability_to_attend` NO SHALL formar parte del profile
+planner (ni gate, ni `missing`, ni `needs_confirmation`, ni `next_question`): es ruido
+conversacional legacy y el planner lo **ignora**. La agenda real ("call scheduling", label
+futura `llamada_pendiente`) es una fase aparte, NO parte de este planner. Además,
+`experience.vehicle_type` NO SHALL reclasificarse automáticamente desde
+`quinta_rueda`/`fifth_wheel`/`operador_5ta_rueda`: permanece `missing`/`needs_clarification`
+(superficiado vía `falta_unidad`/`aclaracion_pendiente`) hasta que el candidato indique
+explícitamente full o sencillo.
 
-> Nota: el código de `funnel_state_planner.CORE_FIELDS` aún incluye `availability_to_attend`
-> en el gate; su alineación con esta decisión se implementa en 2C.1 (este requirement es la
-> decisión documentada, no el cambio de código).
-
-#### Scenario: Perfil listo con 6 núcleo sin disponibilidad
+#### Scenario: Perfil listo con 6 núcleo
 - **GIVEN** los 6 campos núcleo están completos con estado seguro y sin conflicto
-- **AND** no existe `candidate.availability_to_attend` confirmado
 - **WHEN** el sistema calcula el estado
 - **THEN** `profile_ready=true`
-- **AND** la disponibilidad se trata como paso de agenda post-perfil
+- **AND** la disponibilidad no participa (está fuera del profile planner)
 
-#### Scenario: Disponibilidad candidata no afecta el gate
-- **GIVEN** existe solo `candidate.availability_to_attend_candidate` (review_availability_candidate)
-- **WHEN** el sistema calcula el gate de `profile_ready`
-- **THEN** no cuenta como campo núcleo ni se promueve a confirmada
+#### Scenario: Availability fuera del profile planner
+- **GIVEN** existe `candidate.availability_to_attend` o `..._candidate` en la lectura canónica
+- **WHEN** el `funnel_state_planner` calcula el estado
+- **THEN** no se cuenta como campo núcleo ni afecta `profile_ready`/`next_question`
 
 #### Scenario: Vehicle_type legacy no se reclasifica
 - **GIVEN** un lead con `quinta_rueda`/`fifth_wheel`/`operador_5ta_rueda` pero sin full/sencillo explícito
 - **WHEN** el sistema calcula el estado
 - **THEN** `experience.vehicle_type` permanece `missing`/`needs_clarification`
 - **AND** el sistema NO lo reclasifica a full ni sencillo (solo evidencia explícita lo completa)
+
+### Requirement: Compatibilidad licencia/unidad y vigencia (decisión 2C.0c)
+
+El sistema SHALL validar la compatibilidad licencia↔unidad SOLO cuando existan ambos facts
+confirmados (`license.type` y `experience.vehicle_type`); la licencia NO SHALL inferir la
+unidad ni la unidad la licencia. Matriz: `sencillo` acepta `B` o `E`; `full` requiere `E`;
+`full`+`B` es **incompatible**; otras categorías quedan fuera de objetivo. Vigencia: `license`
+y `medical.apto_status` SHALL considerarse suficientes solo si están vigentes **y** con
+**más de 3 meses** antes de vencer; si vencen en **3 meses o menos** SHALL requerir comprobante
+de renovación/pago/trámite; si están **vencidos con trámite/pago comprobable** SHALL solicitarse
+comprobante y quedar en aclaración; si están **vencidos sin trámite** NO SHALL continuar por
+ahora; si **no hay fecha clara de vencimiento** NO SHALL inferirse vigencia (queda en aclaración).
+
+**Modelado — reutilizar mecanismos existentes, NO inventar** (decisión 2C.0c):
+- Incompatibilidad y vigencia dudosa → `needs_confirmation_fields` + un `reason` (p. ej.
+  `license_unit_incompatible`, `expires_within_3_months`, `expiry_unknown`, `tramite_pending`)
+  → label **`aclaracion_pendiente`**.
+- Vencido **sin** trámite, o campo ausente → `missing` → label `falta_licencia`/`falta_apto`.
+- **trámite/comprobante pendiente** se modela con el status existente **`tramite`** (no es
+  vigencia suficiente → `needs_confirmation`).
+- NO se inventan estados ni labels. NO se reviven `revisar_licencia` ni `*_por_vencer` (legacy,
+  fuera del catálogo oficial); se usa `aclaracion_pendiente` / `falta_*`.
+
+> Nota: decisión para un validador futuro. El `funnel_state_planner` de 2C.1 todavía NO la
+> implementa (usa el valor del fact tal cual). El copy "más de 6 meses" en
+> `app/persona_config.py` queda como **deuda legacy** (la regla oficial es >3 meses); no se
+> corrige en esta fase.
+
+#### Scenario: sencillo + licencia B (compatible)
+- **GIVEN** `experience.vehicle_type=sencillo` y `license.type=B` confirmados
+- **THEN** la combinación es compatible (no se marca aclaración)
+
+#### Scenario: sencillo + licencia E (compatible)
+- **GIVEN** `experience.vehicle_type=sencillo` y `license.type=E` confirmados
+- **THEN** la combinación es compatible
+
+#### Scenario: full + licencia E (compatible)
+- **GIVEN** `experience.vehicle_type=full` y `license.type=E` confirmados
+- **THEN** la combinación es compatible
+
+#### Scenario: full + licencia B (incompatible)
+- **GIVEN** `experience.vehicle_type=full` y `license.type=B` confirmados
+- **THEN** se marca `needs_confirmation_fields` con `reason=license_unit_incompatible`
+- **AND** label `aclaracion_pendiente` (NO `revisar_licencia`); el sistema no la corrige solo
+
+#### Scenario: licencia no infiere unidad
+- **GIVEN** existe `license.type` pero NO existe `experience.vehicle_type`
+- **THEN** no se valida compatibilidad ni se infiere la unidad desde la licencia
+
+#### Scenario: vigente pero vence en ≤3 meses
+- **GIVEN** `medical.apto_status=vigente` con vencimiento en 3 meses o menos
+- **THEN** `needs_confirmation_fields` + `reason=expires_within_3_months` → label `aclaracion_pendiente` (requiere comprobante; no cuenta como vigencia suficiente)
+
+#### Scenario: vencido con trámite/comprobante
+- **GIVEN** `license`/`apto` con status `tramite` (vencido pero con trámite/pago comprobable)
+- **THEN** `needs_confirmation` → se solicita comprobante y queda en `aclaracion_pendiente` (no es vigencia suficiente)
+
+#### Scenario: vencido sin trámite
+- **GIVEN** `license`/`apto` vencido y sin trámite
+- **THEN** queda `missing` → label `falta_licencia`/`falta_apto`; NO continúa por ahora
+
+#### Scenario: sin fecha de vencimiento no infiere vigencia
+- **GIVEN** `license`/`apto` sin fecha clara de vencimiento
+- **THEN** `needs_confirmation` + `reason=expiry_unknown` → `aclaracion_pendiente`; NO se infiere vigencia

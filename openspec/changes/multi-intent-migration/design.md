@@ -291,8 +291,44 @@ formales en el spec `multi-intent-pipeline` → "Planeación del funnel sobre le
     `missing`/`needs_clarification`, superficiado por label `falta_unidad`/`aclaracion_pendiente`;
     se completa solo con evidencia explícita del candidato. Revisión puntual de las 5 filas
     `quinta_rueda` = **diagnóstico manual**, no migración automática.
-  - Implementación diferida: **2C.1** (alinear `CORE_FIELDS` a 6-núcleo + write-path de
-    disponibilidad), **2C.2** (surfacing por label). 2C.0 es **decisión documentada**.
+  - Implementación: **2C.1** (alinear `CORE_FIELDS` a 6-núcleo), **2C.2** (surfacing por label
+    del backlog vehicle_type). 2C.0 es **decisión documentada**.
+- **Decisión 2C.1 — `availability_to_attend` fuera del profile planner** (tras diagnóstico
+  2C.0b): `candidate.availability_to_attend` es un **fact fantasma** (sin writer) y su única
+  "evidencia" (`availability_to_attend_candidate`) provenía de mapear, en la vista (regla E),
+  el señal legacy `documents.availability_claim` (regex vago "tengo todo") → **semánticamente
+  incorrecto**. Por eso el `funnel_state_planner` lo **elimina por completo** (ni gate, ni
+  `post_profile_next`, ni `availability_state`). Deudas documentadas (NO en 2C.1): corregir la
+  **regla E** de `db/010` (dejar de producir `availability_to_attend_candidate`) y el **writer
+  legacy** de `documents.availability_claim` en `profile_extractor`.
+- **Decisión 2C.0c — compatibilidad licencia/unidad + vigencia** (decisión documentada;
+  implementación = validador futuro, NO 2C.1):
+  - **La licencia NO infiere la unidad** (ni viceversa). `license.type=B` no implica sencillo;
+    `license.type=E` no implica full. La compatibilidad se valida SOLO si existen ambos facts.
+  - **Matriz:** `sencillo`+`B` → compatible · `sencillo`+`E` → compatible · `full`+`E` →
+    compatible · `full`+`B` → **incompatible/`needs_review`** · otras categorías → fuera de
+    objetivo/`needs_review`.
+  - **Vigencia:** `license` y `apto` vigentes **y** con **>3 meses** antes de vencer; si vencen
+    en **≤3 meses** → requiere comprobante de renovación/pago; **sin fecha de vencimiento** → NO
+    inferir vigencia suficiente.
+  - **Modelado por reuso (no inventar):** incompatibilidad y vigencia dudosa →
+    `needs_confirmation_fields` + `reason` (`license_unit_incompatible`,
+    `expires_within_3_months`, `expiry_unknown`, `tramite_pending`) → label
+    `aclaracion_pendiente`. Vencido sin trámite o ausente → `missing` → `falta_licencia`/
+    `falta_apto`. Trámite/comprobante pendiente = status existente **`tramite`**.
+  - **NO revivir** `revisar_licencia` ni `*_por_vencer` (legacy, fuera del catálogo oficial);
+    usar `aclaracion_pendiente`/`falta_*`. **NO** inventar estados/labels/campos.
+  - **Deuda:** `app/persona_config.py` dice "más de 6 meses"; la regla oficial es **>3 meses**
+    → copy legacy a actualizar en fase aparte (no ahora).
+  - El `funnel_state_planner` de 2C.1 aún no aplica esto (usa el valor del fact tal cual); se
+    implementará como validador de compatibilidad/vigencia en una fase posterior.
+- **Fase futura — call_scheduling / callback** (NO se implementa ahora): concepto nuevo y
+  correcto, separado del perfil. Label operativa **`llamada_pendiente`** = "el siguiente paso
+  es contactar al candidato por llamada" (NO "disponible para acudir"; NO sustituye
+  `availability_to_attend`; NO es parte del profile planner). Facts futuros opcionales:
+  `scheduling.call_window`, `scheduling.call_status=pending`. La etiqueta sigue siendo
+  `llamada_pendiente`. **`llamada_pendiente` NO se agrega aún a `chatwoot-label-taxonomy`** (se
+  añade cuando se implemente la fase). `disponible_acudir` queda **legacy/diferido**.
 - **Shadow canónico offline = MEDICIÓN, no decisión (2B.4 Opción B):**
   `scripts/shadow_canonical_funnel.py` compara, solo en lectura, el `FunnelState` del planner
   contra el estado vivo (heurístico) sobre leads reales, en `api-test`. NO modifica nada, NO
