@@ -98,6 +98,23 @@ Telegram / WhatsApp → Chatwoot
 
 **Priority rule:** current turn message > lead_memory facts > Neo4j knowledge graph > RAG/ChromaDB > LLM generation.
 
+### Media guard (G4) — channel-agnostic, at the Chatwoot webhook
+
+Incoming Chatwoot events carrying media (`attachments`: image, sticker, audio, document,
+file) are intercepted in `chatwoot_webhook` (`app/app.py`) **before** the `empty_content`
+guard, the debounce enqueue and the orchestrator. `_chatwoot_has_media(payload)` checks the
+top-level `attachments` and `message.attachments`, agnostic to the source channel (Telegram
+demo today, WhatsApp later — both arrive via Chatwoot). On media the bot replies a canned
+message asking for a **text** answer, logs `[CHATWOOT_MEDIA_GUARD]`, and returns early:
+**no extraction, no enqueue, no orchestrator, no facts, no labels, no `profile_ready` change.**
+Media with a caption is also blocked in v1 (the caption is **not** parsed as facts). There is
+no OCR/document-understanding yet. Validated by `tests/test_chatwoot_media_guard.py` (56
+passing) and a live smoke test (image/sticker/audio/document/image+caption). Commit `018b5e5`.
+
+> Note: the `api` service runs **baked** code (`Dockerfile: COPY app /app/app`, no `./app`
+> volume mount, `uvicorn` without `--reload`). Picking up a webhook change requires
+> `docker compose up -d --build api`, not a plain restart.
+
 ### Profile fact extraction (single source of truth)
 
 ```
