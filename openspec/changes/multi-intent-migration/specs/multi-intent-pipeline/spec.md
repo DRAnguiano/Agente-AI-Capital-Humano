@@ -49,6 +49,29 @@ razón (`no_evidence` | `low_confidence`).
 - **WHEN** un answer tiene `evidence_ok=true` y `confidence ≥ 0.85`
 - **THEN** el answer entra en `answers_to_persist` con estado `confirmed` para registro silencioso
 
+### Requirement: La comprensión conversacional no autoriza persistencia estructurada
+
+El sistema SHALL poder comprender y responder conversacionalmente un mensaje sin por ello
+escribir facts, labels, cambios de elegibilidad ni de `profile_ready`. El sistema SHALL
+persistir un fact estructurado únicamente cuando exista evidencia válida Y un campo destino
+confiable / campo activo aplicable permitido por la capa de orquestación/planner aplicable;
+en ausencia de cualquiera de los dos, el sistema SHALL responder de forma conversacional
+cuando corresponda y SHALL NOT modificar perfil, labels ni elegibilidad. La comprensión del
+lenguaje NO constituye por sí sola evidencia suficiente para persistir.
+
+> Nota: el principio es transversal (entender ≠ guardar). Los formatos concretos de
+> cantidad/unidad/campo activo se tratan en la regla de desambiguación (X/U/F), no aquí.
+
+#### Scenario: Comentario conversacional sin campo activo aplicable
+- **WHEN** el candidato expresa un comentario conversacional sin que exista un campo activo aplicable para persistir lo dicho
+- **THEN** el sistema puede responder humanamente
+- **AND** NO persiste facts, vigencia, elegibilidad ni `profile_ready` a partir de ese comentario
+
+#### Scenario: Comprender no implica confirmar un fact
+- **WHEN** el LLM interpreta el sentido de un mensaje pero no hay evidencia válida y campo activo aplicable para un fact del perfil
+- **THEN** el sistema NO marca ningún campo como completado
+- **AND** continúa según la capa de orquestación/planner aplicable
+
 ### Requirement: Enriquecimiento determinista de políticas
 
 El sistema SHALL enriquecer cada question con políticas deterministas

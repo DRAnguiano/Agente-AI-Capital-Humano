@@ -20,6 +20,10 @@ desambiguación de respuestas cortas.
 
 **Goals:**
 - Separar la clasificación del lenguaje (LLM) de las políticas de negocio (deterministas).
+- Separar comprensión conversacional de persistencia estructurada: entender ≠ guardar,
+  responder humano ≠ persistir un fact. El LLM puede comprender y responder cordialmente un
+  mensaje sin por ello escribir facts, labels, elegibilidad ni cambios de `profile_ready`; la
+  persistencia exige evidencia válida y un campo destino confiable / campo activo aplicable.
 - Detectar y manejar mensajes compuestos: persistir el answer en silencio y priorizar
   contestar la pregunta.
 - Guardrail anti-alucinación: un answer se persiste como `confirmed` solo si su `evidence`
