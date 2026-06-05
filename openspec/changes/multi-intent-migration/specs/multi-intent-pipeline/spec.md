@@ -340,6 +340,14 @@ secundaria, (3) confirmar facts pendientes, (4) responder la señal, (5) emitir
 `next_question` del funnel. La planeación NO SHALL persistir en Postgres ni enviar a
 Chatwoot por sí misma; el LLM solo redacta el texto a partir del plan.
 
+Dentro de este orden, el sistema SHALL responder primero la intención actual del candidato y
+retomar a lo sumo UNA pregunta pendiente por turno, determinada por la capa de
+orquestación/planner aplicable. El sistema SHALL NOT repetir de forma indefinida la misma
+pregunta pendiente: tras reiteraciones sin avance SHALL reformular, pausar la insistencia o
+escalar según la política aplicable, en lugar de insistir. Esta regla NO obliga a repreguntar
+siempre: si responder la intención actual basta para el turno, el sistema NO fuerza una
+pregunta de funnel.
+
 #### Scenario: Multi-pregunta
 - **WHEN** el candidato hace dos preguntas en un turno
 - **THEN** el plan contesta la primaria vía RAG y ofrece tratar la segunda ("si gusta, también le platico…")
@@ -351,6 +359,11 @@ Chatwoot por sí misma; el LLM solo redacta el texto a partir del plan.
 #### Scenario: Persistencia silenciosa de answers
 - **WHEN** el turno trae answers `confirmed`
 - **THEN** el plan los incluye en `facts_to_persist` con acción `persist_answers_silently`, sin acuse verboso
+
+#### Scenario: Intención actual primero, una sola pregunta
+- **WHEN** el candidato hace una pregunta válida y queda un campo de perfil pendiente
+- **THEN** el plan responde primero esa intención
+- **AND** emite a lo sumo una sola pregunta pendiente, sin repetir indefinidamente la misma
 
 ### Requirement: Evaluación en shadow sin afectar al candidato
 

@@ -55,3 +55,28 @@ afirmar que la revisó o validó.
 - **WHEN** el candidato envía un sticker o audio
 - **THEN** el sistema responde brevemente sin persistir facts
 - **AND** retoma una sola pregunta pendiente determinada por la capa de orquestación/planner aplicable, sin afirmar que validó nada
+
+### Requirement: Prioridad conversacional e iteración controlada de preguntas
+
+El sistema SHALL responder primero la intención actual del candidato y, solo si corresponde,
+retomar UNA sola pregunta pendiente determinada por la capa de orquestación/planner
+aplicable. Ante evasión, smalltalk o media no interpretable, sin contradecir las reglas de
+media sin OCR, el sistema SHALL NOT persistir facts nuevos, SHALL responder humanamente
+cuando aplique y SHALL retomar o reformular UNA pregunta pendiente. El sistema SHALL NOT
+repetir de forma indefinida la misma pregunta sin control: tras reiteraciones sin avance
+SHALL reformular, pausar la insistencia o escalar según la política aplicable, en lugar de
+insistir. Esta requirement NO obliga a repreguntar siempre.
+
+> Nota de implementación: esta requirement documenta el comportamiento esperado. La
+> adaptación del flujo vivo queda para una fase posterior y no se implementa en este cambio
+> doc-only.
+
+#### Scenario: Intención actual antes de pregunta pendiente
+- **WHEN** el candidato hace una pregunta válida y queda un campo de perfil pendiente
+- **THEN** el sistema responde primero esa intención
+- **AND** retoma a lo sumo una sola pregunta pendiente
+
+#### Scenario: Evasión repetida no repregunta indefinidamente
+- **WHEN** el candidato evade la misma pregunta de forma reiterada sin avanzar
+- **THEN** el sistema no repite idéntica la misma pregunta una y otra vez
+- **AND** reformula, pausa la insistencia o escala según la política aplicable
