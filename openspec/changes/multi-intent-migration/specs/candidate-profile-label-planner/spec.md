@@ -95,21 +95,30 @@ ciudades/zonas.
 - **THEN** el sistema aplica label `foraneo`
 - **AND** si aplica, label `validar_traslado`
 
-### Requirement: Disponibilidad para acudir
+### Requirement: Disponibilidad para acudir (LEGACY — superseded por 2C.1)
 
-Después de clasificar local/foráneo, el sistema SHALL preguntar cuándo tiene
-disponibilidad para acudir, salvo que ya exista disponibilidad confirmada.
+`candidate.availability_to_attend` SHALL quedar FUERA del profile planner por decisión 2C.1:
+NO SHALL ser gate de `profile_ready`, NO SHALL contar como `missing_field`, NO SHALL entrar en
+`needs_confirmation`, NO SHALL ser `next_question` ni `post_profile_next`. El concepto de
+preguntar disponibilidad o agendar contacto SHALL diferirse a una fase futura de agenda
+(`call_scheduling`), cuya label operativa SHALL ser `llamada_pendiente`; la label
+`disponible_acudir` queda legacy/diferida. Esta requirement reemplaza el comportamiento previo
+(preguntar disponibilidad para acudir dentro del perfilamiento) y se conserva como referencia
+legacy.
 
-#### Scenario: Local o foráneo sin disponibilidad
-- **GIVEN** el candidato ya tiene ciudad clasificada
-- **AND** no existe `availability_to_attend`
-- **WHEN** el sistema calcula el siguiente paso
-- **THEN** pregunta cuándo tiene disponibilidad para acudir
+> Nota de implementación: doc-only. Reconciliación con la requirement "Gate de profile_ready =
+> 6 campos núcleo (2C.0)" del spec `multi-intent-pipeline`. No cambia código ni flujo vivo; el
+> `funnel_state_planner` ya ignora `availability_to_attend`.
 
-#### Scenario: Disponibilidad confirmada
-- **WHEN** el candidato confirma fecha o disponibilidad para acudir
-- **THEN** el sistema registra `availability_to_attend`
-- **AND** aplica label `disponible_acudir`
+#### Scenario: Disponibilidad fuera del profile planner
+- **WHEN** el sistema calcula el estado del perfil
+- **THEN** `candidate.availability_to_attend` no participa como campo núcleo
+- **AND** no afecta `profile_ready`, `missing_fields`, `needs_confirmation`, `next_question` ni `post_profile_next`
+
+#### Scenario: Concepto diferido a call_scheduling
+- **WHEN** se requiera agendar contacto o llamada con el candidato
+- **THEN** ese flujo pertenece a la fase futura `call_scheduling` con label `llamada_pendiente`
+- **AND** la label `disponible_acudir` queda legacy/diferida
 
 ### Requirement: Pipeline de faltantes hasta perfil listo
 
