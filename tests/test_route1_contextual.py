@@ -216,3 +216,48 @@ def test_resolver_is_pure_no_db_no_writes():
     # que en Fase A route-1 sólo loguea y nunca persiste.
     forbidden = {"get_conn", "upsert_lead_fact", "save_lead_message"}
     assert forbidden.isdisjoint(vars(R1).keys())
+
+
+# ---------------------------------------------------------------------------
+# 4) Matriz de QA shadow (casos controlados antes de pensar en persistencia)
+#    Cada fila: (texto, asked_field_keys) -> (status, value, reason)
+#    value se ignora cuando es None (no aplica).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,keys,status,value,reason", [
+    # experience.years
+    ("5",                ["experience.years"],         "confirmed",  5,    "ok"),
+    ("tengo 10 años",    ["experience.years"],         "confirmed",  10,   "ok"),
+    ("ahorita le digo",  ["experience.years"],         "no_persist", None, "no_number"),
+    # experience.vehicle_type — negación + valor explícito → conservador (negación gana)
+    ("no, sencillo",     ["experience.vehicle_type"],  "no_persist", None, "negation"),
+    # documents.proof
+    ("sí tengo cartas",  ["documents.proof"],          "confirmed",  "cartas", "ok"),
+    ("no tengo",         ["documents.proof"],          "no_persist", None, "negation"),
+    ("las subo luego",   ["documents.proof"],          "no_persist", None, "ambiguous"),
+])
+def test_shadow_qa_matrix(text, keys, status, value, reason):
+    r = R1.resolve_route1(text, keys)
+    assert r["status"] == status
+    assert r["reason"] == reason
+    if value is not None:
+        assert r["value"] == value
+
+
+# ---------------------------------------------------------------------------
+# Deuda de cutover (NO se corrige en este bloque): unidad subanual/contradictoria.
+# HOY: resolve_route1("5 meses", ["experience.years"]) → confirmed value=5 (toma el
+# primer número e ignora "meses"). Eso NO debe persistir como 5 AÑOS.
+# FUTURO (persistencia productiva): debe ser no_persist / needs_clarification al
+# detectar una unidad explícita contradictoria o subanual.
+# Se deja como xfail explícito (no bloqueante) para que quede trazado como blocker.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.xfail(
+    reason="Cutover debt: '5 meses' hoy confirma 5 años; futuro esperado no_persist/needs_clarification",
+    strict=False,
+)
+def test_years_subannual_unit_should_not_confirm():
+    r = R1.resolve_route1("5 meses", ["experience.years"])
+    assert r["status"] == "no_persist"
+    assert r["reason"] == "needs_clarification"
