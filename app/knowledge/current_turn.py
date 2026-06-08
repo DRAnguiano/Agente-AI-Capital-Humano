@@ -178,6 +178,36 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     return _profile_complete_closing()
 
 
+# Quita un "Perfecto" inicial (+ puntuación de cierre, sin tocar ¿/¡) de la pregunta
+# cuando el ack ya abre con "Perfecto", para no duplicar el prefijo.
+_LEADING_PERFECTO = re.compile(r"^perfecto\s*[,.:;!]*\s*", re.IGNORECASE)
+
+
+def _strip_leading_perfecto(text: str) -> str:
+    stripped = _LEADING_PERFECTO.sub("", text, count=1)
+    if stripped and stripped[0].isalpha() and stripped[0].islower():
+        stripped = stripped[0].upper() + stripped[1:]
+    return stripped
+
+
+def _join_ack_and_question(prefix: str, question: str | None) -> str:
+    """Une el ack y la siguiente pregunta evitando un doble prefijo "Perfecto".
+
+    Puro: no extrae facts ni mete lógica de negocio. Si el ack ya abre con
+    "Perfecto" y la pregunta también, se quita el "Perfecto" inicial de la
+    pregunta. Sin ack (prefix vacío), la pregunta se conserva tal cual.
+    """
+    prefix = (prefix or "").strip()
+    question = (question or "").strip()
+    if not prefix:
+        return question
+    if not question:
+        return prefix
+    if prefix.lower().startswith("perfecto") and question.lower().startswith("perfecto"):
+        question = _strip_leading_perfecto(question)
+    return f"{prefix} {question}".strip()
+
+
 def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | None = None, last_bot_message: str | None = None) -> str:
     current = extract_current_turn_facts(message, last_bot_message)
     # Full profile for deciding what to ask next; only current turn for the ack prefix.
@@ -209,4 +239,4 @@ def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | N
     else:
         prefix = "Perfecto, lo dejo registrado."
 
-    return f"{prefix} {next_question_from_missing_facts(facts)}"
+    return _join_ack_and_question(prefix, next_question_from_missing_facts(facts))
