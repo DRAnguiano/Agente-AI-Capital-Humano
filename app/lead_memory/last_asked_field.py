@@ -56,3 +56,45 @@ def read_last_asked_field_keys(lead_key: str) -> list[str] | None:
     if isinstance(keys, list) and keys:
         return [str(k) for k in keys]
     return None
+
+
+def read_current_asked_field_keys(lead_key: str) -> list[str] | None:
+    """Fresh canonical asked field keys del ÚLTIMO mensaje assistant real.
+
+    Freshness strict: lee SOLO el assistant inmediatamente anterior (orden por
+    ``created_at DESC, id DESC``), SIN reach-back. Si ese último assistant no
+    tiene ``asked_field_keys`` (p. ej. un reply que no fue nudge del funnel) →
+    ``None``. Así route-1 nunca usa metadata vieja como campo activo.
+
+    Degradación segura: cualquier error de lectura → ``None``.
+    """
+    if not lead_key:
+        return None
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT external_metadata
+                    FROM rh_lead_messages_v2
+                    WHERE lead_key = %(lead_key)s
+                      AND role = 'assistant'
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    {"lead_key": lead_key},
+                )
+                row = cur.fetchone()
+    except Exception as exc:
+        log.warning("[LAST_ASKED_FIELD] lectura current falló, desactivado: %s", exc)
+        return None
+
+    if not row:
+        return None
+
+    metadata: dict[str, Any] = row.get("external_metadata") or {}
+    keys = metadata.get("asked_field_keys")
+    if isinstance(keys, list) and keys:
+        return [str(k) for k in keys]
+    return None

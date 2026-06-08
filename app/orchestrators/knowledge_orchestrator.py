@@ -1170,6 +1170,29 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         requires_human=bool(contract.get("requires_human")),
     )
 
+    # SHADOW route-1 (G2, Fase A): log-only. NO persiste, NO decide, NO modifica
+    # reply/facts/stage/profile_ready. Interpreta el MENSAJE ACTUAL del candidato
+    # contra el campo canónico que el bot preguntó en el turno previo (fresh
+    # canonical keys, leídas de BD; NO confundir con la variable local
+    # `asked_field_keys`, que es lo que el bot va a preguntar ESTE turno).
+    # Deuda Fase B: en debounce ON existe la ruta `guard_context` (current_turn en
+    # tasks_chatwoot) que persiste y puede pisar el reply tras handle_message;
+    # route-1 productivo deberá reconciliarse con ella. Aquí solo observamos.
+    try:
+        from app.knowledge.route1_contextual import resolve_route1
+        from app.lead_memory.last_asked_field import read_current_asked_field_keys
+
+        fresh_keys = read_current_asked_field_keys(lead_key)
+        if fresh_keys:
+            r1 = resolve_route1(message, fresh_keys)
+            log.info(
+                "[ROUTE1_SHADOW] lead=%s fresh_keys=%s status=%s field=%s value=%s reason=%s",
+                lead_key, fresh_keys, r1["status"], r1.get("field"),
+                r1.get("value"), r1.get("reason"),
+            )
+    except Exception as exc:
+        log.warning("[ROUTE1_SHADOW] omitido por error: %s", exc)
+
     lead_write = _store_lead_memory_updates(
         lead_key=lead_key,
         conversation_key=conversation_key,
