@@ -17,6 +17,7 @@ import pytest
 
 import app.knowledge.route1_contextual as R1
 import app.lead_memory.last_asked_field as LAF
+from app.knowledge.disambiguate_numeric_units import disambiguate
 
 
 # ---------------------------------------------------------------------------
@@ -225,16 +226,23 @@ def test_resolver_is_pure_no_db_no_writes():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("text,keys,status,value,reason", [
-    # experience.years
-    ("5",                ["experience.years"],         "confirmed",  5,    "ok"),
-    ("tengo 10 años",    ["experience.years"],         "confirmed",  10,   "ok"),
-    ("ahorita le digo",  ["experience.years"],         "no_persist", None, "no_number"),
+    # experience.years — cantidad/unidad (X/U/F)
+    ("5",                  ["experience.years"],         "confirmed",  5,    "ok"),
+    ("5 años",             ["experience.years"],         "confirmed",  5,    "ok"),
+    ("tengo 10 años",      ["experience.years"],         "confirmed",  10,   "ok"),
+    ("ahorita le digo",    ["experience.years"],         "no_persist", None, "no_number"),
+    # unidad subanual/fraccional → needs_clarification (no confirmar como años)
+    ("5 meses",            ["experience.years"],         "no_persist", None, "needs_clarification"),
+    ("6 meses",            ["experience.years"],         "no_persist", None, "needs_clarification"),
+    ("medio año",          ["experience.years"],         "no_persist", None, "needs_clarification"),
+    ("año y medio",        ["experience.years"],         "no_persist", None, "needs_clarification"),
+    ("5 años y 6 meses",   ["experience.years"],         "no_persist", None, "needs_clarification"),
     # experience.vehicle_type — negación + valor explícito → conservador (negación gana)
-    ("no, sencillo",     ["experience.vehicle_type"],  "no_persist", None, "negation"),
+    ("no, sencillo",       ["experience.vehicle_type"],  "no_persist", None, "negation"),
     # documents.proof
-    ("sí tengo cartas",  ["documents.proof"],          "confirmed",  "cartas", "ok"),
-    ("no tengo",         ["documents.proof"],          "no_persist", None, "negation"),
-    ("las subo luego",   ["documents.proof"],          "no_persist", None, "ambiguous"),
+    ("sí tengo cartas",    ["documents.proof"],          "confirmed",  "cartas", "ok"),
+    ("no tengo",           ["documents.proof"],          "no_persist", None, "negation"),
+    ("las subo luego",     ["documents.proof"],          "no_persist", None, "ambiguous"),
 ])
 def test_shadow_qa_matrix(text, keys, status, value, reason):
     r = R1.resolve_route1(text, keys)
@@ -245,19 +253,29 @@ def test_shadow_qa_matrix(text, keys, status, value, reason):
 
 
 # ---------------------------------------------------------------------------
-# Deuda de cutover (NO se corrige en este bloque): unidad subanual/contradictoria.
-# HOY: resolve_route1("5 meses", ["experience.years"]) → confirmed value=5 (toma el
-# primer número e ignora "meses"). Eso NO debe persistir como 5 AÑOS.
-# FUTURO (persistencia productiva): debe ser no_persist / needs_clarification al
-# detectar una unidad explícita contradictoria o subanual.
-# Se deja como xfail explícito (no bloqueante) para que quede trazado como blocker.
+# Deuda de cutover RESUELTA (G2 numeric unit hardening): unidad subanual no confirma.
+# "5 meses" con F=experience.years ya NO se confirma como 5 años; ahora devuelve
+# no_persist / needs_clarification. Antes era xfail; ahora es test normal.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    reason="Cutover debt: '5 meses' hoy confirma 5 años; futuro esperado no_persist/needs_clarification",
-    strict=False,
-)
-def test_years_subannual_unit_should_not_confirm():
+def test_years_subannual_unit_does_not_confirm():
     r = R1.resolve_route1("5 meses", ["experience.years"])
     assert r["status"] == "no_persist"
     assert r["reason"] == "needs_clarification"
+
+
+# ---------------------------------------------------------------------------
+# 5) Contrato directo de disambiguate (nivel X/U/F)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,status", [
+    ("5",                "confirmed"),
+    ("5 años",           "confirmed"),
+    ("tengo 10 años",    "confirmed"),
+    ("5 meses",          "needs_clarification"),
+    ("medio año",        "needs_clarification"),
+    ("año y medio",      "needs_clarification"),
+    ("pues bastante",    "no_number"),
+])
+def test_disambiguate_years_unit_contract(text, status):
+    assert disambiguate(text, "experience_years")["status"] == status

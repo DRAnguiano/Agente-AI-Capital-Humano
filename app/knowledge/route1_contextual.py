@@ -77,6 +77,11 @@ def resolve_route1(text: str, asked_field_keys: list[str] | None) -> dict[str, A
                     "value": res.get("value"), "reason": "ok"}
         if status == "no_number":
             return _no_persist("no_number", expected_field)
+        # Unidad subanual/contradictoria o cantidad sin contexto claro: route1
+        # expone siempre needs_clarification (disambiguate puede distinguir el
+        # sub-motivo internamente; aquí no se filtra).
+        if status == "needs_clarification":
+            return _no_persist("needs_clarification", expected_field)
         return _no_persist("ambiguous", expected_field)
 
     # Respuesta corta / elíptica (unidad o sí-no) → clasificador contextual.

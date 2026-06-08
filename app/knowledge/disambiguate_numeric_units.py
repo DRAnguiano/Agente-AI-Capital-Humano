@@ -23,25 +23,44 @@ _CONTEXT_FIELD: dict[str, dict[str, Any]] = {
 }
 
 
-def _first_number(text: str) -> str | None:
-    for token in normalize_text(text or "").split():
+# Vocabulario de unidad U (tokens normalizados, alineado con profile_extractor).
+# Para campos cuya unidad esperada es "years", una unidad subanual o una expresión
+# fraccional contradice el campo y NO debe confirmarse por la sola cantidad.
+_YEARS_UNITS = {"ano", "anos", "anio", "anios"}
+_SUBANNUAL_UNITS = {"mes", "meses", "semana", "semanas", "dia", "dias"}
+_FRACTIONAL_WORDS = {"medio", "media"}
+
+
+def _first_number(tokens: list[str]) -> str | None:
+    for token in tokens:
         if token.isdigit():
             return token
     return None
 
 
 def disambiguate(text: str, expected: str | None) -> dict[str, Any]:
-    """Resuelve un número según el contexto esperado.
+    """Resuelve una cantidad X según el contexto F y su unidad U.
 
-    - sin número            → {"status": "no_number"}
-    - número + contexto conocido → {"status": "confirmed", "field", "value", "unit"}
-    - número sin contexto claro  → {"status": "needs_clarification", "value"} (NO se guarda)
+    - unidad subanual/fraccional en campo de años → {"status": "needs_clarification", "reason"}
+    - sin número                                   → {"status": "no_number"}
+    - número + contexto conocido                   → {"status": "confirmed", "field", "value", "unit"}
+    - número sin contexto claro                    → {"status": "needs_clarification", "value"}
     """
-    num = _first_number(text)
+    tokens = normalize_text(text or "").split()
+    mapping = _CONTEXT_FIELD.get(expected or "")
+
+    # Unidad U: solo para campos cuya unidad esperada es "years" (no aplica a age, etc.).
+    if mapping and mapping.get("unit") == "years":
+        token_set = set(tokens)
+        if token_set & _SUBANNUAL_UNITS:
+            return {"status": "needs_clarification", "reason": "subannual_unit"}
+        if token_set & _FRACTIONAL_WORDS:
+            return {"status": "needs_clarification", "reason": "fractional_unit"}
+
+    num = _first_number(tokens)
     if num is None:
         return {"status": "no_number"}
 
-    mapping = _CONTEXT_FIELD.get(expected or "")
     if mapping:
         return {
             "status": "confirmed",
