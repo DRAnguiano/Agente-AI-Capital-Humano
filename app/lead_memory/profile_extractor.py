@@ -180,7 +180,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("document", "apto_status", "vigente", 0.88)
 
     # ── Experience ───────────────────────────────────────────────────────────
-    DRIVING_TERMS = ("manejando", "manejo", "experiencia", "full", "quinta", "fulero", "fulera", "tracto")
+    DRIVING_TERMS = ("manejando", "manejo", "experiencia", "operador", "full", "quinta", "fulero", "fulera", "tracto")
 
     years_m = re.search(r"\b(\d{1,2})\s*(?:ano|anos|anio|anios)\s+(?:de\s+)?experiencia\b", text)
     if not years_m:
@@ -254,10 +254,17 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("candidate", "availability_status", "en_ruta_o_no_disponible_ahora", 0.80)
 
     # ── Age ──────────────────────────────────────────────────────────────────
-    age_m = re.search(
-        r"\b(?:tengo|edad(?:\s+es\s+de)?)?\s*(1[8-9]|[2-6][0-9]|7[0-5])\s*(?:ano|anos|anio|anios)?\b", text
+    # Edad SOLO con señal explícita; nunca desde "N años" de experiencia.
+    #   (a) con la palabra "edad" → siempre edad
+    #   (b) "tengo / cuento con N años" → solo si NO hay contexto de experiencia
+    has_exp_context = any(t in text for t in DRIVING_TERMS)
+    age_m = (
+        re.search(r"\b(\d{1,2})\s*(?:ano|anos|anio|anios)\s+de\s+edad\b", text)
+        or re.search(r"\bedad\s+(?:es\s+)?(?:de\s+)?(\d{1,2})\b", text)
     )
-    if age_m:
+    if age_m is None and not has_exp_context:
+        age_m = re.search(r"\b(?:tengo|cuento con)\s+(\d{1,2})\s*(?:ano|anos|anio|anios)\b", text)
+    if age_m and 18 <= int(age_m.group(1)) <= 75:
         upsert("candidate", "age", age_m.group(1), 0.88)
 
     return facts
