@@ -619,6 +619,7 @@ def _store_lead_memory_updates(
     stage_from: str | None,
     stage_to: str,
     reply: str,
+    asked_field_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write useful memory to v2 without letting it govern the conversation."""
     facts_written: list[str] = []
@@ -634,11 +635,23 @@ def _store_lead_memory_updates(
     )
     source_message_id = source_msg.get("id") if source_msg else None
 
+    # Passive capture: record which canonical field(s) the funnel just asked.
+    # Only when a nudge with reliable canonical keys was emitted; otherwise no
+    # metadata is written (no inference, no legacy/canonical mixing).
+    assistant_metadata: dict[str, Any] = {}
+    if asked_field_keys:
+        assistant_metadata = {
+            "asked_field_keys": list(asked_field_keys),
+            "asked_field_source": "funnel_nudge",
+            "asked_field_key_space": "canonical",
+        }
+
     save_lead_message(
         lead_key=lead_key,
         conversation_key=conversation_key,
         role="assistant",
         message=reply,
+        external_metadata=assistant_metadata or None,
     )
 
     # Extract profile facts from every message regardless of route/intent.
@@ -921,20 +934,59 @@ _NUDGE_SKIP_ROUTES = frozenset({
     "candidate_dropoff_recovery",
 })
 
+# Mapa funnel(legacy) -> espacio canónico. Solo claves con mapeo canónico
+# confiable. Si una clave del step NO está aquí, el step no se registra
+# (no inventar, no mezclar legacy/canonical, no inferir desde texto).
+_FUNNEL_KEY_CANONICAL: dict[str, str] = {
+    "candidate.city": "candidate.city",
+    "license.category": "license.type",
+    "medical.apto_status": "medical.apto_status",
+    "experience.years": "experience.years",
+    "experience.vehicle_type": "experience.vehicle_type",
+    "documents.labor_letters_status": "documents.proof",
+    # license.status (vigencia) se omite a propósito: es advisory (2C.0d) y no
+    # tiene campo canónico de perfil; su step no se registra como asked_field.
+}
+
+
+def _canonical_asked_keys(step_keys: set[str]) -> list[str]:
+    """Mapea las keys del step funnel al espacio canónico.
+
+    Devuelve ``[]`` si alguna clave del step no es mapeable de forma confiable,
+    para no mezclar legacy/canonical ni registrar campos dudosos. Todo o nada.
+    """
+    if not step_keys:
+        return []
+    mapped: list[str] = []
+    for key in sorted(step_keys):
+        canonical = _FUNNEL_KEY_CANONICAL.get(key)
+        if not canonical:
+            return []  # clave no confiable/mapeable → no registrar el step
+        mapped.append(canonical)
+    return sorted(set(mapped))
+
 
 def _build_funnel_nudge(
     message: str,
     contract: dict[str, Any],
     lead_memory: dict[str, Any],
-) -> str | None:
-    """Return the next profiling question or None if nudge is not appropriate."""
+) -> tuple[str | None, list[str]]:
+    """Return ``(question, asked_field_keys)`` for the next profiling step.
+
+    ``asked_field_keys`` holds the canonical/reliable key(s) of the field(s)
+    the funnel is asking about (e.g. ``["license.type"]``), so the assistant
+    message can record which field(s) were asked. Keys are never inferred from
+    text. If the step's keys are not reliable or cannot be mapped to the
+    canonical space, ``asked_field_keys`` is ``[]`` and nothing is recorded.
+    When no nudge is appropriate the tuple is ``(None, [])``.
+    """
     intent = str(contract.get("intent") or "")
     route = str(contract.get("route") or "")
 
     if intent in _NUDGE_SKIP_INTENTS or route in _NUDGE_SKIP_ROUTES:
-        return None
+        return None, []
     if contract.get("requires_human"):
-        return None
+        return None, []
 
     # Merge persisted facts with facts explicitly stated in the current message
     # so we never ask something the candidate just answered.
@@ -970,9 +1022,9 @@ def _build_funnel_nudge(
 
     for step in _FUNNEL_STEPS:
         if any(k not in active_facts for k in step["keys"]):
-            return random.choice(step["variants"])
+            return random.choice(step["variants"]), _canonical_asked_keys(step["keys"])
 
-    return None  # All profile fields covered — no nudge needed
+    return None, []  # All profile fields covered — no nudge needed
 
 
 def _maybe_save_call_preference(
@@ -1092,10 +1144,14 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         reply = _controlled_reply_from_contract(contract)
 
     # Append one funnel profiling question after RAG, friendly, or profile ack.
+    # Capture which canonical field(s) the nudge asked about (passive metadata).
+    asked_field_keys: list[str] = []
     if rag_result is not None or friendly_result is not None or profile_ack_used:
-        nudge = _build_funnel_nudge(message, contract, lead_memory_before)
+        nudge, asked_field_keys = _build_funnel_nudge(message, contract, lead_memory_before)
         if nudge:
             reply = f"{reply}\n\n{nudge}"
+        else:
+            asked_field_keys = []  # no nudge appended → no field was asked
 
     # Detect call-time preference response when a solicitud_llamada was recently sent.
     # Saves the candidate's message as a private note in Chatwoot for Capital Humano.
@@ -1122,6 +1178,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         stage_from=lead_stage_from,
         stage_to=lead_stage_to,
         reply=reply,
+        asked_field_keys=asked_field_keys,
     )
     lead_memory_after = lead_write.get("memory") or {}
 
