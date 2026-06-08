@@ -354,13 +354,29 @@ def process_chatwoot_debounced_message(
                             )
                         except Exception:
                             pass
-                # Save guard reply so next turn has correct last_bot_message context
+                # Save guard reply so next turn has correct last_bot_message context.
+                # Passive capture (Fase B): enrich the assistant row with the canonical
+                # field the guard just asked, so route-1 shadow can read it next turn.
+                # Only when the guard asked a clean single field (mixed/advisory → []).
+                from app.knowledge.guard_asked_field import asked_field_keys_for_guard
+
+                guard_keys = asked_field_keys_for_guard(merged_facts)
+                guard_meta = (
+                    {
+                        "asked_field_keys": guard_keys,
+                        "asked_field_source": "current_turn_guard",
+                        "asked_field_key_space": "canonical",
+                    }
+                    if guard_keys
+                    else None
+                )
                 try:
                     _slm(
                         lead_key=lead_key_for_ctx,
                         conversation_key=conversation_key_for_facts,
                         role="assistant",
                         message=guarded_reply,
+                        external_metadata=guard_meta,
                     )
                 except Exception:
                     pass
