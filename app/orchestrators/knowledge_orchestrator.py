@@ -433,8 +433,60 @@ def _is_strong_candidate(lead_memory: dict[str, Any] | None) -> bool:
     return len(active & key_facts) >= 3
 
 
+# No-respuesta / espera del candidato: el bot responde neutral, NO llama al LLM y
+# NO inventa facts ni elogia un perfil inexistente.
+_NO_ANSWER_HINTS = (
+    "ahorita le respondo", "ahorita respondo", "ahorita le paso", "ahorita le digo",
+    "ahorita le contesto", "ahorita te digo", "ahorita te paso",
+    "luego le digo", "luego le respondo", "luego le paso", "luego te digo",
+    "al rato le digo", "al rato te digo", "mas tarde le digo",
+    "espereme", "esperame", "pereme", "deme un momento", "deme chance",
+    "deme un segundo", "espere un momento",
+)
+_FRIENDLY_NO_ANSWER_REPLY = "Claro, quedo al pendiente. Cuando pueda, me comparte el dato."
+_FRIENDLY_NEUTRAL_REPLY = "Aquí andamos, con gusto seguimos con tu proceso."
+
+# Cardinales (sin "un/uno/una", que son artículos comunes). Los dígitos se cubren aparte.
+_NUMBER_WORDS = frozenset({
+    "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez",
+    "once", "doce", "trece", "catorce", "quince", "dieciseis", "diecisiete",
+    "dieciocho", "diecinueve", "veinte", "treinta", "cuarenta", "cincuenta",
+})
+
+
+def _is_no_answer(message: str) -> bool:
+    norm = normalize_text(message or "")
+    return any(hint in norm for hint in _NO_ANSWER_HINTS)
+
+
+def _text_has_number(text: str) -> bool:
+    norm = normalize_text(text or "")
+    if any(ch.isdigit() for ch in norm):
+        return True
+    return any(tok in _NUMBER_WORDS for tok in norm.split())
+
+
+def _friendly_introduces_number(reply: str, message: str) -> bool:
+    """True si la respuesta introduce una cifra/año que el candidato no dijo."""
+    return _text_has_number(reply) and not _text_has_number(message)
+
+
 def _answer_friendly_message(message: str, contract: dict[str, Any], lead_memory: dict[str, Any] | None = None) -> dict[str, Any]:
     started = time.perf_counter()
+
+    # No-respuesta ("ahorita le respondo", "espéreme", "luego le digo"): respuesta
+    # neutral sin LLM, para no fabricar experiencia ni elogiar un perfil inexistente.
+    if _is_no_answer(message):
+        return {
+            "reply": _FRIENDLY_NO_ANSWER_REPLY,
+            "llm_prompt_chars": 0,
+            "llm_reply_chars": len(_FRIENDLY_NO_ANSWER_REPLY),
+            "llm_cost_estimate": estimate_llm_cost("", _FRIENDLY_NO_ANSWER_REPLY),
+            "timings": {"friendly_total_ms": round((time.perf_counter() - started) * 1000, 2), "friendly_generate_ms": 0.0},
+            "friendly_generation_used": False,
+            "friendly_generation_skipped_reason": "no_answer",
+        }
+
     memory_text = _format_lead_memory_for_prompt(lead_memory)
     strong = _is_strong_candidate(lead_memory)
 
@@ -453,11 +505,11 @@ TU ÚNICO TRABAJO: hacer un comentario corto y amable. Confirmar, animar o reacc
 El sistema se encarga solo de pedir los datos del proceso. Tú JAMÁS pides datos ni haces preguntas: solo reaccionas con un comentario afirmativo y cierras.
 
 Así suena bien (afirmaciones, nunca preguntas):
-- Candidato: "4 años como operador" → "Cuatro años ya son experiencia de peso para esta chamba."
-- Candidato: "ya tengo toda mi documentación lista" → "Excelente, con eso avanzamos rápido."
 - Candidato: "me interesa la vacante" → "Qué bueno, aquí lo apoyamos para que avance."
 - Candidato: "y cuánto lleva la empresa?" → "Transmontes tiene años en el transporte de carga."
 - Candidato: "soy de Monterrey" → "Anotado, Monterrey."
+
+NUNCA inventes ni menciones cifras, años, experiencia, documentos, licencia, ciudad, apto, unidad ni condiciones que el candidato no haya dicho en SU mensaje. Si el candidato no dio un dato, no lo asumas ni lo elogies.
 
 Reglas: máximo 2 oraciones; nunca termines con '?'; no repitas lo que dijo el candidato; no prometas sueldo ni contratación; nada de "¡Genial!" ni "¡Excelente!" al inicio. {tono_extra}
 
@@ -485,7 +537,10 @@ Tu comentario (afirmación corta, sin preguntas):
     reply = _clean_reply(raw_reply)
 
     if not reply:
-        reply = "Aquí andamos, con gusto seguimos con tu proceso."
+        reply = _FRIENDLY_NEUTRAL_REPLY
+    elif _friendly_introduces_number(reply, message):
+        # El LLM introdujo una cifra/año que el candidato no dijo → descartar (anti-fabricación).
+        reply = _FRIENDLY_NEUTRAL_REPLY
 
     return {
         "reply": reply,
