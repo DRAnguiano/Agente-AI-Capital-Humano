@@ -215,16 +215,15 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     veh = normalize_vehicle(message)
     if veh and veh.value:                  # full | sencillo confirmados
         upsert("experience", "vehicle_type", veh.value, 0.88)
-        upsert("experience", "fifth_wheel", "sí", 0.85)
         if _dur_label:
             upsert("experience", "years", _dur_label, 0.90)
     elif veh and veh.target_experience:    # quinta rueda / tráiler / traila / tractocamión
-        # experiencia compatible (campo legacy existente); NO se fija vehicle_type
-        upsert("experience", "fifth_wheel", "sí", 0.80)
+        # señal ambigua de oficio: no se persiste vehicle_type;
+        # el funnel preguntará: ¿tracto full o sencillo?
         if _dur_label:
             upsert("experience", "years", _dur_label, 0.90)
     # camión (ambiguo) y torton/rabón/reparto/carga local/camioneta (no objetivo):
-    # NO se infiere vehicle_type ni fifth_wheel.
+    # NO se infiere vehicle_type.
 
     if any(t in text for t in ("carretera mexicana", "republica", "república", "foraneo", "foráneo")):
         upsert("experience", "carretera_mexicana", "sí", 0.75)
@@ -285,7 +284,7 @@ def missing_profile_fields(active_facts: dict[str, Any] | None) -> list[str]:
         ("license.category", "tipo de licencia"),
         ("license.status", "vigencia de licencia"),
         ("medical.apto_status", "apto médico"),
-        ("experience.fifth_wheel", "experiencia quinta rueda/full"),
+        ("experience.vehicle_type", "tipo de unidad (tracto full o sencillo)"),
         ("documents.labor_letters_status", "cartas laborales"),
     ]
     return [label for key, label in required if key not in facts]

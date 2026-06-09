@@ -422,7 +422,7 @@ def _is_strong_candidate(lead_memory: dict[str, Any] | None) -> bool:
         return False
     key_facts = {
         "candidate.city", "license.category", "license.status",
-        "medical.apto_status", "experience.years", "experience.fifth_wheel",
+        "medical.apto_status", "experience.years", "experience.vehicle_type",
         "documents.labor_letters_status",
     }
     active = {
@@ -882,17 +882,16 @@ def _build_profile_ack_reply(message: str) -> str | None:
     if apto in {"vigente", "sí", "si"}:
         parts.append("apto médico vigente")
 
-    # Experience — merge years + fifth_wheel
+    # Experience — vehicle_type + years
     years = by_key.get("experience.years")
-    fifth = by_key.get("experience.fifth_wheel")
-    if years and fifth:
-        s = "s" if years != "1" else ""
-        parts.append(f"{years} año{s} de experiencia en quinta rueda")
+    vt    = by_key.get("experience.vehicle_type")
+    vt_label = {"full": "tracto full", "sencillo": "sencillo"}.get(vt or "", vt or "")
+    if years and vt_label:
+        parts.append(f"{years} de experiencia en {vt_label}")
     elif years:
-        s = "s" if years != "1" else ""
-        parts.append(f"{years} año{s} de experiencia")
-    elif fifth:
-        parts.append("experiencia en quinta rueda/full")
+        parts.append(f"{years} de experiencia")
+    elif vt_label:
+        parts.append(f"experiencia en {vt_label}")
 
     # Labor letters
     labor = by_key.get("documents.labor_letters_status") or by_key.get("documents.labor_letters")
@@ -957,9 +956,9 @@ _FUNNEL_STEPS: list[dict] = [
     {
         "keys": {"experience.vehicle_type"},
         "variants": [
-            "¿Esa experiencia es principalmente en quinta rueda/full o en camión sencillo?",
-            "¿Ha operado quinta rueda o full, o principalmente camión sencillo?",
-            "¿Su experiencia es en quinta rueda, full o camión sencillo?",
+            "¿Tu experiencia es en tracto full o en sencillo?",
+            "¿Manejas tracto full o sencillo?",
+            "¿Cuál es tu tipo de unidad, tracto full o sencillo?",
         ],
     },
     {

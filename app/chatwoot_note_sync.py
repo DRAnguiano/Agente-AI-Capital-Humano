@@ -214,8 +214,7 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     has_license    = bool(facts.get("license.category"))
     has_medical    = facts.get("medical.apto_status") in {"vigente", "sí", "si"}
     has_experience = (
-        facts.get("experience.fifth_wheel") in {"sí", "si", "yes", "true"}
-        or bool(facts.get("experience.vehicle_type"))
+        bool(facts.get("experience.vehicle_type"))
         or bool(facts.get("experience.years"))
     )
     has_letters    = facts.get("documents.labor_letters_status") in {"available", "sí", "si"} or \
@@ -258,7 +257,6 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
 
     message = _text(fallback_last_message or last.get("message"), "Sin mensaje reciente")[:500]
 
-    fifth_wheel_raw = _fact(facts, "experience.fifth_wheel")
     vehicle_type_raw = _fact(facts, "experience.vehicle_type", default="")
     years = _fact(facts, "experience.years")
     license_category = _fact(facts, "license.category")
@@ -270,12 +268,14 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     availability_raw = _fact(facts, "candidate.availability_status")
     payment_raw = _fact(facts, "interest.payment", default="No detectado")
 
-    if vehicle_type_raw == "sencillo":
-        fifth_wheel = "Sencillo (escuelita – evalúa Cap. Humano)"
-    elif vehicle_type_raw in ("quinta_rueda", "full"):
-        fifth_wheel = "Sí"
+    if vehicle_type_raw == "full":
+        experience_display = "Tracto full"
+    elif vehicle_type_raw == "sencillo":
+        experience_display = "Sencillo"
+    elif vehicle_type_raw:
+        experience_display = _human_fact(vehicle_type_raw)
     else:
-        fifth_wheel = _human_fact(fifth_wheel_raw)
+        experience_display = PENDING_TEXT
     medical_status = _human_fact(medical_status_raw)
     documents_status = _human_fact(documents_status_raw)
     availability = _human_fact(availability_raw)
@@ -294,21 +294,21 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         if str(stage_value or "").lower() == "apto_pending_update":
             stage_value = "profile_hint_collected"
 
-    has_experience = _is_yes(fifth_wheel_raw) or fifth_wheel_raw != PENDING_TEXT or years != PENDING_TEXT
-    has_license = license_category != PENDING_TEXT
-    has_medical = _is_vigente(medical_status_raw)
+    has_vehicle_type = bool(vehicle_type_raw)
+    has_years        = years != PENDING_TEXT
+    has_experience   = has_vehicle_type or has_years
+    has_license  = license_category != PENDING_TEXT
+    has_medical  = _is_vigente(medical_status_raw)
     has_documents = documents_status_raw != PENDING_TEXT
-    has_city = city != PENDING_TEXT
+    has_city     = city != PENDING_TEXT
 
     blocker = "Faltan datos base del perfil"
-    if has_experience and has_license and has_medical and has_documents and has_city:
+    if has_vehicle_type and has_license and has_medical and has_documents and has_city:
         blocker = "Validar documentos con Capital Humano"
     elif documents_status_raw == "pending_candidate_will_send":
         blocker = "Esperando envío documental"
-    elif not has_experience:
-        blocker = "Falta confirmar experiencia en quinta rueda/full"
-    elif vehicle_type_raw == "sencillo":
-        blocker = "Experiencia en sencillo (escuelita) – Capital Humano valida viabilidad"
+    elif not has_vehicle_type:
+        blocker = "Falta confirmar tipo de unidad (tracto full o sencillo)"
     elif not has_license:
         blocker = "Falta validar licencia federal/tipo"
     elif not has_medical:
@@ -329,7 +329,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         "🧠 Memoria breve\n"
         f"{memory}\n\n"
         "📋 Perfil detectado\n"
-        f"Quinta rueda/full: {fifth_wheel}\n"
+        f"Tipo de unidad: {experience_display}\n"
         f"Experiencia: {years}\n"
         f"Licencia: {_human_fact(license_category)}"
         + (f" · vigencia {apto_exp_text}" if license_exp_text and license_exp_text != PENDING_TEXT else "") + "\n"

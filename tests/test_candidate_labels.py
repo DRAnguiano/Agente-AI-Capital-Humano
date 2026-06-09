@@ -26,8 +26,18 @@ def _ctx(facts=None, requires_human=False, risk_level=None):
 FULL_FACTS = {
     "license.category": "E",
     "medical.apto_status": "vigente",
-    "experience.fifth_wheel": "sí",
+    "experience.vehicle_type": "full",
     "experience.years": "10 años",
+    "documents.labor_letters_status": "available",
+    "candidate.city": "Torreón",
+    "candidate.vacancy_accepted": "sí",
+}
+
+SENCILLO_FACTS = {
+    "license.category": "E",
+    "medical.apto_status": "vigente",
+    "experience.vehicle_type": "sencillo",
+    "experience.years": "8 años",
     "documents.labor_letters_status": "available",
     "candidate.city": "Torreón",
     "candidate.vacancy_accepted": "sí",
@@ -203,3 +213,33 @@ def test_regression_seguimiento_por_submission():
     facts = {"documents.submission_status": "pending_candidate_will_send"}
     result = calculate_candidate_labels(_ctx(facts))
     assert "seguimiento" in result
+
+
+# ── sencillo como unidad objetivo válida (igual que full) ────────────────────
+
+def test_sencillo_perfil_listo_igual_que_full():
+    result = calculate_candidate_labels(_ctx(SENCILLO_FACTS))
+    assert "perfil_listo" in result
+    assert "falta_licencia" not in result
+    assert "falta_apto" not in result
+    assert "documentos" not in result
+
+
+def test_sencillo_has_experience_sin_fifth_wheel():
+    """vehicle_type=sencillo cuenta como has_experience sin necesitar fifth_wheel."""
+    facts = {"experience.vehicle_type": "sencillo"}
+    result = calculate_candidate_labels(_ctx(facts))
+    assert "bot_activo" in result  # flujo normal activo
+    # has_experience = True → no genera documentos sin licencia/experiencia vacía
+
+
+def test_sencillo_allowlist_subsets_official():
+    result = calculate_candidate_labels(_ctx(SENCILLO_FACTS))
+    assert set(result) <= OFFICIAL_LABELS
+
+
+def test_sencillo_no_requiere_fifth_wheel():
+    """SENCILLO_FACTS no tiene fifth_wheel y perfil_listo debe funcionar igual."""
+    assert "experience.fifth_wheel" not in SENCILLO_FACTS
+    result = calculate_candidate_labels(_ctx(SENCILLO_FACTS))
+    assert "perfil_listo" in result

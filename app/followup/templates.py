@@ -42,7 +42,7 @@ _CAMPO_DISPLAY: dict[str, str] = {
     "tipo de licencia":          "tipo de licencia federal (A, B o E)",
     "vigencia de licencia":      "vigencia de su licencia federal",
     "apto médico":               "apto médico vigente",
-    "experiencia quinta rueda/full": "experiencia en quinta rueda o full",
+    "tipo de unidad: tracto full o sencillo": "tipo de unidad (tracto full o sencillo)",
     "cartas laborales":          "cartas laborales",
 }
 

@@ -57,7 +57,7 @@ def _campo_faltante_para_lead(lead_key: str, conn) -> str | None:
         ("license.category",           "tipo de licencia"),
         ("license.status",             "vigencia de licencia"),
         ("medical.apto_status",        "apto médico"),
-        ("experience.fifth_wheel",     "experiencia quinta rueda/full"),
+        ("experience.vehicle_type",    "tipo de unidad: tracto full o sencillo"),
         ("documents.labor_letters_status", "cartas laborales"),
     ]
     for clave, label in orden:

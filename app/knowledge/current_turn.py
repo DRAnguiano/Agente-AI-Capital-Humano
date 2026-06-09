@@ -163,15 +163,12 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if not facts.get("experience.vehicle_type"):
         duration = facts.get("experience.years", "")
         return (
-            f"¿Y esa experiencia ({duration}) es en quinta rueda/full o en camión sencillo? "
-            "Las vacantes disponibles son para operadores de quinta rueda/full."
+            f"¿Y esa experiencia ({duration}) es en tracto full o en sencillo? "
+            "Las vacantes disponibles son para operadores de tracto full o sencillo."
         )
     if not facts.get("medical.apto_status"):
-        escuelita = facts.get("experience.vehicle_type") == "sencillo"
-        prefix = (
-            "Anotado — la experiencia en sencillo se toma como escuelita y se valora. "
-            "Las vacantes son para quinta rueda/full; Capital Humano evaluará tu perfil. "
-        ) if escuelita else ""
+        sencillo = facts.get("experience.vehicle_type") == "sencillo"
+        prefix = "Anotado: tienes experiencia en camión sencillo. " if sencillo else ""
         return f"{prefix}Gracias. ¿Tu apto médico está vigente?"
     if not facts.get("documents.labor_letters"):
         return "¿Cuentas con cartas laborales?"
@@ -230,9 +227,9 @@ def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | N
         detected.append(f"{current['experience.years']} de experiencia")
     vt = current.get("experience.vehicle_type")
     if vt == "sencillo":
-        detected.append("experiencia en camión sencillo (escuelita)")
-    elif vt in ("quinta_rueda", "full") or current.get("experience.fifth_wheel") == "sí":
-        detected.append("experiencia en quinta rueda/full")
+        detected.append("experiencia en camión sencillo")
+    elif vt in ("quinta_rueda", "full"):
+        detected.append("experiencia en tracto full")
 
     if detected:
         prefix = "Perfecto, registro " + ", ".join(detected) + "."
