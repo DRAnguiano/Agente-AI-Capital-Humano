@@ -10,10 +10,10 @@ PENDING_TEXT = "Pendiente"
 OFFICIAL_LABELS: frozenset[str] = frozenset({
     "aclaracion_pendiente",
     "bot_activo",
-    "cecati",
-    "disponible_acudir",
+    "cecati_sugerido",
+    "considerar_escuelita_transmontes",
+    "considerar_operador_b1",
     "documentos",
-    "escuelita",
     "falta_apto",
     "falta_ciudad",
     "falta_experiencia",
@@ -21,6 +21,7 @@ OFFICIAL_LABELS: frozenset[str] = frozenset({
     "falta_unidad",
     "foraneo",
     "jerga_ambigua",
+    "llamada_pendiente",
     "local_laguna",
     "objetivo_full_sencillo",
     "perfil_listo",
@@ -32,6 +33,34 @@ OFFICIAL_LABELS: frozenset[str] = frozenset({
     "urgente",
     "validar_traslado",
 })
+
+# Display humano de labels en la nota privada
+_LABEL_DISPLAY: dict[str, str] = {
+    "cecati_sugerido":                  "CECATI sugerido",
+    "considerar_escuelita_transmontes": "Considerar Escuelita Transmontes",
+    "considerar_operador_b1":           "Considerar operador B1 (EUA)",
+    "llamada_pendiente":                "Llamada pendiente",
+    "objetivo_full_sencillo":           "Objetivo full/sencillo",
+    "perfil_listo":                     "Perfil listo",
+    "requiere_agente":                  "Requiere agente",
+    "requiere_revision_ch":             "Requiere revisión CH",
+    "reingreso_verificar":              "Reingreso — verificar",
+    "riesgo_alto":                      "Riesgo alto",
+    "aclaracion_pendiente":             "Aclaración pendiente",
+    "jerga_ambigua":                    "Jerga ambigua",
+    "foraneo":                          "Foráneo",
+    "local_laguna":                     "Local Laguna",
+    "validar_traslado":                 "Validar traslado",
+    "falta_licencia":                   "Falta licencia",
+    "falta_apto":                       "Falta apto",
+    "falta_ciudad":                     "Falta ciudad",
+    "falta_experiencia":                "Falta experiencia",
+    "falta_unidad":                     "Falta unidad",
+    "documentos":                       "Documentos",
+    "seguimiento":                      "Seguimiento",
+    "urgente":                          "Urgente",
+    "bot_activo":                       "Bot activo",
+}
 
 
 def _text(value: Any, default: str = "No disponible") -> str:
@@ -347,7 +376,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         "⏭️ Siguiente acción\n"
         f"{next_action}\n\n"
         "🏷️ Labels\n"
-        f"{', '.join(labels) if labels else 'N/D'}"
+        f"{', '.join(_LABEL_DISPLAY.get(lbl, lbl) for lbl in labels) if labels else 'N/D'}"
     )
 
 

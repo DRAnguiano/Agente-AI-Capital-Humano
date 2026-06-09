@@ -47,19 +47,49 @@ SENCILLO_FACTS = {
 # ── catálogo oficial ──────────────────────────────────────────────────────────
 
 def test_official_labels_count():
-    assert len(OFFICIAL_LABELS) == 23
+    assert len(OFFICIAL_LABELS) == 24
 
 
 def test_official_labels_contains_expected():
     expected = {
-        "aclaracion_pendiente", "bot_activo", "cecati", "disponible_acudir",
-        "documentos", "escuelita", "falta_apto", "falta_ciudad",
-        "falta_experiencia", "falta_licencia", "falta_unidad", "foraneo",
-        "jerga_ambigua", "local_laguna", "objetivo_full_sencillo", "perfil_listo",
-        "reingreso_verificar", "requiere_agente", "requiere_revision_ch",
-        "riesgo_alto", "seguimiento", "urgente", "validar_traslado",
+        "aclaracion_pendiente", "bot_activo", "cecati_sugerido",
+        "considerar_escuelita_transmontes", "considerar_operador_b1",
+        "documentos", "falta_apto", "falta_ciudad", "falta_experiencia",
+        "falta_licencia", "falta_unidad", "foraneo", "jerga_ambigua",
+        "llamada_pendiente", "local_laguna", "objetivo_full_sencillo",
+        "perfil_listo", "reingreso_verificar", "requiere_agente",
+        "requiere_revision_ch", "riesgo_alto", "seguimiento",
+        "urgente", "validar_traslado",
     }
     assert OFFICIAL_LABELS == expected
+
+
+def test_official_labels_no_cecati():
+    assert "cecati" not in OFFICIAL_LABELS
+
+
+def test_official_labels_no_escuelita():
+    assert "escuelita" not in OFFICIAL_LABELS
+
+
+def test_official_labels_no_disponible_acudir():
+    assert "disponible_acudir" not in OFFICIAL_LABELS
+
+
+def test_official_labels_tiene_cecati_sugerido():
+    assert "cecati_sugerido" in OFFICIAL_LABELS
+
+
+def test_official_labels_tiene_considerar_escuelita():
+    assert "considerar_escuelita_transmontes" in OFFICIAL_LABELS
+
+
+def test_official_labels_tiene_llamada_pendiente():
+    assert "llamada_pendiente" in OFFICIAL_LABELS
+
+
+def test_official_labels_tiene_considerar_operador_b1():
+    assert "considerar_operador_b1" in OFFICIAL_LABELS
 
 
 # ── _filter_official_labels ───────────────────────────────────────────────────
@@ -243,3 +273,91 @@ def test_sencillo_no_requiere_fifth_wheel():
     assert "experience.fifth_wheel" not in SENCILLO_FACTS
     result = calculate_candidate_labels(_ctx(SENCILLO_FACTS))
     assert "perfil_listo" in result
+
+
+# ── labels deprecadas nunca en output ────────────────────────────────────────
+
+@pytest.mark.parametrize("facts,requires_human,risk_level", [
+    ({}, False, None),
+    (FULL_FACTS, False, None),
+    (SENCILLO_FACTS, False, None),
+    (FULL_FACTS, True, "high"),
+])
+def test_deprecated_labels_never_emitted(facts, requires_human, risk_level):
+    """cecati, escuelita y disponible_acudir nunca deben aparecer en el output."""
+    result = calculate_candidate_labels(_ctx(facts, requires_human, risk_level))
+    assert "cecati" not in result
+    assert "escuelita" not in result
+    assert "disponible_acudir" not in result
+
+
+# ── nota IA: display de labels nuevas ────────────────────────────────────────
+
+from app.chatwoot_note_sync import render_candidate_note, _LABEL_DISPLAY  # noqa: E402
+
+
+def _nota_con_labels(labels: list[str]) -> str:
+    ctx = {"lead": {}, "facts": {}, "last_message": {}, "conversation": {}}
+    return render_candidate_note(ctx, labels)
+
+
+def test_nota_muestra_cecati_sugerido_en_humano():
+    note = _nota_con_labels(["bot_activo", "cecati_sugerido"])
+    assert "CECATI sugerido" in note
+    assert "cecati_sugerido" not in note
+
+
+def test_nota_muestra_considerar_escuelita_en_humano():
+    note = _nota_con_labels(["bot_activo", "considerar_escuelita_transmontes"])
+    assert "Considerar Escuelita Transmontes" in note
+    assert "considerar_escuelita_transmontes" not in note
+
+
+def test_nota_no_muestra_cecati_raw():
+    """La nota nunca debe mostrar el string raw 'cecati' (label deprecada)."""
+    note = _nota_con_labels(["bot_activo"])
+    assert "cecati\n" not in note.lower()
+    assert note.count("cecati") == 0 or "CECATI sugerido" in note
+
+
+def test_nota_no_muestra_escuelita_raw():
+    """La nota nunca debe mostrar el string raw 'escuelita' (label deprecada)."""
+    note = _nota_con_labels(["bot_activo"])
+    # escuelita no debe aparecer como label en la sección Labels
+    lines = note.split("\n")
+    label_section = next((l for l in lines if "bot_activo" in l.lower() or "Bot activo" in l), "")
+    assert "escuelita" not in label_section
+
+
+def test_label_display_no_contiene_deprecated():
+    """_LABEL_DISPLAY no debe tener keys para labels deprecadas."""
+    assert "cecati" not in _LABEL_DISPLAY
+    assert "escuelita" not in _LABEL_DISPLAY
+    assert "disponible_acudir" not in _LABEL_DISPLAY
+
+
+def test_nota_muestra_considerar_operador_b1_en_humano():
+    note = _nota_con_labels(["bot_activo", "considerar_operador_b1"])
+    assert "Considerar operador B1" in note
+    assert "considerar_operador_b1" not in note
+
+
+def test_perfil_listo_no_depende_de_disponible_acudir():
+    """disponible_acudir no debe completar perfil_listo."""
+    facts_sin_disponible = {
+        "license.category": "E",
+        "medical.apto_status": "vigente",
+        "experience.vehicle_type": "full",
+        "experience.years": "10 años",
+        "documents.labor_letters_status": "available",
+        "candidate.city": "Torreón",
+        "candidate.vacancy_accepted": "sí",
+    }
+    facts_con_disponible = {**facts_sin_disponible, "candidate.availability_to_attend": "sí"}
+    result_sin = calculate_candidate_labels(_ctx(facts_sin_disponible))
+    result_con = calculate_candidate_labels(_ctx(facts_con_disponible))
+    # disponible_acudir no altera perfil_listo
+    assert "perfil_listo" in result_sin
+    assert "perfil_listo" in result_con
+    assert "disponible_acudir" not in result_sin
+    assert "disponible_acudir" not in result_con

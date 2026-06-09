@@ -40,12 +40,14 @@ simplificado en el change `multi-intent-migration`).
 El sistema SHALL aplicar únicamente labels del catálogo oficial definido en
 `chatwoot-label-taxonomy`, calculadas desde Postgres (no desde el LLM). El estado base es
 `bot_activo`; el campo objetivo de experiencia se expresa con `objetivo_full_sencillo`
-(mutuamente excluyente con `cecati` y `escuelita`); la ubicación con `local_laguna` o
-`foraneo` (mutuamente excluyentes, `foraneo` puede sumar `validar_traslado`); los campos
-faltantes con `falta_*`; y el cierre/handoff con `perfil_listo`, `requiere_agente`,
-`requiere_revision_ch`, `riesgo_alto` o `reingreso_verificar` (que remueven `bot_activo`).
-NO SHALL usarse labels legacy fuera del catálogo (`lead_nuevo`, `lead_en_proceso`,
-`operador_sencillo`/`operador_full`/`operador_ambos`, `revisar_licencia`).
+(mutuamente excluyente con `cecati_sugerido` y `considerar_escuelita_transmontes`); la
+ubicación con `local_laguna` o `foraneo` (mutuamente excluyentes, `foraneo` puede sumar
+`validar_traslado`); los campos faltantes con `falta_*`; y el cierre/handoff con
+`perfil_listo`, `requiere_agente`, `requiere_revision_ch`, `riesgo_alto` o
+`reingreso_verificar` (que remueven `bot_activo`).
+NO SHALL usarse labels legacy fuera del catálogo ni labels deprecadas (`cecati`,
+`escuelita`, `disponible_acudir`, `lead_nuevo`, `operador_sencillo`/`operador_full`,
+`revisar_licencia`).
 
 #### Scenario: Avance de completitud
 - **WHEN** el candidato completa campos del núcleo del perfil
@@ -53,7 +55,7 @@ NO SHALL usarse labels legacy fuera del catálogo (`lead_nuevo`, `lead_en_proces
 
 #### Scenario: Estado especial
 - **WHEN** el lead dispara un estado especial (foráneo, no objetivo, handoff)
-- **THEN** se aplica la label oficial correspondiente (`foraneo`+`validar_traslado`, `cecati`/`escuelita`, `requiere_agente`/`requiere_revision_ch`) respetando las exclusividades del catálogo
+- **THEN** se aplica la label oficial correspondiente (`foraneo`+`validar_traslado`, `cecati_sugerido`/`considerar_escuelita_transmontes`, `requiere_agente`/`requiere_revision_ch`) respetando las exclusividades del catálogo
 
 #### Scenario: No usar labels legacy
 - **WHEN** se calcula el conjunto de labels
