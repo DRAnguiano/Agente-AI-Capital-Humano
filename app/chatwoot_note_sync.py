@@ -7,6 +7,32 @@ from .db import get_conn
 
 PENDING_TEXT = "Pendiente"
 
+OFFICIAL_LABELS: frozenset[str] = frozenset({
+    "aclaracion_pendiente",
+    "bot_activo",
+    "cecati",
+    "disponible_acudir",
+    "documentos",
+    "escuelita",
+    "falta_apto",
+    "falta_ciudad",
+    "falta_experiencia",
+    "falta_licencia",
+    "falta_unidad",
+    "foraneo",
+    "jerga_ambigua",
+    "local_laguna",
+    "objetivo_full_sencillo",
+    "perfil_listo",
+    "reingreso_verificar",
+    "requiere_agente",
+    "requiere_revision_ch",
+    "riesgo_alto",
+    "seguimiento",
+    "urgente",
+    "validar_traslado",
+})
+
 
 def _text(value: Any, default: str = "No disponible") -> str:
     if value is None:
@@ -70,6 +96,10 @@ def _stage(value: str | None) -> str:
 
 def _normalize_labels(labels) -> list[str]:
     return sorted({str(label or "").strip().lower() for label in (labels or []) if str(label or "").strip()})
+
+
+def _filter_official_labels(labels) -> list[str]:
+    return [lbl for lbl in _normalize_labels(labels) if lbl in OFFICIAL_LABELS]
 
 
 def _facts_map(rows: list[dict[str, Any]]) -> dict[str, str]:
@@ -181,7 +211,6 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     if (lead.get("risk_level") or "").lower() == "high":
         labels.add("riesgo_alto")
 
-    # Specific document status labels instead of generic "documentos"
     has_license    = bool(facts.get("license.category"))
     has_medical    = facts.get("medical.apto_status") in {"vigente", "sí", "si"}
     has_experience = (
@@ -197,27 +226,10 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     if not has_medical:
         labels.add("falta_apto")
     if not has_letters and (has_license or has_experience):
-        labels.add("falta_cartas")
+        labels.add("documentos")
 
-    # Expiry urgency labels
-    apto_exp = facts.get("medical.apto_expiration_text") or ""
-    lic_exp  = facts.get("license.expiration_text") or ""
-
-    apto_urg = _expiry_urgency(apto_exp)
-    if apto_urg == "urgente":
-        labels.add("apto_por_vencer_urgente")
+    if has_medical:
         labels.discard("falta_apto")
-    elif apto_urg == "revisar":
-        labels.add("apto_por_vencer")
-        labels.discard("falta_apto")
-    elif has_medical:
-        labels.discard("falta_apto")
-
-    lic_urg = _expiry_urgency(lic_exp)
-    if lic_urg == "urgente":
-        labels.add("licencia_por_vencer_urgente")
-    elif lic_urg == "revisar":
-        labels.add("licencia_por_vencer")
 
     if facts.get("documents.submission_status") == "pending_candidate_will_send":
         labels.add("seguimiento")
@@ -233,9 +245,9 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.update({"perfil_listo", "requiere_revision_ch"})
         labels.discard("falta_licencia")
         labels.discard("falta_apto")
-        labels.discard("falta_cartas")
+        labels.discard("documentos")
 
-    return _normalize_labels(labels)
+    return _filter_official_labels(labels)
 
 
 def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_last_message: str | None = None, channel_label: str | None = None) -> str:
