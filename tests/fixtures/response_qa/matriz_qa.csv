@@ -1,0 +1,836 @@
+qa_id,chat_id,question_date,topic,question_type,candidate_question,agent_answer_historica,source_file,route_esperada_sugerida,labels_esperadas_sugeridas,frase_esperada,frases_prohibidas,prioridad,estado_prueba,resultado_actual,comentario_qa
+qa_0001,chat_001,"4/5/2026, 9:25 a. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +1 (843) 974-2463/Chat de WhatsApp con +1 (843) 974-2463.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0002,chat_002,"24/4/2026, 11:43 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +1 (956) 470-3424/Chat de WhatsApp con +1 (956) 470-3424.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0003,chat_003,"4/5/2026, 5:14 p. m.",ubicacion/base; vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Y saber si sería tramo mty nuevo laredo","Hola buenas tardes
+si claro, tengo vacante de tramo",CHATS/Chat de WhatsApp con +1 (956) 757-7628/Chat de WhatsApp con +1 (956) 757-7628.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0004,chat_003,"4/5/2026, 5:16 p. m.",ubicacion/base,solicitud/implícita,"Y disculpe la base sería en nuevo laredo o tiene base en mty
+Yo vivo en mty por eso mi pregunta",Tenemos base en Mty,CHATS/Chat de WhatsApp con +1 (956) 757-7628/Chat de WhatsApp con +1 (956) 757-7628.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0005,chat_003,"4/5/2026, 5:19 p. m.",requisitos/documentos; ubicacion/base; vacante/info_general,solicitud/implícita,Le comento actualmente trabajo de op b1 pero quiero ingresar a una línea que sea solo mty/nld mas que nada busco una buena empresa me podría dar información de requisitos,"Okey mira
+Por favor, puedes envíame foto clara o PDF de los siguientes documentos para validar tu expediente
+✅ Licencia Federal (Ambos lados).
+✅ Apto Médico vigente.
+✅ INE (Ambos lados).
+✅ CURP (Formato actualizado).
+✅ Comprobante de estudios.
+✅ Constancia de Situación Fiscal (RFC).
+✅ Acta de nacimiento.
+✅ Número de Seguridad Social (Hoja del IMSS).
+✅ Comprobante de domicilio reciente.
+✅ Cartas de recomendación de tus últimos empleos
+estos serian los requisitos",CHATS/Chat de WhatsApp con +1 (956) 757-7628/Chat de WhatsApp con +1 (956) 757-7628.txt,considerar_operador_b1,"considerar_operador_b1, requiere_agente, llamada_pendiente",Canalizar a humano; validar inglés; pedir horario 08:00-17:30; no prometer contratación.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; aprobado; contratado; visa garantizada; requisitos migratorios inventados,Alta,PENDIENTE,,
+qa_0006,chat_003,"4/5/2026, 5:35 p. m.",pago/kilometraje,solicitud/implícita,"Si
+Disculpe el pago es por cual nomina",Hsbc,CHATS/Chat de WhatsApp con +1 (956) 757-7628/Chat de WhatsApp con +1 (956) 757-7628.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0007,chat_003,"4/5/2026, 5:36 p. m.",requisitos/documentos,solicitud/implícita,"A ok perfecto
+Solo déjeme le digo a mi esposa que me mande imágenes de algunos documentos y se los envio","Muy bien, estare al pendiente",CHATS/Chat de WhatsApp con +1 (956) 757-7628/Chat de WhatsApp con +1 (956) 757-7628.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0008,chat_003,"4/5/2026, 5:45 p. m.",ubicacion/base; vacante/info_general,solicitud/implícita,Gracias si me interesa mucho de op de tramo mty / nld y trabajar asi para mi no hay problema,"Sin problema, igual si no le contesto ya, mañana le doy seguimiento a los documentos que me mande <Se editó este mensaje.>",CHATS/Chat de WhatsApp con +1 (956) 757-7628/Chat de WhatsApp con +1 (956) 757-7628.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0009,chat_004,23/05/26 2:52 p. m.,circuitos/rutas; licencia/apto; ubicacion/base; vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!
+Buenas tardes tengo apto vigente y licencia vigente
+Conocimiento de rutas león .. México.. Tijuana..Ensenada.. San Quintín.. Toluca.. Guadalajara.. Monterrey.. Puebla.. Queretaro.. durango...torreón ..cd.. Juárez Chihuahua..","Buenos días
+Te encuentras laborando?",CHATS/Chat de WhatsApp con +52 33 2161 6234/Chat de WhatsApp con +52 33 2161 6234.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0010,chat_005,23/05/26 1:07 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días eres operador full o sencillo,CHATS/Chat de WhatsApp con +52 33 2339 5501/Chat de WhatsApp con +52 33 2339 5501.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0011,chat_007,28/05/26 6:52 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 427 123 0849/Chat de WhatsApp con +52 427 123 0849.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0012,chat_007,29/05/26 8:09 a. m.,vacante/info_general,solicitud/implícita,"Si
+Quiero información","Tengo vacante en bajio o bocar son las mismas rutas
+en bajio se paga 2.69 cargado y 1 peso vacio
+bocar 2.90 cargado y vacio",CHATS/Chat de WhatsApp con +52 427 123 0849/Chat de WhatsApp con +52 427 123 0849.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0013,chat_008,"2/5/2026, 4:33 p. m.",ubicacion/base; vacante/info_general,solicitud/implícita,Buenas tardes me puede dar información si tiene alguna vacante para tramo o patio aqui en san Luis,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 444 124 6649/Chat de WhatsApp con +52 444 124 6649.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0014,chat_009,28/05/26 2:07 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 444 332 3288/Chat de WhatsApp con +52 444 332 3288.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0015,chat_010,29/05/26 8:51 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días eres operador full o sencillo,CHATS/Chat de WhatsApp con +52 444 665 5516/Chat de WhatsApp con +52 444 665 5516.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0016,chat_010,30/05/26 3:57 p. m.,tipo_unidad/experiencia; vacante/info_general,solicitud/implícita,Me interesa para sencillo,"Corren para nuevo laredo, Querétaro, toluca, san Luis, aguas
+Se paga 2.69 cargado y 1 peso vacío",CHATS/Chat de WhatsApp con +52 444 665 5516/Chat de WhatsApp con +52 444 665 5516.txt,objetivo_full_sencillo,objetivo_full_sencillo,Reconocer unidad objetivo full/sencillo; continuar perfilamiento; sencillo no es escuelita.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; escuelita; cecati; no aplica,Alta,PENDIENTE,,
+qa_0017,chat_010,30/05/26 9:26 p. m.,pago/kilometraje,solicitud/implícita,Pregunta aparte del pago por kilómetro pagan viáticos y estancias,[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 444 665 5516/Chat de WhatsApp con +52 444 665 5516.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0018,chat_011,17/05/26 11:01 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 444 669 6712/Chat de WhatsApp con +52 444 669 6712.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0019,chat_012,25/05/26 10:39 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 449 577 8342/Chat de WhatsApp con +52 449 577 8342.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0020,chat_012,25/05/26 11:48 a. m.,otros,solicitud/implícita,"A ok
+La unidad que me asignaron está en taller  ya tengo 3 semanas y no me resuelven y pues ando al día","ok
+y cuentas con cartas laborales?",CHATS/Chat de WhatsApp con +52 449 577 8342/Chat de WhatsApp con +52 449 577 8342.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0021,chat_013,01/06/26 8:24 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!
+Buenos días
+Abra vacantes
+Operador 5 rueda",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 461 100 7520/Chat de WhatsApp con +52 461 100 7520.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0022,chat_013,01/06/26 11:28 a. m.,pago/kilometraje; horario/descanso,explícita,"Duda se me olvidó preguntarte acerca de la semana de descanso si es pagada
+??","si, te hacen retención sobre tu nómina",CHATS/Chat de WhatsApp con +52 461 100 7520/Chat de WhatsApp con +52 461 100 7520.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0023,chat_013,01/06/26 11:57 a. m.,otros,solicitud/implícita,Me puede ampliar la especificación,"si, sobre tu nómina a la semana te hacen un descuento puede variar la cantidad ...
+<Multimedia omitido>",CHATS/Chat de WhatsApp con +52 461 100 7520/Chat de WhatsApp con +52 461 100 7520.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0024,chat_013,01/06/26 4:08 p. m.,requisitos/documentos,solicitud/implícita,"Créame que con esto de las mudanza que traía ahorita de hecho me vine de Querétaro para Celaya para buscar esos documentos pero no los encuentro
+Sí solo encontré lo que fue mi acta que fue la que le mandé apenas hace unos minutos",Ok,CHATS/Chat de WhatsApp con +52 461 100 7520/Chat de WhatsApp con +52 461 100 7520.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0025,chat_014,29/05/26 6:23 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 461 390 7600/Chat de WhatsApp con +52 461 390 7600.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0026,chat_014,29/05/26 8:13 a. m.,circuitos/rutas,solicitud/implícita,Me puedes explicar ese de bocar,los dos circuitos son de cliente maquila,CHATS/Chat de WhatsApp con +52 461 390 7600/Chat de WhatsApp con +52 461 390 7600.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0027,chat_016,29/05/26 3:52 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 493 137 3104/Chat de WhatsApp con +52 493 137 3104.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0028,chat_017,30/05/26 3:29 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 55 1835 9213/Chat de WhatsApp con +52 55 1835 9213.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0029,chat_018,22/03/26 8:54 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 56 4536 6899/Chat de WhatsApp con +52 56 4536 6899.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0030,chat_018,23/03/26 8:25 a. m.,licencia/apto; tipo_unidad/experiencia,solicitud/implícita,"Se eliminó este mensaje.
+
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+Esta es una carta de recomendación de cuando maneje torton
+<Multimedia omitido>
+<Multimedia omitido>
+Apto medico",ya no tienes más cartas?,CHATS/Chat de WhatsApp con +52 56 4536 6899/Chat de WhatsApp con +52 56 4536 6899.txt,considerar_escuelita_transmontes,"considerar_escuelita_transmontes, requiere_revision_ch",No convertir a full/sencillo ni a sin experiencia. Mostrar “Considerar Escuelita Transmontes”.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; sin experiencia; cecati; escuelita,Alta,PENDIENTE,,
+qa_0031,chat_018,23/03/26 8:38 a. m.,ubicacion/base,solicitud/implícita,"Soy originario del estado de mexico pero estoy viviendo en san luis potosi
+Le digo que me puedo mover a cualquier parte de la republica
+<Multimedia omitido>
+No encuentro bien la de fletes mexico pero me dijeron que si necesitaba otra actualizada la podía pedir en nuevo laredo
+<Multimedia omitido>",ok compañero,CHATS/Chat de WhatsApp con +52 56 4536 6899/Chat de WhatsApp con +52 56 4536 6899.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0032,chat_018,23/03/26 9:15 a. m.,seguimiento/llamada,solicitud/implícita,"Si la estoy solicitando
+En la empresa
+Que labore",si por favor y la de fletes,CHATS/Chat de WhatsApp con +52 56 4536 6899/Chat de WhatsApp con +52 56 4536 6899.txt,seguimiento_llamada,"llamada_pendiente, seguimiento",Pedir horario disponible entre 08:00 y 17:30; no prometer agenda real si no existe.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0033,chat_019,28/05/26 12:44 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 614 283 6832/Chat de WhatsApp con +52 614 283 6832.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0034,chat_020,31/05/26 12:22 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 618 171 5820/Chat de WhatsApp con +52 618 171 5820.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0035,chat_021,29/05/26 12:45 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 618 293 8289/Chat de WhatsApp con +52 618 293 8289.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0036,chat_021,29/05/26 12:59 p. m.,pago/kilometraje,solicitud/implícita,ASI ONDE ME LA OPORTUNIDAD  Q SUELDO TIENEN,la nómina esta entre 5 mil  10 mil pesos menos deducciones,CHATS/Chat de WhatsApp con +52 618 293 8289/Chat de WhatsApp con +52 618 293 8289.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0037,chat_022,"26/4/2026, 12:24 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 618 304 3099/Chat de WhatsApp con +52 618 304 3099.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0038,chat_022,"26/4/2026, 6:34 p. m.",requisitos/documentos; licencia/apto; tipo_unidad/experiencia; seguimiento/llamada,solicitud/implícita,"Buenos días mi nombre Jesús José Rodriguez Ávila  tengo 51 años radico en Durango.Dgo manejo transmisiones de 18 ,14,16 y automática, experiencia en sencillo ya gran parte de la república  tengo licencia desde 1998 está próxima a vencer pero ya tengo cita para refrendar licencia y apto un accidentalmente en 2019 si tengo cartas  nunca he tenido demandas y tampoco he demandado mi estado de salud es bueno no consumo medicamentos no tengo padecimientos no consumo nada de drogas nada más crédito Infonavit no tengo R control si tengo experiencia","que tal buen día
+Eliminaste este mensaje.
+cuando se le vence su licencia?",CHATS/Chat de WhatsApp con +52 618 304 3099/Chat de WhatsApp con +52 618 304 3099.txt,objetivo_full_sencillo,objetivo_full_sencillo,Reconocer unidad objetivo full/sencillo; continuar perfilamiento; sencillo no es escuelita.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; escuelita; cecati; no aplica,Alta,PENDIENTE,,
+qa_0039,chat_023,25/11/25 12:09 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 625 206 8968/Chat de WhatsApp con +52 625 206 8968.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0040,chat_023,26/11/25 4:25 p. m.,seguimiento/llamada; vacante/info_general,solicitud/implícita,Disculpe que se nesesita para seguir con el proceso si estoy interesado,"solicito licencia, apto y cartas laborales por fa",CHATS/Chat de WhatsApp con +52 625 206 8968/Chat de WhatsApp con +52 625 206 8968.txt,seguimiento_llamada,"llamada_pendiente, seguimiento",Pedir horario disponible entre 08:00 y 17:30; no prometer agenda real si no existe.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0041,chat_023,10/03/26 2:17 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 625 206 8968/Chat de WhatsApp con +52 625 206 8968.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0042,chat_023,10/03/26 5:21 p. m.,ubicacion/base; vacante/info_general,explícita,"Soy operador sensillo
+Mi nombre es Diego Humberto
+Toy interesado en la vacante dodne se encuentra la base de contratación ?","Hola
+es en torreón
+de donde eres?",CHATS/Chat de WhatsApp con +52 625 206 8968/Chat de WhatsApp con +52 625 206 8968.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0043,chat_023,01/06/26 1:29 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 625 206 8968/Chat de WhatsApp con +52 625 206 8968.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0044,chat_024,23/02/26 2:33 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 636 115 4857/Chat de WhatsApp con +52 636 115 4857.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0045,chat_024,23/02/26 4:56 p. m.,vacante/info_general,solicitud/implícita,"Buenaventura chihuahua
+Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 636 115 4857/Chat de WhatsApp con +52 636 115 4857.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0046,chat_024,17/04/26 8:18 a. m.,licencia/apto,explícita,Licencia y apto??,buenos días... si,CHATS/Chat de WhatsApp con +52 636 115 4857/Chat de WhatsApp con +52 636 115 4857.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0047,chat_024,17/04/26 8:56 a. m.,pago/kilometraje,solicitud/implícita,"Tengo 8 meses
+Lo que pasaa es que el sueldo es muy bajo",es base el sueldo?,CHATS/Chat de WhatsApp con +52 636 115 4857/Chat de WhatsApp con +52 636 115 4857.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0048,chat_024,01/06/26 9:49 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 636 115 4857/Chat de WhatsApp con +52 636 115 4857.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0049,chat_024,01/06/26 12:09 p. m.,otros,explícita,"Y como se le aria
+??","las rutas son a nuevo laredo, queretaro, san luis, estado de méxico",CHATS/Chat de WhatsApp con +52 636 115 4857/Chat de WhatsApp con +52 636 115 4857.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0050,chat_025,31/05/26 2:53 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 656 125 1928/Chat de WhatsApp con +52 656 125 1928.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0051,chat_026,01/06/26 10:49 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 656 213 1679/Chat de WhatsApp con +52 656 213 1679.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0052,chat_027,25/05/26 3:03 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 656 550 3138/Chat de WhatsApp con +52 656 550 3138.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0053,chat_030,18/05/26 10:23 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 664 237 7364/Chat de WhatsApp con +52 664 237 7364.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0054,chat_030,18/05/26 11:05 a. m.,requisitos/documentos; ubicacion/base,solicitud/implícita,La verdad entre a laborar la semana pasada a trasportes sago y llegué ala base de nuevo laredo desde el jueves y aún no me dan viaje y es por eso que estoy buscando en otro lado porque necesito generar porque tengo que mandar dinero a mi casa,"ok
+y donde más has laborado?",CHATS/Chat de WhatsApp con +52 664 237 7364/Chat de WhatsApp con +52 664 237 7364.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0055,chat_031,"22/4/2026, 8:35 p. m.",vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Me interesa","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 668 397 2261/Chat de WhatsApp con +52 668 397 2261.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0056,chat_032,21/05/26 3:25 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 712 158 1263/Chat de WhatsApp con +52 712 158 1263.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0057,chat_032,21/05/26 5:31 p. m.,ubicacion/base; seguimiento/llamada,solicitud/implícita,Y donde sería el proceso,"Se hace en Torreón
+Se brinda apoyo con boleto, hospedaje
+Las rutass de bocar es en Querétaro, toluca (lerma), nuevo laredo, san Luis
+Aguascalientes etc",CHATS/Chat de WhatsApp con +52 712 158 1263/Chat de WhatsApp con +52 712 158 1263.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0058,chat_033,"24/4/2026, 3:25 p. m.",requisitos/documentos; vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Que requisitos seocupan para ingresar","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 715 127 9575/Chat de WhatsApp con +52 715 127 9575.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0059,chat_034,"24/4/2026, 8:10 a. m.",requisitos/documentos,solicitud/implícita,"Hola si
+Tiene un costo de $135
+Hay que enviar curp escrito y deposito para iniciar trámite","Si, me podrias pasar tu cuenta por favor
+En cuanto tiempo estaria lista la constancia
+??",CHATS/Chat de WhatsApp con +52 722 365 4272/Chat de WhatsApp con +52 722 365 4272.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0060,chat_034,"13/5/2026, 1:55 p. m.",requisitos/documentos,solicitud/implícita,"A la orden, costo $35
+Hay que enviar curp escrito y nss escritos","perfecto
+[CURP]
+[TEL]
+Ahi le paso el comprobante de pago
+<Multimedia omitido>
+Listo",CHATS/Chat de WhatsApp con +52 722 365 4272/Chat de WhatsApp con +52 722 365 4272.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0061,chat_036,28/05/26 1:00 p. m.,otros,explícita,"🆗
+Como se trabaja?","se paga 1700 la vuelta completa
+se trabaja 26 dias
+x 4 días de descanso",CHATS/Chat de WhatsApp con +52 81 1070 6491/Chat de WhatsApp con +52 81 1070 6491.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0062,chat_036,28/05/26 1:02 p. m.,otros,explícita,Cuantos vueltas son a Laredo?,"algunas veces las cajas en nvo laredo normalmente cruzan por la tarde, entonces puede ser que hagan la vuelta completa entre la noche -madrugada ( no necesariamente la hagan durante el dia)",CHATS/Chat de WhatsApp con +52 81 1070 6491/Chat de WhatsApp con +52 81 1070 6491.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0063,chat_036,28/05/26 1:04 p. m.,requisitos/documentos,solicitud/implícita,"Entonces se da una vuelta diaria
+Y que requisitos piden","licencia federal, apto medico y cartas laborales",CHATS/Chat de WhatsApp con +52 81 1070 6491/Chat de WhatsApp con +52 81 1070 6491.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0064,chat_036,28/05/26 1:06 p. m.,ubicacion/base; prestaciones/banco; horario/descanso,explícita,"Que prestaciones dan???
+
+En que horario y a donde puedo asistir a entrevista","las prestaciones las que marca la ley
+hay fondo de ahorro
+el proceso se hace en línea",CHATS/Chat de WhatsApp con +52 81 1070 6491/Chat de WhatsApp con +52 81 1070 6491.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0065,chat_036,28/05/26 1:08 p. m.,otros,explícita,O sea aqui por whatsap? O en enlace de internet,"si
+te puedo marcar?",CHATS/Chat de WhatsApp con +52 81 1070 6491/Chat de WhatsApp con +52 81 1070 6491.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0066,chat_036,29/05/26 11:20 a. m.,otros,solicitud/implícita,"<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+En la de fletes Mexico se equivocaron en la fecha en la que entre por que hay entre el 25 de abril del 2025","Buenas tardes
+Ya son todas las cartas laborales?",CHATS/Chat de WhatsApp con +52 81 1070 6491/Chat de WhatsApp con +52 81 1070 6491.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0067,chat_037,"3/5/2026, 11:50 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 81 1290 1738/Chat de WhatsApp con +52 81 1290 1738.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0068,chat_038,17/02/26 10:41 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!","Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?
+Anuncio de Instagram Ver detalles ¡Hola! Indícanos cómo podemos ayudarte🚛.",CHATS/Chat de WhatsApp con +52 81 1524 3232/Chat de WhatsApp con +52 81 1524 3232.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0069,chat_038,25/05/26 10:30 a. m.,pago/kilometraje,explícita,Y en cuanto anda la paga ?,1700 la vuelta completa,CHATS/Chat de WhatsApp con +52 81 1524 3232/Chat de WhatsApp con +52 81 1524 3232.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0070,chat_038,25/05/26 11:18 a. m.,circuitos/rutas; ubicacion/base,solicitud/implícita,"No tenía ruta fija
+Era para donde tocara","compañero tu licencia es reciente
+se pide 1 año como antiguedad",CHATS/Chat de WhatsApp con +52 81 1524 3232/Chat de WhatsApp con +52 81 1524 3232.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0071,chat_039,27/05/26 7:26 p. m.,vacante/info_general,solicitud/implícita,"Buenas tardes me puedes dar información
+Sobre el vacante de op 5ta rueda","Hola
+Buenas noches
+Si
+Tienes todo vigente?",CHATS/Chat de WhatsApp con +52 81 2021 1169/Chat de WhatsApp con +52 81 2021 1169.txt,jerga_ambigua_falta_unidad,"jerga_ambigua, falta_unidad",No inferir full/sencillo. Preguntar: ¿Tu experiencia es en tracto full o en sencillo?,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; vehicle_type=full automático; vehicle_type=sencillo automático; fifth_wheel,Alta,PENDIENTE,,
+qa_0072,chat_039,27/05/26 7:57 p. m.,seguimiento/llamada,solicitud/implícita,"Aa ok
+El detalle es de que no ay citas y estoy en espera",[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 81 2021 1169/Chat de WhatsApp con +52 81 2021 1169.txt,seguimiento_llamada,"llamada_pendiente, seguimiento",Pedir horario disponible entre 08:00 y 17:30; no prometer agenda real si no existe.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0073,chat_040,"17/5/2026, 11:13 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 81 2023 5328/Chat de WhatsApp con +52 81 2023 5328.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0074,chat_041,"23/4/2026, 8:42 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 81 2024 8445/Chat de WhatsApp con +52 81 2024 8445.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0075,chat_042,"8/5/2026, 9:17 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 81 2029 8358/Chat de WhatsApp con +52 81 2029 8358.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0076,chat_043,"26/4/2026, 8:36 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 81 2615 3390/Chat de WhatsApp con +52 81 2615 3390.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0077,chat_044,12/05/26 3:06 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!
+Disculpe cuentan con escuela
+.",Hola te paso el número [TEL],CHATS/Chat de WhatsApp con +52 81 2619 8618/Chat de WhatsApp con +52 81 2619 8618.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0078,chat_046,31/05/26 9:26 p. m.,otros,solicitud/implícita,Buenansnoches me podría dar informespara operador 5ta rueda !,Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 81 2893 0977/Chat de WhatsApp con +52 81 2893 0977.txt,jerga_ambigua_falta_unidad,"jerga_ambigua, falta_unidad",No inferir full/sencillo. Preguntar: ¿Tu experiencia es en tracto full o en sencillo?,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; vehicle_type=full automático; vehicle_type=sencillo automático; fifth_wheel,Alta,PENDIENTE,,
+qa_0079,chat_046,01/06/26 1:03 p. m.,ubicacion/base,solicitud/implícita,Si claro a donde,torreón,CHATS/Chat de WhatsApp con +52 81 2893 0977/Chat de WhatsApp con +52 81 2893 0977.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0080,chat_046,01/06/26 1:50 p. m.,otros,solicitud/implícita,Y como seria el traslado,se brinda apoyo,CHATS/Chat de WhatsApp con +52 81 2893 0977/Chat de WhatsApp con +52 81 2893 0977.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0081,chat_048,"27/4/2026, 5:45 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 81 3712 8865/Chat de WhatsApp con +52 81 3712 8865.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0082,chat_049,24/05/26 10:37 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenas tardes eres operador full o sencillo,CHATS/Chat de WhatsApp con +52 81 8023 2151/Chat de WhatsApp con +52 81 8023 2151.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0083,chat_050,"9/5/2026, 12:59 a. m.",vacante/info_general,solicitud/implícita,"<Multimedia omitido>
+Hola linda noche
+Me podria brindar informacion sobre la vacante","Hola buen día
+claro que si
+cuenta con licencia federal y apto vigente?",CHATS/Chat de WhatsApp con +52 81 8601 5631/Chat de WhatsApp con +52 81 8601 5631.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0084,chat_051,26/02/26 2:22 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 833 233 5875/Chat de WhatsApp con +52 833 233 5875.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0085,chat_051,17/03/26 10:53 a. m.,requisitos/documentos; licencia/apto; ubicacion/base; seguimiento/llamada,solicitud/implícita,"Me vine de monterrey xq tengo cita el viernes para mi apto y de lo demas si tengo todo en regla
+Primero Dios el viernes tengo mi apto","ok
+te encuentras laborando?",CHATS/Chat de WhatsApp con +52 833 233 5875/Chat de WhatsApp con +52 833 233 5875.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0086,chat_051,17/03/26 10:56 a. m.,circuitos/rutas,solicitud/implícita,"Tengo como 3 semanas
+Sin laborar
+Estava laborando aya en pesqueria con tranaportes zacarias en la carga suelta para ternium corroendo para el bajio y para puerto de altamira y tampico","ok
+y cuentas con cartas laborales?",CHATS/Chat de WhatsApp con +52 833 233 5875/Chat de WhatsApp con +52 833 233 5875.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0087,chat_051,18/05/26 2:35 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 833 233 5875/Chat de WhatsApp con +52 833 233 5875.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0088,chat_052,07/04/26 5:20 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 833 601 7275/Chat de WhatsApp con +52 833 601 7275.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0089,chat_052,22/05/26 3:18 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 833 601 7275/Chat de WhatsApp con +52 833 601 7275.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0090,chat_052,25/05/26 12:22 p. m.,seguimiento/llamada,solicitud/implícita,"No es que salí en el 2023 de ahi de la coca cola
+Creo ahora se llaman KOF",y tienes número?,CHATS/Chat de WhatsApp con +52 833 601 7275/Chat de WhatsApp con +52 833 601 7275.txt,seguimiento_llamada,"llamada_pendiente, seguimiento",Pedir horario disponible entre 08:00 y 17:30; no prometer agenda real si no existe.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0091,chat_054,01/06/26 9:09 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 846 115 3149/Chat de WhatsApp con +52 846 115 3149.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0092,chat_054,01/06/26 9:16 a. m.,pago/kilometraje,explícita,"Okey y cuanto km meter por semana? si andan movidos?
+Apoyan con transitados?
+Translado?*","la meta por semana son 3,500 km
+en que aspecto?",CHATS/Chat de WhatsApp con +52 846 115 3149/Chat de WhatsApp con +52 846 115 3149.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0093,chat_054,01/06/26 9:18 a. m.,ubicacion/base,explícita,Donde se ubican ustedes?,para hacer proceso en torreón se apoya con boleto,CHATS/Chat de WhatsApp con +52 846 115 3149/Chat de WhatsApp con +52 846 115 3149.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0094,chat_054,01/06/26 9:26 a. m.,vacante/info_general,solicitud/implícita,Y para aplicar la vacante como puedo postularme,"me apoyas con cartas laborales, licencia y apto por favir",CHATS/Chat de WhatsApp con +52 846 115 3149/Chat de WhatsApp con +52 846 115 3149.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0095,chat_054,01/06/26 11:56 a. m.,otros,solicitud/implícita,"Con esa empresa trabajaba sin seguro
+<Multimedia omitido>
+<Multimedia omitido>
+Estos fueron seguros de cargas que me metían para transportar
+Con la empresa tre <Se editó este mensaje.>",si se ocuparia mas cartas laborales compañero,CHATS/Chat de WhatsApp con +52 846 115 3149/Chat de WhatsApp con +52 846 115 3149.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0096,chat_055,19/05/26 4:24 p. m.,pago/kilometraje; circuitos/rutas; ubicacion/base; seguimiento/llamada,explícita,"A como el km cargado y vacío?
+En el proceso firman pagarés en blanco
+Las rutas de Coahuila para donde son?","No
+Que licencia tienes?",CHATS/Chat de WhatsApp con +52 866 160 6183/Chat de WhatsApp con +52 866 160 6183.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0097,chat_055,19/05/26 5:14 p. m.,pago/kilometraje,explícita,"Y la paga?
+De a como","2.69 cargado y 1 peso vacio
+Tramo Monterrey a nuevo laredo la vuelta completa 1700
+Full en manzanillo viajes tabulados",CHATS/Chat de WhatsApp con +52 866 160 6183/Chat de WhatsApp con +52 866 160 6183.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0098,chat_055,19/05/26 5:15 p. m.,tipo_unidad/experiencia,explícita,"Si
+Cuando quedamos en espera de carga se puede dormir en la unidad encendida
+Cuando andamos en el sur
+Si entro al perfil
+Cuánto tabulan por semana en sencillo?
+Más o menos
+Por nada...yo le digo",[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 866 160 6183/Chat de WhatsApp con +52 866 160 6183.txt,objetivo_full_sencillo,objetivo_full_sencillo,Reconocer unidad objetivo full/sencillo; continuar perfilamiento; sencillo no es escuelita.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; escuelita; cecati; no aplica,Alta,PENDIENTE,,
+qa_0099,chat_056,"25/4/2026, 9:37 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 866 283 2811/Chat de WhatsApp con +52 866 283 2811.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0100,chat_057,"18/5/2026, 3:04 p. m.",circuitos/rutas; ubicacion/base; vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Para operador circuito mty Laredo todavía están ocupando","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""
+Hola buenas tardes, si, contamos con vacantes de tramo  pafa mty/nld",CHATS/Chat de WhatsApp con +52 867 100 2773/Chat de WhatsApp con +52 867 100 2773.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0101,chat_058,"12/5/2026, 9:25 p. m.",tipo_unidad/experiencia; vacante/info_general,explícita,"Hola buena noche
+Perdón la hora
+Disculpe tiene vacantes en Torreón para quinta rueda ?","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""
+Buen dia, si tengo vacante disponible para tramo",CHATS/Chat de WhatsApp con +52 867 126 4241/Chat de WhatsApp con +52 867 126 4241.txt,jerga_ambigua_falta_unidad,"jerga_ambigua, falta_unidad",No inferir full/sencillo. Preguntar: ¿Tu experiencia es en tracto full o en sencillo?,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; vehicle_type=full automático; vehicle_type=sencillo automático; fifth_wheel,Alta,PENDIENTE,,
+qa_0102,chat_058,"13/5/2026, 6:58 a. m.",requisitos/documentos; licencia/apto; ubicacion/base,explícita,"Que tramo es perdón ?
+1-b
+En septiembre del 2027 vence con apto vijente
+Si cuento con cartas
+Radico en nuevo laredo pero soy de león gto
+Tengo 43 años
+Soy binacional pero m gustaría bajarme a la mexicana",Tiene experiencia en carretera mexicana?,CHATS/Chat de WhatsApp con +52 867 126 4241/Chat de WhatsApp con +52 867 126 4241.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0103,chat_058,"13/5/2026, 7:05 a. m.",ubicacion/base,solicitud/implícita,"Claro
+Que tramo es disculpe",Tengo disponible vacante para tramo MTY/NLD o vacante para rutas de bajio <Se editó este mensaje.>,CHATS/Chat de WhatsApp con +52 867 126 4241/Chat de WhatsApp con +52 867 126 4241.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0104,chat_058,"13/5/2026, 7:14 a. m.",circuitos/rutas; requisitos/documentos,explícita,"Perfecto pues soy de bajío yo ya te envío cartas
+<Multimedia omitido>
+Es mi carpeta ahy va todo hasta visa vale ?",[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 867 126 4241/Chat de WhatsApp con +52 867 126 4241.txt,considerar_operador_b1,"considerar_operador_b1, requiere_agente, llamada_pendiente",Canalizar a humano; validar inglés; pedir horario 08:00-17:30; no prometer contratación.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; aprobado; contratado; visa garantizada; requisitos migratorios inventados,Alta,PENDIENTE,,
+qa_0105,chat_059,25/05/26 8:53 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 867 135 1087/Chat de WhatsApp con +52 867 135 1087.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0106,chat_059,25/05/26 8:54 a. m.,tipo_unidad/experiencia,solicitud/implícita,"Sencillo
+Ando buscando oportunida para carretera no tengo experiencia tengo 4 años pero de transfer",[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 867 135 1087/Chat de WhatsApp con +52 867 135 1087.txt,cecati_sugerido,cecati_sugerido,Mensaje informativo: no aplica por ahora; existe opción CECATI Gómez Palacio; sin convenio directo; buscar información en internet; puede aplicar al completar curso.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; convenio directo; te damos informes; costos; horarios del curso; direccion exacta,Alta,PENDIENTE,,
+qa_0107,chat_060,"8/5/2026, 11:14 a. m.",otros,solicitud/implícita,Buenas tardes para aplicar como operador,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 867 156 5359/Chat de WhatsApp con +52 867 156 5359.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0108,chat_062,"4/5/2026, 11:22 a. m.",ubicacion/base; vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto? Actualmente radico en Nuevo Laredo Pero voy a cambiar mi lugar de residencia para el área metropolitana de Monterrey,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 867 169 0922/Chat de WhatsApp con +52 867 169 0922.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0109,chat_062,"7/5/2026, 10:05 a. m.",ubicacion/base; horario/descanso,explícita,"Me voy a ir para Apodaca sería dentro de un mes más , me iban a rentar un cuarto en Escobedo Pero me hablaron que  ya   no está disponible
+Pero los descansos serían en Monterrey?","pues tus dias de descanso son en tu lugar de residencia
+trabajas 26 y descansas 4 en tu domicilio
+ya sea MTY o NLD",CHATS/Chat de WhatsApp con +52 867 169 0922/Chat de WhatsApp con +52 867 169 0922.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0110,chat_063,"22/4/2026, 6:35 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 867 172 1955/Chat de WhatsApp con +52 867 172 1955.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0111,chat_064,"11/5/2026, 10:55 a. m.",ubicacion/base,solicitud/implícita,"Buenos días
+toda vía está disponible operador para tramo","Hola buenos días
+Si aun tenemos vacantes de tramo",CHATS/Chat de WhatsApp con +52 867 246 2006/Chat de WhatsApp con +52 867 246 2006.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0112,chat_064,"11/5/2026, 11:02 a. m.",pago/kilometraje; prestaciones/banco; vacante/info_general,explícita,Y tendrá información de cuánto el kilómetro y sus prestaciones sobre el puesto?,"El pago para tramo se paga la vuelta en $850, si es vuelta redonda, se paga en$1,700.
+Por semana se te dan $900 de gastos muertos diferidos en la semana.
+Se trabaja 26 días laborados por 4 de descanso,  Adicional, tenemos  bono de contratación y permanencia (Diferido)  de $15,000.
+Contamos con fondo de ahorro.",CHATS/Chat de WhatsApp con +52 867 246 2006/Chat de WhatsApp con +52 867 246 2006.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0113,chat_065,"22/4/2026, 9:33 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 867 251 1277/Chat de WhatsApp con +52 867 251 1277.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0114,chat_066,"24/4/2026, 1:54 a. m.",tipo_unidad/experiencia; vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Ya no tienen escuelita
+De manejo","[TEL]
+si gustas mandar mensaje al encargado del instituto",CHATS/Chat de WhatsApp con +52 867 255 1730/Chat de WhatsApp con +52 867 255 1730.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0115,chat_067,"27/4/2026, 5:24 p. m.",ubicacion/base; vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Para tramo","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 867 265 3489/Chat de WhatsApp con +52 867 265 3489.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0116,chat_068,"21/4/2026, 4:31 p. m.",vacante/info_general,solicitud/implícita,"Hola muy buenas tardes.
+Me pueden dar información sobre el curso de op 5ta rueda","‎[TEL].vcf (archivo adjunto)
+Buen día, si gustas mandarle mensaje a mi compañero, el se encarga de la escuelita de 5ta rueda",CHATS/Chat de WhatsApp con +52 867 304 1138/Chat de WhatsApp con +52 867 304 1138.txt,cecati_sugerido,cecati_sugerido,Mensaje informativo: no aplica por ahora; existe opción CECATI Gómez Palacio; sin convenio directo; buscar información en internet; puede aplicar al completar curso.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; convenio directo; te damos informes; costos; horarios del curso; direccion exacta,Alta,PENDIENTE,,
+qa_0117,chat_069,"27/4/2026, 9:41 a. m.",licencia/apto; ubicacion/base,solicitud/implícita,"Nuevo laredo
+Si cuento con licencia federak
+Y el apto se me acaba de venser en marzo
+Ando en trámites para renovarlo",ya tiene su cita?,CHATS/Chat de WhatsApp con +52 867 307 0554/Chat de WhatsApp con +52 867 307 0554.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0118,chat_069,"27/4/2026, 10:36 a. m.",ubicacion/base,explícita,"Si
+Pero es aki en nuevo Laredo disculpa
+??","para cuando tiene su licencia
+tramo Mty/Nld",CHATS/Chat de WhatsApp con +52 867 307 0554/Chat de WhatsApp con +52 867 307 0554.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0119,chat_070,23/05/26 11:27 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días eres operador full o sencillo,CHATS/Chat de WhatsApp con +52 867 484 1247/Chat de WhatsApp con +52 867 484 1247.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0120,chat_070,25/05/26 9:55 a. m.,requisitos/documentos; ubicacion/base,solicitud/implícita,"Si está bien
+En dónde puedo acudir para entrevista y entrega de documentos","se hace el proceso en linea conmigo
+y el proceso de contratación es en Torreón
+se brinda apoyo con boleto",CHATS/Chat de WhatsApp con +52 867 484 1247/Chat de WhatsApp con +52 867 484 1247.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0121,chat_070,25/05/26 10:00 a. m.,requisitos/documentos; vacante/info_general,solicitud/implícita,"Okey y que requisitos necesito para la vacante de operador
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>",La edad límite es de 59 años,CHATS/Chat de WhatsApp con +52 867 484 1247/Chat de WhatsApp con +52 867 484 1247.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0122,chat_071,"4/5/2026, 1:38 p. m.",seguimiento/llamada,solicitud/implícita,"<Multimedia omitido>
+<Multimedia omitido>
+Nesecitas fotos por los dos lados","okey,  mira! es que esas cartas no me las aceptan, me piden que vengan membretadas y con folio de la empresa
+le pedí el documento de semanas cotizadas para respaldar la antigüedad/experiencia y por lo que veo solo tiene registro de una empresa bajo el mando de semanas cotizadas",CHATS/Chat de WhatsApp con +52 867 739 2135/Chat de WhatsApp con +52 867 739 2135.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0123,chat_071,"4/5/2026, 1:53 p. m.",requisitos/documentos; vacante/info_general,solicitud/implícita,"<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+‎Javier Almaraz.vcf (archivo adjunto)
+‎Mí Tocayo De Oro.vcf (archivo adjunto)
+Con confianza puedes pedir información no ay ningún problema
+Buenos días Hernán ollé ando con lo dé las cartas tiene que traer el puro logotipo
+Ya ando en eso","sello de la empresa y si es posible que este membretada
+Buen día",CHATS/Chat de WhatsApp con +52 867 739 2135/Chat de WhatsApp con +52 867 739 2135.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0124,chat_072,"11/5/2026, 10:30 p. m.",ubicacion/base; vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Soy de nuevo laredo","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""
+Buen día, tengo vacante para tramo MTY/NLD",CHATS/Chat de WhatsApp con +52 867 751 4646/Chat de WhatsApp con +52 867 751 4646.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0125,chat_073,21/04/26 6:52 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!","Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?
+Hola
+Me pasó tu número Jose Francisco
+Juan Francisco González",CHATS/Chat de WhatsApp con +52 867 905 6699/Chat de WhatsApp con +52 867 905 6699.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0126,chat_074,"20/4/2026, 11:35 a. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 868 363 4319/Chat de WhatsApp con +52 868 363 4319.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0127,chat_074,"20/4/2026, 11:37 a. m.",requisitos/documentos; licencia/apto,solicitud/implícita,"B y E.  Vence 6/9/27
+Si apto vigente 6/9/27
+Si cuánto con cartas laborales
+Matamoros Tamaulipas
+51Año
+Son 5 preguntas","Que tal buen día, me podría compartir sus cartas laborales por favor",CHATS/Chat de WhatsApp con +52 868 363 4319/Chat de WhatsApp con +52 868 363 4319.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0128,chat_074,"20/4/2026, 11:41 a. m.",pago/kilometraje; ubicacion/base,solicitud/implícita,"Disculpa de tramo pagan por movimiento
+
+‎IMG-20260420-WA0008.jpg (archivo adjunto)
+‎IMG-20260420-WA0009.jpg (archivo adjunto)
+‎IMG-20260420-WA0010.jpg (archivo adjunto)
+‎IMG-20260420-WA0011.jpg (archivo adjunto)","El pago para tramo se paga la vuelta en $850, si es vuelta redonda, se paga en$1,700.
+Por semana se te dan $900 de gastos muertos diferidos en la semana.
+Se trabaja 26 días laborados por 4 de descanso,  Adicional, tenemos  bono de contratación y permanencia (Diferido)  de $15,000.
+Contamos con fondo de ahorro.",CHATS/Chat de WhatsApp con +52 868 363 4319/Chat de WhatsApp con +52 868 363 4319.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0129,chat_074,"21/4/2026, 9:24 a. m.",circuitos/rutas; ubicacion/base,solicitud/implícita,"Nomás un mes y medio lo que pasa es que me dijeron que el contrato era para zona norte y no fue así
+Me mandaron para el Bajío y centro para el Bajío si conozco pero para zona centro no
+Me mandaron para Toluca y para allá no conozco
+Por eso ando buscando de tramo","Entiendo, si si tengo vacante para tramo, pero si necesito como apoyo las semanas cotizadas recientes
+Como no tiene cartas laborales recientes,  las semanas cotizadas me sirven pero que sean recientes",CHATS/Chat de WhatsApp con +52 868 363 4319/Chat de WhatsApp con +52 868 363 4319.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0130,chat_074,"21/4/2026, 9:36 a. m.",otros,solicitud/implícita,"Voy a ir a un ciber haber si me pueden ayudar
+‎Constancia de Semanas Cotizadas del Asegurado-4.pdf (archivo adjunto)
+Ya quedó
+Buenos días",[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 868 363 4319/Chat de WhatsApp con +52 868 363 4319.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0131,chat_075,28/05/26 2:52 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!
+Hola. Más información sobre la vacante ""Operador Especializado"" por favor!","Hola
+Eres operador full o sencillo?",CHATS/Chat de WhatsApp con +52 871 105 2328/Chat de WhatsApp con +52 871 105 2328.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0132,chat_075,28/05/26 3:11 p. m.,ubicacion/base,explícita,Ok. en donde se ubican?,"En mieleras
+Hay transporte personal",CHATS/Chat de WhatsApp con +52 871 105 2328/Chat de WhatsApp con +52 871 105 2328.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0133,chat_075,28/05/26 3:12 p. m.,otros,solicitud/implícita,Ok. Lo que pasajes que soy de Reynosa Tamaulipas.,"Se brinda apoyo con boleto, hospedaje
+Estamos en Torreón
+Te quedaría para el bajío",CHATS/Chat de WhatsApp con +52 871 105 2328/Chat de WhatsApp con +52 871 105 2328.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0134,chat_076,17/02/26 8:40 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!
+Se eliminó este mensaje.
+Reigresos","Buenos dias
+me apoyas con tu nombre por favor",CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0135,chat_076,17/02/26 9:38 a. m.,circuitos/rutas,solicitud/implícita,Que circuito  tiene,"es en clarios sencillo
+* SE PAGA POR KM 2.90 CARGADO Y VACIO * RUTAS: CELAYA, TEPEJI DEL RIO, MONTERREY, CD. JUAREZ, NUEVO LAREDO Y TORREON * SON 26 DIAS LABORADOS X 6 DIAS DE DESCANSO
+como vez compañero",CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0136,chat_076,17/02/26 9:57 a. m.,licencia/apto,solicitud/implícita,Tengo como tres meses 4mese que no jalo andaba juntando para la licencia,ya tienes la licencia vigente?,CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0137,chat_076,17/02/26 10:20 a. m.,licencia/apto; ubicacion/base,solicitud/implícita,"Se eliminó este mensaje.
+Aqu fue el último jale nomas que se me venció la licencia
+Son de monterrey
+Se eliminó este mensaje.
+Se eliminó este mensaje.
+Se eliminó este mensaje.",y pediste la carta?,CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0138,chat_076,17/02/26 10:55 a. m.,licencia/apto; vacante/info_general,solicitud/implícita,"Ok gracias
+A cual página se mete
+Para checar yo también
+La licencia
+Me pue pasar la información
+
+Ole sale igual
+Me puede comentar cual página me puedo meter yo para chequear","VOY
+[URL]
+PONE SU NUMERO DE APTO MEDICO Y CURP",CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0139,chat_076,17/02/26 3:49 p. m.,licencia/apto,solicitud/implícita,"Cual es el  plan
+Me aparece  lo mismo austed le aparece  igual  buena tarde
+Va haber jale
+Para presentarme
+Teniendo  la licencia
+Bno que tenga buenas tardes y gracias  x su atención  hay tamos ala orden","Buenas tardes
+hasta que tenga licencia vigente
+y ya solicite referencias",CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0140,chat_076,17/02/26 4:35 p. m.,ubicacion/base; vacante/info_general,solicitud/implícita,"Ok
+Hola. Más información sobre la vacante ""Operador Especializado"" por favor!
+Reygreso
+El otraves no entre x que me la querían dar de patio","Hola
+Me apoyas con tu nombre por favor",CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0141,chat_076,27/05/26 6:08 p. m.,pago/kilometraje; seguimiento/llamada,solicitud/implícita,"<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+Aquí están los recibos de pago y la cita de que me tocaba ahora
+No puedo aplicar  así mientras","Tengo que mandar tu reingreso
+Y si necesitas la licencia y apto compañero
+Ya me espero el lunes",CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0142,chat_076,28/05/26 3:40 p. m.,requisitos/documentos; licencia/apto; seguimiento/llamada,solicitud/implícita,"No x que vine arregl ar la licencia
+X que pensaba devolverme
+Pero como no había citas estaba batallando
+X las citas desde enero
+Y  ya nomas espero el acto pero estaba buscando  opciones aquí osino me devuelvo para aya",ah entiendo,CHATS/Chat de WhatsApp con +52 871 171 8870/Chat de WhatsApp con +52 871 171 8870.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0143,chat_077,01/06/26 12:02 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!","Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?
+Anuncio Ver detalles ¡Hola! Indícanos cómo podemos ayudarte🚛.",CHATS/Chat de WhatsApp con +52 871 236 7511/Chat de WhatsApp con +52 871 236 7511.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0144,chat_077,01/06/26 9:46 a. m.,otros,solicitud/implícita,De un establo que se llama solorzano,es de trailer?,CHATS/Chat de WhatsApp con +52 871 236 7511/Chat de WhatsApp con +52 871 236 7511.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0145,chat_078,"15/5/2026, 4:45 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 871 254 2499/Chat de WhatsApp con +52 871 254 2499.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0146,chat_078,"15/5/2026, 4:46 p. m.",licencia/apto; seguimiento/llamada,solicitud/implícita,"B
+Pero mi Lic está vencida y mi apto por motivos de citas todavía no la renuevo","""Hola,  Muchas gracias por enviarme su respuesta. Revisando la información,  me comentas que tu Licencia se encuentra vencido.
+Por políticas de seguridad y seguros de la empresa, no podemos avanzar con el proceso si los documentos no están vigentes. En cuanto realices tu trámite y tengas tu documento actualizado (o la prórroga oficial), búscame de nuevo para retomar tu contratación de inmediato. ¡Mucho éxito con el trámite!""",CHATS/Chat de WhatsApp con +52 871 254 2499/Chat de WhatsApp con +52 871 254 2499.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0147,chat_079,31/05/26 7:06 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 871 270 3497/Chat de WhatsApp con +52 871 270 3497.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0148,chat_080,01/06/26 1:29 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 871 355 7930 (1)/Chat de WhatsApp con +52 871 355 7930.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0149,chat_080,01/06/26 1:43 p. m.,ubicacion/base,solicitud/implícita,No apenas tengo poco donde si dure 3 años fue en lala transportes,y tienes cartas laborales?,CHATS/Chat de WhatsApp con +52 871 355 7930 (1)/Chat de WhatsApp con +52 871 355 7930.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0150,chat_080,01/06/26 3:37 p. m.,pago/kilometraje; prestaciones/banco,solicitud/implícita,"Y tienen bonos y eso
+O es el puro pago por kilometros","Bonos: Escolar, Eficiencia, Rendimiento, Seguridad (ojo: se da proporcional al ingreso que tengas en tu nómina).",CHATS/Chat de WhatsApp con +52 871 355 7930 (1)/Chat de WhatsApp con +52 871 355 7930.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0151,chat_081,01/06/26 1:29 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 871 355 7930/Chat de WhatsApp con +52 871 355 7930.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0152,chat_081,01/06/26 1:43 p. m.,ubicacion/base,solicitud/implícita,No apenas tengo poco donde si dure 3 años fue en lala transportes,y tienes cartas laborales?,CHATS/Chat de WhatsApp con +52 871 355 7930/Chat de WhatsApp con +52 871 355 7930.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0153,chat_081,01/06/26 3:37 p. m.,pago/kilometraje; prestaciones/banco,solicitud/implícita,"Y tienen bonos y eso
+O es el puro pago por kilometros","Bonos: Escolar, Eficiencia, Rendimiento, Seguridad (ojo: se da proporcional al ingreso que tengas en tu nómina).",CHATS/Chat de WhatsApp con +52 871 355 7930/Chat de WhatsApp con +52 871 355 7930.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0154,chat_082,30/05/26 8:50 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días eres operador full o sencillo,CHATS/Chat de WhatsApp con +52 871 381 0633/Chat de WhatsApp con +52 871 381 0633.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0155,chat_083,28/05/26 11:34 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 871 459 6991/Chat de WhatsApp con +52 871 459 6991.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0156,chat_084,28/05/26 2:00 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 871 511 3935/Chat de WhatsApp con +52 871 511 3935.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0157,chat_084,28/05/26 2:04 p. m.,licencia/apto,explícita,Tengo la licencia vencida apoyan con eso?,no compañero,CHATS/Chat de WhatsApp con +52 871 511 3935/Chat de WhatsApp con +52 871 511 3935.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0158,chat_085,31/05/26 2:00 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 871 513 8512/Chat de WhatsApp con +52 871 513 8512.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0159,chat_085,01/06/26 9:47 a. m.,otros,solicitud/implícita,No hay problemas de que duren mucho para descargar,"no
+son dedicados
+semi",CHATS/Chat de WhatsApp con +52 871 513 8512/Chat de WhatsApp con +52 871 513 8512.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0160,chat_085,01/06/26 9:47 a. m.,pago/kilometraje,explícita,"A muy bien
+El pago es por semana?",sip,CHATS/Chat de WhatsApp con +52 871 513 8512/Chat de WhatsApp con +52 871 513 8512.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0161,chat_085,01/06/26 9:49 a. m.,requisitos/documentos,solicitud/implícita,"<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+Estos son mis documentos por si gustan revizarlos",tienes cartas laborales?,CHATS/Chat de WhatsApp con +52 871 513 8512/Chat de WhatsApp con +52 871 513 8512.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0162,chat_085,01/06/26 9:51 a. m.,otros,solicitud/implícita,Solo que son de ING civil,haberlas,CHATS/Chat de WhatsApp con +52 871 513 8512/Chat de WhatsApp con +52 871 513 8512.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0163,chat_086,27/05/26 7:46 a. m.,otros,solicitud/implícita,"Y cuantos días se trabaja
+O como esta la jugada","son 26 días
+x 4 días de descanso
+se hace prueba de manejo, prueba doping, revisión médica y psicológica
+son dos días de proceso",CHATS/Chat de WhatsApp con +52 871 743 3404/Chat de WhatsApp con +52 871 743 3404.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0164,chat_086,27/05/26 7:49 a. m.,otros,solicitud/implícita,Y a cuanto esta la vuelta,1700 completa,CHATS/Chat de WhatsApp con +52 871 743 3404/Chat de WhatsApp con +52 871 743 3404.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0165,chat_087,"12/5/2026, 10:33 a. m.",otros,solicitud/implícita,Buendia como adaptar mi amiga,"Buen día, a sus ordenes",CHATS/Chat de WhatsApp con +52 871 743 5889/Chat de WhatsApp con +52 871 743 5889.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0166,chat_088,"21/4/2026, 11:33 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 871 887 1143/Chat de WhatsApp con +52 871 887 1143.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0167,chat_089,"28/4/2026, 12:29 p. m.",licencia/apto; tipo_unidad/experiencia; vacante/info_general,explícita,"Hola. ¿Puedo obtener más información sobre esto?
+Buenas tardes tengo licencia y apto médico vigente pero me falta experiencia cuentan con escuelita?","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""
+‎Jose Luis Instituto.vcf (archivo adjunto)
+si gustas mandarle mensaje a el para mayor informacion",CHATS/Chat de WhatsApp con +52 877 255 7998/Chat de WhatsApp con +52 877 255 7998.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0168,chat_090,"16/5/2026, 7:28 a. m.",vacante/info_general,explícita,"<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+<Multimedia omitido>
+EeeeHola. ¿Puedo obtener más información sobre esto?","""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 899 100 3244/Chat de WhatsApp con +52 899 100 3244.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0169,chat_091,20/05/26 11:54 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 899 106 9442/Chat de WhatsApp con +52 899 106 9442.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0170,chat_091,20/05/26 12:30 p. m.,circuitos/rutas; tipo_unidad/experiencia; vacante/info_general,solicitud/implícita,"Full, mire tengo una cotización económica difícil por el momento, para mi refrendo estoy buscando algo en ke pueda trabajar, tengo la Lic B local permanente por el momento, mi Lic federal E, Y ,B, de doble articulado seme venció el 26/03/26, por cuestión de salud familiar de uno de mis hijos$ tuve que ocuparlo no se si tengan alguna vacante para laborar con la Lic local tipo ,B en Loke refrendo mi federal tengo 32 años fulleando con la tipo E tengo 26 años soy Fernando García Muñoz tengo 54 años vivo en reynosa Tamaulipas, mayormente e trabajado en Altamira,manzanillo,Lázaro Cárdenas,no estoy vetado en ningún lado",[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 899 106 9442/Chat de WhatsApp con +52 899 106 9442.txt,objetivo_full_sencillo,objetivo_full_sencillo,Reconocer unidad objetivo full/sencillo; continuar perfilamiento; sencillo no es escuelita.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; escuelita; cecati; no aplica,Alta,PENDIENTE,,
+qa_0171,chat_092,22/05/26 2:28 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 899 114 7636/Chat de WhatsApp con +52 899 114 7636.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0172,chat_092,22/05/26 5:38 p. m.,otros,solicitud/implícita,Prefiero reservarmelo asta que tenga una oportunidad segura  con ustedes,Ok,CHATS/Chat de WhatsApp con +52 899 114 7636/Chat de WhatsApp con +52 899 114 7636.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0173,chat_092,22/05/26 5:41 p. m.,circuitos/rutas; ubicacion/base,solicitud/implícita,"Que ofrecen  de puestos  nacional que rutas o tramo
+Acptan foraneos
+Yo soy de reynosa","buenos días
+tengo vacante de tramo monterrey a nuevo laredo",CHATS/Chat de WhatsApp con +52 899 114 7636/Chat de WhatsApp con +52 899 114 7636.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0174,chat_092,23/05/26 11:46 a. m.,ubicacion/base,solicitud/implícita,"De torreon a monterrey
+O de donde a domde",Monterrey a nuevo laredo,CHATS/Chat de WhatsApp con +52 899 114 7636/Chat de WhatsApp con +52 899 114 7636.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0175,chat_094,30/03/26 7:05 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 899 216 3481/Chat de WhatsApp con +52 899 216 3481.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0176,chat_094,31/03/26 8:40 a. m.,vacante/info_general,solicitud/implícita,Me puedes dar más información,"sip
+se trabaja 26 días
+por 4 días de descanso
+hay patio en nuevo laredo, monterrey, queretaro y aquí en torreón",CHATS/Chat de WhatsApp con +52 899 216 3481/Chat de WhatsApp con +52 899 216 3481.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0177,chat_094,04/04/26 1:20 p. m.,otros,explícita,?,Anuncio de Facebook Ver detalles ¡Hola! Indícanos cómo podemos ayudarte🚛.,CHATS/Chat de WhatsApp con +52 899 216 3481/Chat de WhatsApp con +52 899 216 3481.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0178,chat_094,31/05/26 12:12 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 899 216 3481/Chat de WhatsApp con +52 899 216 3481.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0179,chat_094,01/06/26 8:44 a. m.,ubicacion/base,solicitud/implícita,"Si
+Donde es la base","la base es en torreón
+los patios en nuevo laredo, monterrey, manzanillo y queretaro",CHATS/Chat de WhatsApp con +52 899 216 3481/Chat de WhatsApp con +52 899 216 3481.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0180,chat_094,01/06/26 9:04 a. m.,ubicacion/base,solicitud/implícita,Con base en donde,los patios son a nuevo laredo y queretaro,CHATS/Chat de WhatsApp con +52 899 216 3481/Chat de WhatsApp con +52 899 216 3481.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0181,chat_094,01/06/26 9:11 a. m.,otros,explícita,Un estimado semanal?,entre 5 mil a 10 mil menos deducciones,CHATS/Chat de WhatsApp con +52 899 216 3481/Chat de WhatsApp con +52 899 216 3481.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0182,chat_095,"23/4/2026, 10:24 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 899 266 5990/Chat de WhatsApp con +52 899 266 5990.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0183,chat_096,"13/5/2026, 4:37 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con +52 899 345 2526/Chat de WhatsApp con +52 899 345 2526.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0184,chat_096,"13/5/2026, 4:39 p. m.",requisitos/documentos; ubicacion/base,explícita,"Disculpe en que ciudad tienen base?
+Categoría B Y E
+Vencimiento hasta abril 2028
+Si cuanto con cartas laborales
+Radico en río bravo tamaulipas
+Tengo 41 años","Hola que tal, la matriz se encuentra en Torreón coah y tenemos patio en Monterrey, Nuevo Laredo, Querétaro, Cd Juárez y Manzanillo
+me podría compartir sus cartas laborales por favor
+tengo vacante para tramo MTY/NLD que le pudiera interesar por su lugar de residencia o vacante para Clarios, por la categoría de su licencia",CHATS/Chat de WhatsApp con +52 899 345 2526/Chat de WhatsApp con +52 899 345 2526.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0185,chat_098,24/05/26 3:54 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días eres operador full o sencillo,CHATS/Chat de WhatsApp con +52 899 468 0212/Chat de WhatsApp con +52 899 468 0212.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0186,chat_098,24/05/26 3:32 p. m.,vacante/info_general,solicitud/implícita,"De que se trata mi estimado tiene vacantes o no tiene,,,igual si no hay nada mas digame,,es domingo y lo entiendo",[SIN RESPUESTA EN EL CHAT],CHATS/Chat de WhatsApp con +52 899 468 0212/Chat de WhatsApp con +52 899 468 0212.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0187,chat_099,01/06/26 9:05 a. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con +52 921 389 7349/Chat de WhatsApp con +52 921 389 7349.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0188,chat_099,01/06/26 9:13 a. m.,pago/kilometraje,solicitud/implícita,Si dígame qué necesito y cuánto es el sueldo,se paga por km 2.69 cargado y 1 peso vacio,CHATS/Chat de WhatsApp con +52 921 389 7349/Chat de WhatsApp con +52 921 389 7349.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0189,chat_099,01/06/26 9:15 a. m.,pago/kilometraje; ubicacion/base,solicitud/implícita,Sueldo base tienen,"es como bono de 2,000",CHATS/Chat de WhatsApp con +52 921 389 7349/Chat de WhatsApp con +52 921 389 7349.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0190,chat_099,01/06/26 9:17 a. m.,otros,solicitud/implícita,A ok perfecto dígame que le tengo k mandar,"licencia federal, apto médico y cartas laborales por favor",CHATS/Chat de WhatsApp con +52 921 389 7349/Chat de WhatsApp con +52 921 389 7349.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0191,chat_100,28/05/26 6:35 a. m.,otros,explícita,"AAH OK
+ESPERO EN LA ACERA??","Si, ahí donde está un señalamiento de camión azul",CHATS/Chat de WhatsApp con German Nava Avila Manzanillo/Chat de WhatsApp con German Nava Avila Manzanillo.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0192,chat_100,29/05/26 8:17 p. m.,ubicacion/base,explícita,"GLADYS DISCULPA LA MOLESTIA
+SABE QUE UNIDAD ME VAN A ASIGNAR??
+PREGUNTO PARA SABER DONDE VOY A DORMIR
+O HAY DORMITORIOS??","Esta en el patio?
+En nuevo laredo hay dormitorios",CHATS/Chat de WhatsApp con German Nava Avila Manzanillo/Chat de WhatsApp con German Nava Avila Manzanillo.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0193,chat_100,29/05/26 8:31 p. m.,ubicacion/base,solicitud/implícita,"SEGUN ME INDICO GUSTAVO QUE LA UNIDAD ESTA EN PATIO MONTERREY
+PERO USTED DIGAME PARA DONDE LE DOY",Va de raid,CHATS/Chat de WhatsApp con German Nava Avila Manzanillo/Chat de WhatsApp con German Nava Avila Manzanillo.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0194,chat_100,29/05/26 8:34 p. m.,circuitos/rutas; ubicacion/base,solicitud/implícita,SEGUN VOY PARA MONTERREY Y DE AHI PARA MANZANILLO,"Ah entonces, va para la base de manzanillo",CHATS/Chat de WhatsApp con German Nava Avila Manzanillo/Chat de WhatsApp con German Nava Avila Manzanillo.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0195,chat_100,29/05/26 8:37 p. m.,circuitos/rutas; ubicacion/base,solicitud/implícita,"VOY DE RAITE PARA BASE MONTERREY POR UNA UNIDAD
+Y DE AHI PARA MANZANILLO
+PERO NO ME DIJERON QUE UNIDAD","Ok
+Deje investigo",CHATS/Chat de WhatsApp con German Nava Avila Manzanillo/Chat de WhatsApp con German Nava Avila Manzanillo.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0196,chat_100,29/05/26 8:38 p. m.,otros,solicitud/implícita,"YA ME CONTESTO GISTAVO
+AHORITA ME DICE QUE UNIDAD Y ME DA INDICACIONES","Ah muy bien
+Igual ya mandé mensaje ponerle presión jaja
+Pendientes",CHATS/Chat de WhatsApp con German Nava Avila Manzanillo/Chat de WhatsApp con German Nava Avila Manzanillo.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0197,chat_101,14/05/26 12:08 p. m.,otros,solicitud/implícita,"Lic buenas tardes listo ya rununcie oiga nomas que la carta me dijo que me llegaba junto con el finiquito q
+Pero ya estoy listo para el domingo irme","ok
+y cuando te llega el finiquito?",CHATS/Chat de WhatsApp con Jorge Chaparro/Chat de WhatsApp con Jorge Chaparro.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0198,chat_101,14/05/26 12:14 p. m.,otros,solicitud/implícita,Me dijo que ella me abisaba,"o
+ok
+te puedo marcar ahorita para una entrevista?",CHATS/Chat de WhatsApp con Jorge Chaparro/Chat de WhatsApp con Jorge Chaparro.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0199,chat_101,15/05/26 4:47 p. m.,pago/kilometraje; circuitos/rutas; ubicacion/base,solicitud/implícita,"Bajio laredo mexico y queretaro
+Ok
+Laredo monterrey cuanto paga","se paga 1700 la vuelta completa
+en bajio se paga por km 2.69 cargado y 1 peso vacio",CHATS/Chat de WhatsApp con Jorge Chaparro/Chat de WhatsApp con Jorge Chaparro.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0200,chat_101,15/05/26 5:39 p. m.,vacante/info_general,solicitud/implícita,"Ok
+Oiga lic
+Tengo un amigo que dice que si tiene una vacante bueno son dos me da permiso de darles su numero","Si por favor
+Paseles mi número
+Que digan que viene por parte de usted por fa
+Buenos días",CHATS/Chat de WhatsApp con Jorge Chaparro/Chat de WhatsApp con Jorge Chaparro.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0201,chat_102,"19/5/2026, 5:14 p. m.",vacante/info_general,explícita,Hola. ¿Puedo obtener más información sobre esto?,"""¡Hola! Soy *Hernán Hernández*, de Reclutamiento en *Transmontes*. Gracias por tu interés para la vacante de Operador 5ta Rueda. 🚛
+Para agilizar tu proceso, ¿podrías responder estas 4 preguntas?
+
+1.	¿Qué categoría de Licencia Federal tienes y cuándo vence?
+2.	¿Tu Apto Médico está vigente?
+3.	¿Cuentas con cartas laborales?
+4.	¿En qué ciudad resides actualmente?
+5.     ¿Cuántos años tienes?
+¡Quedo pendiente de tu respuesta para continuar!""",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0202,chat_102,"20/5/2026, 10:57 a. m.",otros,explícita,Bdia disculpe me ara la entrevista o cuando sería???,"Buen día, si hoy
+deme 10 minutos",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0203,chat_102,"20/5/2026, 5:40 p. m.",ubicacion/base,solicitud/implícita,"Una pregunta ❓ es para tramo
+Verdad","Si, para tramo
+Oye, que bueno que me mandaste mensaje, tendra la fotp de su ine por ambos lados? Me falto en su expediente",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,ubicacion_base_traslado,falta_ciudad,Confirmar ciudad/base/traslado sin usar disponibilidad como requisito de perfil listo.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0204,chat_102,"22/5/2026, 1:19 p. m.",otros,solicitud/implícita,Y la semana cuando empieza o como cotiza los viajes para cobro,"Mas tarde me lo pasan
+La semana es de lunes a domingo, los martes les mandan una pre nomina para que verifiquen sus pagos y los dias viernes les depositan nomina <Se editó este mensaje.>",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0205,chat_102,"22/5/2026, 1:34 p. m.",otros,explícita,Con quién tengo el gusto perdón?,Con Hernan Hernandez,CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0206,chat_102,"24/5/2026, 11:14 a. m.",pago/kilometraje,solicitud/implícita,"Cómo es la paga $por viaje los viajes son constantes o cuales son los pormenores
+Estoy en la más grande disposición","En el tramo los viajes si son constantes, no hay tanta demora
+Se paga por semana conforme a los viajes que genero durante la semana",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0207,chat_102,"24/5/2026, 11:15 a. m.",otros,solicitud/implícita,Ok y como es el $ del viaje,"Es de $850 la vuelta, ya si da vuela redonda es de $1,700 la vuelta redonda",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0208,chat_102,"24/5/2026, 11:22 a. m.",licencia/apto,solicitud/implícita,"Si y como andaba con lo de mi licencia si me enrede un poco
+Pero sin problema ya tengo todo actualizado","Muy bien!
+Entonces deme 5minutos y le comparto su boleto
+De acuerdo?",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0209,chat_102,"24/5/2026, 11:24 a. m.",vacante/info_general,solicitud/implícita,"Muy bien
+Solo viajo yo o ay más vacantes por trámite","Viajaran otros compañeros pero son de otras partes
+Quisa a la mejor viaje hoy otro de nuevo laredo tambirn, pero el aun no me confirma, aun me faltan algunos tramites pendientes",CHATS/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD/Chat de WhatsApp con Op. Alejandro Capetillo Rmz MTYNLD.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0210,chat_103,"21/4/2026, 10:32 a. m.",otros,solicitud/implícita,D echo seria cómo reingreso si se puede,"Okey, dame unos minutos para validar tu reingreso",CHATS/Chat de WhatsApp con Op. Juan Manuel Robles Clarios/Chat de WhatsApp con Op. Juan Manuel Robles Clarios.txt,reingreso_verificar,"reingreso_verificar, requiere_agente",Canalizar a humano para revisar historial; no aprobar ni rechazar automáticamente.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Alta,PENDIENTE,,
+qa_0211,chat_104,25/05/26 8:23 a. m.,pago/kilometraje; circuitos/rutas,solicitud/implícita,Oiga cuánto es una prox de lok están pagando yo andaba trabajando en manzanillo,<Multimedia omitido>,CHATS/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0212,chat_104,25/05/26 8:30 a. m.,requisitos/documentos,solicitud/implícita,"Cada cuando es el descanzo
+Tengo k llevar solicitud","trabajas 26 días
+x 4 días de descanso",CHATS/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0213,chat_104,25/05/26 11:36 a. m.,otros,solicitud/implícita,Mai ilo como le boi aser,"si quieres sencillo
+que paso compañero",CHATS/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0214,chat_104,25/05/26 1:54 p. m.,otros,solicitud/implícita,"Soy de aki de San Pedro a 1 hora
+O me tengo k kedar días hay o como",son dos dias de proceso,CHATS/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0215,chat_104,26/05/26 7:43 a. m.,otros,solicitud/implícita,"Cómo me reporto
+En caseta","vienes a proceso con gladys
+te piden ine",CHATS/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0216,chat_104,27/05/26 6:44 p. m.,otros,explícita,"Oya se fueron
+Sino para ir mañana
+??","De eso no tengo datos
+Si hay todavía manzanillo",CHATS/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0217,chat_104,28/05/26 8:53 a. m.,circuitos/rutas,solicitud/implícita,"Pero como le Voi Acer para irme a Manzanillo
+<Multimedia omitido>","en autobús
+Mañana se libera un manzanillo y se va en autobús",CHATS/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo/Chat de WhatsApp con Royer Sanchez Cruz Manzanillo.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0218,chat_106,04/12/25 2:37 p. m.,vacante/info_general,solicitud/implícita,"Hola. Más información sobre la vacante ""Operador Especializado"" por favor!",Buenos días.. Me comunico de Transmontes.. Te atiende Gladys.. Eres operador full o sencillo?,CHATS/Chat de WhatsApp con Sarracino Latoso/Chat de WhatsApp con Sarracino Latoso.txt,vacante_info_general,seguimiento,Responder breve y conducir al siguiente dato del funnel.,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,
+qa_0219,chat_106,05/12/25 10:51 a. m.,pago/kilometraje; circuitos/rutas; prestaciones/banco; vacante/info_general,solicitud/implícita,"Vales d despensa cuanto es
+Bocar que es eso
+Si me interesa
+Con que banco pagan","bocar es piezas automotriz
+se paga con hsbc
+los vales de despensa es proporcional el monto a lo que gane a la semana",CHATS/Chat de WhatsApp con Sarracino Latoso/Chat de WhatsApp con Sarracino Latoso.txt,pago_condiciones,requiere_revision_ch,"Responder con política/RAG si está documentado; no pedir cuentas, depósitos ni datos sensibles.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; deposito; cuenta bancaria; CURP completo; NSS completo,Media,PENDIENTE,,
+qa_0220,chat_106,05/12/25 11:03 a. m.,requisitos/documentos; vacante/info_general,explícita,"Un porcentaje ?
+Que porcentaje pero dígame mientras requisitos si me interesa",sólo que la tarjeta se entrega después de los 3 meses,CHATS/Chat de WhatsApp con Sarracino Latoso/Chat de WhatsApp con Sarracino Latoso.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0221,chat_106,16/05/26 1:38 p. m.,otros,solicitud/implícita,"<Multimedia omitido>
+No cuenta el tienpo que anduvo   con la local el andado con permisionarios y en los rollos de localero
+En ternium","No sarracino
+Se pide un año
+<Multimedia omitido>",CHATS/Chat de WhatsApp con Sarracino Latoso/Chat de WhatsApp con Sarracino Latoso.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0222,chat_106,16/05/26 1:40 p. m.,requisitos/documentos,solicitud/implícita,Si si si ahorita busco unos con esos requisitos,Si por favor,CHATS/Chat de WhatsApp con Sarracino Latoso/Chat de WhatsApp con Sarracino Latoso.txt,documentos_requisitos,documentos,"Pedir/registrar datos en texto. Si envía imagen/documento, no inferir; pedir respuesta textual o revisión humana.",quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir; ya validé tu documento; leí tu imagen; caduca; caducidad,Media,PENDIENTE,,
+qa_0223,chat_106,22/05/26 5:43 p. m.,otros,explícita,"Hola buenas tardes gladis Operador con  1 .5 meses  en permisionario pero fue 16 años marino si lo tomab <Se editó este mensaje.>
+Si lo aceptas
+???
+Se salio porque no le daban ni seguro",No sarracino,CHATS/Chat de WhatsApp con Sarracino Latoso/Chat de WhatsApp con Sarracino Latoso.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.
+qa_0224,chat_106,22/05/26 5:47 p. m.,otros,explícita,X ser marino ?,Por ambas cosas pero más por la del permisionario,CHATS/Chat de WhatsApp con Sarracino Latoso/Chat de WhatsApp con Sarracino Latoso.txt,otros_rag,,,quinta rueda/full; sencillo (escuelita); Capital Humano valida viabilidad; disponible_acudir,Media,PENDIENTE,,Revisar manualmente; puede ser caso de conversación contextual o ruido.

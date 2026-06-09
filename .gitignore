@@ -37,3 +37,6 @@ package-lock.json
 # Respaldos manuales de DB (pg_dump) — no versionar
 schema_pre_*.sql
 facts_pre_*.sql
+
+# QA generated reports — outputs, no versionar
+reports/
