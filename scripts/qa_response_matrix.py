@@ -11,6 +11,14 @@ Modos:
                    Requiere GROQ_API_KEY en entorno.
   --mode full      classify + plan_and_respond. Requiere GROQ_API_KEY.
 
+Flag shadow:
+  --include-business-shadow
+                   Activa el business route shadow classifier en CUALQUIER modo.
+                   Agrega columnas business_* al reporte. Requiere GROQ_API_KEY.
+                   Shadow es read-only: no escribe DB, Chatwoot ni labels.
+                   En --mode dry fuerza 1 LLM call/fila (solo shadow).
+                   En --mode classify/full agrega ~1 LLM call/fila extra.
+
 mapping_status:
   PASS_STRONG    primary o secondary coincide con intent fuerte de la ruta.
   PASS_WEAK      coincide solo por intent amplio; falta business_route para confirmar.
@@ -44,6 +52,15 @@ from typing import Any
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Shadow classifier — wrapper lazy a nivel módulo.
+# El nombre existe aquí (parcheable por patch() en tests), pero el import real
+# ocurre en call time para que test_import_error y entornos sin app/ funcionen.
+def classify_business_route_shadow(*args, **kwargs):  # type: ignore[misc]
+    from app.knowledge.business_route_classifier import (  # noqa: PLC0415
+        classify_business_route_shadow as _fn,
+    )
+    return _fn(*args, **kwargs)
 DEFAULT_INPUT = REPO_ROOT / "tests/fixtures/response_qa/matriz_qa.csv"
 DEFAULT_OUTPUT = REPO_ROOT / "reports/qa_response_matrix.csv"
 
@@ -152,6 +169,47 @@ OUTPUT_COLUMNS = [
     "comment",
 ]
 
+# Columnas del business route shadow classifier (se agregan solo con --include-business-shadow)
+SHADOW_COLUMNS = [
+    # JSON completo (evidencia + confidence)
+    "business_requested_info",
+    "business_explicit_facts",
+    "business_signals",
+    "business_ambiguity_flags",
+    "business_policy_answer_keys",
+    "business_validation_errors",
+    # Escalares / flat (para grep/filtro rápido)
+    "business_requires_human",
+    "business_profile_action",
+    "business_signal_names",
+    "business_requested_info_topics",
+    "business_fact_keys",
+    "business_ambiguity_names",
+    "business_shadow_status",
+    "business_shadow_error",
+    "profile_context_available",
+]
+
+_SHADOW_EMPTY: dict[str, Any] = {
+    "business_requested_info": "[]",
+    "business_explicit_facts": "{}",
+    "business_signals": "[]",
+    "business_ambiguity_flags": "[]",
+    "business_policy_answer_keys": "[]",
+    "business_validation_errors": "[]",
+    "business_requires_human": "",
+    "business_profile_action": "",
+    "business_signal_names": "",
+    "business_requested_info_topics": "",
+    "business_fact_keys": "",
+    "business_ambiguity_names": "",
+    "business_shadow_status": "",
+    "business_shadow_error": "",
+    "profile_context_available": "false",
+}
+
+SHADOW_TOKENS_ESTIMATE = 1200  # aprox tokens por llamada al shadow classifier
+
 
 # ── Helpers — forbidden phrases ───────────────────────────────────────────────
 
@@ -253,6 +311,107 @@ def _extract_vehicle_fact(question: str) -> tuple[str, str]:
     return vt, bfm
 
 
+# ── Business route shadow classifier ─────────────────────────────────────────
+
+def _run_business_shadow(
+    question: str,
+    conv_cls: dict | None = None,
+) -> dict[str, Any]:
+    """Llama al shadow classifier y convierte el output a campos de reporte.
+
+    Never raises. En error devuelve _SHADOW_EMPTY con status=ERROR.
+    Read-only: no escribe DB, Chatwoot ni labels.
+    """
+    try:
+        out = classify_business_route_shadow(
+            text=question,
+            canonical_profile={},
+            asked_field_keys=[],
+            missing_fields=[],
+            conversational_classification=conv_cls,
+        )
+    except ImportError as exc:
+        return {
+            **_SHADOW_EMPTY,
+            "business_shadow_status": "ERROR",
+            "business_shadow_error": f"import_error: {type(exc).__name__}: {exc}",
+        }
+    except Exception as exc:
+        return {
+            **_SHADOW_EMPTY,
+            "business_shadow_status": "ERROR",
+            "business_shadow_error": f"{type(exc).__name__}: {exc}",
+        }
+
+    return {
+        # JSON completo (evidencia + confidence)
+        "business_requested_info": json.dumps(
+            [r.to_dict() for r in out.requested_info], ensure_ascii=False
+        ),
+        "business_explicit_facts": json.dumps(
+            {k: v.to_dict() for k, v in out.explicit_facts.items()}, ensure_ascii=False
+        ),
+        "business_signals": json.dumps(
+            [s.to_dict() for s in out.business_signals], ensure_ascii=False
+        ),
+        "business_ambiguity_flags": json.dumps(
+            [f.to_dict() for f in out.ambiguity_flags], ensure_ascii=False
+        ),
+        "business_policy_answer_keys": json.dumps(
+            out.policy_answer_keys, ensure_ascii=False
+        ),
+        "business_validation_errors": json.dumps(
+            out.validation_errors, ensure_ascii=False
+        ),
+        # Escalares / flat
+        "business_requires_human": out.requires_human,
+        "business_profile_action": out.profile_context_action,
+        "business_signal_names": "|".join(out.signal_names()),
+        "business_requested_info_topics": "|".join(
+            r.category for r in out.requested_info
+        ),
+        "business_fact_keys": "|".join(out.explicit_facts.keys()),
+        "business_ambiguity_names": "|".join(out.flag_names()),
+        "business_shadow_status": "ERROR" if out.shadow_error else "OK",
+        "business_shadow_error": out.shadow_error,
+        "profile_context_available": "false",
+    }
+
+
+def _make_row_fn(base_fn: Any, include_shadow: bool) -> Any:
+    """Envuelve base_fn para agregar shadow fields cuando include_shadow=True.
+
+    La función combinada:
+      1. Llama base_fn(row) → result (puede lanzar; _with_retry lo captura).
+      2. Si include_shadow, extrae conv_cls del result y llama _run_business_shadow.
+      3. Agrega los campos shadow al result.
+
+    _run_business_shadow nunca lanza, así que el paso 2 no puede romper la fila.
+    """
+    if not include_shadow:
+        return base_fn
+
+    def _combined(row: dict[str, str]) -> dict[str, Any]:
+        result = base_fn(row)
+
+        question = (row.get("candidate_question") or "")
+        # Reusar la clasificación conversacional si ya fue calculada
+        conv_cls: dict | None = None
+        primary = result.get("actual_primary_intent", "")
+        if primary and primary not in ("", "ERROR"):
+            try:
+                secondary = json.loads(result.get("actual_secondary_intents", "[]"))
+            except Exception:
+                secondary = []
+            conv_cls = {"primary_intent": primary, "secondary_intents": secondary}
+
+        shadow_fields = _run_business_shadow(question, conv_cls)
+        result.update(shadow_fields)
+        return result
+
+    return _combined
+
+
 # ── Rate limit / retry ────────────────────────────────────────────────────────
 
 def _is_rate_limit(exc: Exception) -> bool:
@@ -283,6 +442,10 @@ _ERROR_FIELDS: dict[str, Any] = {
     "business_fact_match": "",
     "pass_route": False,
     "status": "ERROR",
+    # Shadow fields en error row
+    **_SHADOW_EMPTY,
+    "business_shadow_status": "ERROR",
+    "business_shadow_error": "row_processing_failed",
 }
 
 
@@ -496,6 +659,7 @@ def run(
     stop_before_budget: bool,
     append: bool,
     dry_run: bool,
+    include_business_shadow: bool = False,
 ) -> None:
     with open(input_path, encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
@@ -509,8 +673,15 @@ def run(
     if limit > 0:
         rows = rows[:limit]
 
-    needs_llm = mode in ("classify", "full")
-    eff_sleep = _effective_sleep(rpm, tpm, tokens_per_call, sleep_override) if needs_llm else 0.0
+    needs_llm = mode in ("classify", "full") or include_business_shadow
+    if include_business_shadow:
+        if mode == "dry":
+            effective_tokens = SHADOW_TOKENS_ESTIMATE
+        else:
+            effective_tokens = tokens_per_call + SHADOW_TOKENS_ESTIMATE
+    else:
+        effective_tokens = tokens_per_call
+    eff_sleep = _effective_sleep(rpm, tpm, effective_tokens, sleep_override) if needs_llm else 0.0
 
     if needs_llm and stop_before_budget and daily_budget > 0:
         max_by_budget = daily_budget // tokens_per_call
@@ -522,11 +693,15 @@ def run(
             )
             rows = rows[:max_by_budget]
 
-    est_tokens = len(rows) * tokens_per_call
+    est_tokens = len(rows) * effective_tokens
     est_min = ((len(rows) - 1) * eff_sleep / 60.0) if len(rows) > 1 else 0.0
     print(f"\nCases selected:              {len(rows)}", file=sys.stderr)
+    if include_business_shadow:
+        print("Business shadow:             enabled", file=sys.stderr)
+        print("Business shadow is read-only", file=sys.stderr)
+        print("Business shadow may use LLM", file=sys.stderr)
     if needs_llm:
-        print(f"Estimated tokens/call:       {tokens_per_call}", file=sys.stderr)
+        print(f"Estimated tokens/call:       {effective_tokens}", file=sys.stderr)
         print(f"Estimated total tokens:      {est_tokens:,}", file=sys.stderr)
         print(f"Daily token budget:          {daily_budget:,}", file=sys.stderr)
         print(
@@ -538,7 +713,9 @@ def run(
         print(f"Max retries / backoff base:  {max_retries} / {retry_base_seconds}s", file=sys.stderr)
     print("", file=sys.stderr, flush=True)
 
-    fn = RUN_FN[mode]
+    fn = _make_row_fn(RUN_FN[mode], include_business_shadow)
+    effective_columns = OUTPUT_COLUMNS + (SHADOW_COLUMNS if include_business_shadow else [])
+
     write_header = True
     file_mode = "w"
     if not dry_run:
@@ -551,7 +728,7 @@ def run(
     writer = None
     if not dry_run:
         out_file = open(output_path, file_mode, newline="", encoding="utf-8")
-        writer = csv.DictWriter(out_file, fieldnames=OUTPUT_COLUMNS)
+        writer = csv.DictWriter(out_file, fieldnames=effective_columns)
         if write_header:
             writer.writeheader()
 
@@ -601,6 +778,9 @@ def run(
                 "status":                     status,
                 "comment":                    result.get("comment", ""),
             }
+            if include_business_shadow:
+                for col in SHADOW_COLUMNS:
+                    out_row[col] = result.get(col, _SHADOW_EMPTY.get(col, ""))
 
             if not dry_run and writer and out_file:
                 writer.writerow(out_row)
@@ -697,6 +877,16 @@ def main() -> None:
     # Reanudación
     p.add_argument("--append", action="store_true")
     p.add_argument("--dry-run", action="store_true", help="No escribe archivos de salida")
+    # Shadow classifier
+    p.add_argument(
+        "--include-business-shadow",
+        action="store_true",
+        default=False,
+        help=(
+            "Activa el business route shadow classifier (read-only). "
+            "Agrega columnas business_* al CSV. Requiere GROQ_API_KEY."
+        ),
+    )
     args = p.parse_args()
 
     input_path = Path(args.input)
@@ -704,11 +894,16 @@ def main() -> None:
         print(f"ERROR: No se encontró input: {input_path}", file=sys.stderr)
         sys.exit(1)
 
-    if args.mode in ("classify", "full") and not os.getenv("GROQ_API_KEY"):
-        print("ERROR: GROQ_API_KEY no definida. Usar --mode dry para correr sin LLM.", file=sys.stderr)
+    needs_groq = args.mode in ("classify", "full") or args.include_business_shadow
+    if needs_groq and not os.getenv("GROQ_API_KEY"):
+        print(
+            "ERROR: GROQ_API_KEY no definida. "
+            "Usar --mode dry sin --include-business-shadow para correr sin LLM.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    if args.mode in ("classify", "full"):
+    if args.mode in ("classify", "full") or args.include_business_shadow:
         sys.path.insert(0, str(REPO_ROOT))
 
     run(
@@ -729,6 +924,7 @@ def main() -> None:
         stop_before_budget=args.stop_before_daily_budget,
         append=args.append,
         dry_run=args.dry_run,
+        include_business_shadow=args.include_business_shadow,
     )
 
 
