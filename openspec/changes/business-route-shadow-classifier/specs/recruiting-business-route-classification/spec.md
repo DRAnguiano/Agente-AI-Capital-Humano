@@ -210,3 +210,87 @@ ahora no puede revisar ese tipo de contenido y pedir la respuesta en texto.
 - **THEN** la respuesta agradece y aclara que no puede revisar documentos por ese medio
 - **AND** la respuesta solicita la respuesta en texto
 - **AND** no se extrae ningún fact desde la imagen
+
+#### Scenario: Mensaje mixto multimedia + texto → flag + clasificación del texto
+- **GIVEN** el candidato envía `"<Multimedia omitido> Necesitas fotos por los dos lados?"`
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `ambiguity_flags` contiene `multimedia_no_ocr`
+- **AND** `business_signals` contiene `documentos_requisitos` (evidenciado por el texto)
+- **AND** no se infieren facts desde el contenido multimedia
+
+### Requirement: Multi-intent — pago + pagarés + rutas en un solo mensaje
+
+El sistema SHALL detectar múltiples señales de negocio en un mismo mensaje. Un candidato
+puede hacer preguntas de pago, condiciones de contratación y rutas en un solo turno.
+El sistema SHALL emitir señales para cada categoría y `policy_answer_keys` cuando la
+pregunta activa una respuesta de política predefinida.
+
+#### Scenario: Pago + pagarés en blanco + rutas → multi-señal + policy_answer_key
+- **GIVEN** el candidato dice "¿A cómo el km cargado y vacío? ¿Firman pagarés en blanco? ¿Las rutas de Coahuila para dónde son?"
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `business_signals` contiene `pago_condiciones`
+- **AND** `business_signals` contiene `ubicacion_base_traslado`
+- **AND** `policy_answer_keys` contiene `no_pagares_en_blanco`
+- **AND** `requested_info` tiene al menos 3 elementos
+
+#### Scenario: policy_answer_keys vacío cuando no hay pregunta de pagarés
+- **GIVEN** el candidato dice "¿cuánto paga el km cargado?"
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `policy_answer_keys` está vacío
+
+### Requirement: Queja con interés laboral → señal complaint_with_candidate_interest
+
+El sistema SHALL emitir `complaint_with_candidate_interest` cuando el candidato expresa
+frustración o queja pero simultáneamente demuestra interés en continuar buscando trabajo.
+El sistema SHALL NOT rechazar ni desactivar el perfilamiento. El `profile_context_action`
+SHALL ser `acknowledge_complaint_then_profile`.
+
+#### Scenario: Queja + sigue buscando → señal + acción correcta
+- **GIVEN** el candidato dice "La verdad entré a laborar la semana pasada y aún no me dan viaje, estoy buscando en otro lado"
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `business_signals` contiene `complaint_with_candidate_interest`
+- **AND** `profile_context_action = acknowledge_complaint_then_profile`
+- **AND** `requires_human = false`
+
+### Requirement: Referido — candidato que menciona a un tercero
+
+Si el candidato menciona a otra persona interesada en la vacante, el sistema SHALL
+emitir `referral_candidate_contact` y `profile_context_action = handle_referral`.
+
+#### Scenario: Referido explícito → señal + acción
+- **GIVEN** el candidato dice "Mi cuñado también anda buscando trabajo de operador, ¿le puedo pasar el contacto?"
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `business_signals` contiene `referral_candidate_contact`
+- **AND** `profile_context_action = handle_referral`
+
+### Requirement: Policy router SHALL producir resultados deterministas
+
+El policy router (`validate_business_output`) SHALL producir el mismo output para los
+mismos inputs: facts confirmados (sencillo/full), `requires_human`, y validación de
+vehicle_type son siempre deterministas independientemente del output LLM. El policy
+router SHALL eliminar facts y señales inconsistentes antes de devolver el output final.
+
+#### Scenario: vehicle_type policy es siempre determinista
+- **GIVEN** cualquier mensaje que contenga solo "quinta rueda" como indicio de vehículo
+- **WHEN** `validate_business_output` procesa el output
+- **THEN** `experience.vehicle_type` NUNCA aparece en `explicit_facts`
+- **AND** `requires_human` no es forzado a True (quinta rueda no es B1/reingreso)
+
+### Requirement: El clasificador acepta contexto de perfil sin mutar estado
+
+`classify_business_route_shadow` SHALL aceptar `canonical_profile` como contexto
+read-only para detectar conflictos (e.g., city conflict). SHALL NOT modificar el
+perfil canónico ni disparar acciones de escritura.
+
+#### Scenario: Ciudad nueva contradice perfil canónico → needs_confirmation
+- **GIVEN** el perfil canónico tiene `candidate.city = "Monterrey"`
+- **AND** el candidato dice "soy de Torreón"
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `explicit_facts["candidate.city"].needs_confirmation = true`
+- **AND** el perfil canónico no es modificado
+
+#### Scenario: Ciudad nueva igual al perfil → sin conflicto
+- **GIVEN** el perfil canónico tiene `candidate.city = "Monterrey"`
+- **AND** el candidato dice "soy de Monterrey"
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `explicit_facts["candidate.city"].needs_confirmation = false`

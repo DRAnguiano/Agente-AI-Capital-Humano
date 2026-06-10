@@ -4,52 +4,54 @@
 > Sin commits ni push hasta aprobación explícita de David.
 
 ## C1. Schema / contrato de output (P0)
-- [ ] C1.1 Crear `app/knowledge/business_route_schema.py`: dataclasses `ExplicitFact`,
-      `BusinessSignal`, `AmbiguityFlag`, `BusinessRouteOutput` — sin lógica, solo tipos.
-- [ ] C1.2 Validar que el schema no importa ni DB, ni Chatwoot, ni LLM (solo stdlib/typing).
-- [ ] C1.3 Test `tests/test_business_route_schema.py`: instanciar cada dataclass con valores
-      válidos e inválidos; verificar que confidence fuera de [0,1] falla.
+- [x] C1.1 Crear `app/knowledge/business_route_schema.py`: dataclasses `RequestedInfoItem`,
+      `ExplicitFact`, `BusinessSignal`, `AmbiguityFlag`, `BusinessRouteOutput` — sin lógica,
+      solo tipos. Incluye catálogos `BUSINESS_SIGNALS`, `VALID_VEHICLE_TYPES`,
+      `HUMAN_REQUIRED_SIGNALS`, helpers `has_signal()`, `signal_names()`, `flag_names()`,
+      `to_dict()`, `safe_empty()`.
+- [x] C1.2 Validado: el schema no importa DB, Chatwoot ni LLM (solo stdlib/typing/dataclasses).
+- [x] C1.3 Test `tests/test_business_route_schema.py`: instanciación de todos los dataclasses,
+      to_dict, safe_empty, has_signal, signal_names, flag_names, VALID_VEHICLE_TYPES catalog.
 
-## C2. Extracción de vehicle_type (reutiliza catálogo) (P0)
-- [ ] C2.1 `extract_vehicle_fact(text) → tuple[ExplicitFact | None, AmbiguityFlag | None]`:
-      reutiliza `normalize_domain_values.normalize_vehicle` + `applies_objetivo_full_sencillo`.
-      Sin regex ad-hoc.
-- [ ] C2.2 Test: "Me interesa para sencillo" → `ExplicitFact(value="sencillo", confidence ≥ 0.95)`.
-- [ ] C2.3 Test: "manejo tracto full" → `ExplicitFact(value="full")`.
-- [ ] C2.4 Test: "quinta rueda" → `AmbiguityFlag(name="vehicle_type_ambiguous")`, no fact.
-- [ ] C2.5 Test: "torton" → no fact, no ambiguity flag (non-target, señal escuelita en C3).
-- [ ] C2.6 Test: "trailero" → ambiguity flag (substring match a `trailer` NEEDS_CLARIFICATION).
+## C2. Extracción de vehicle_type + señales de negocio (P0)
+
+> Implementación: pipeline LLM-propone / policy-valida en lugar de detector determinista
+> separado. El LLM propone explicit_facts y business_signals; el policy validator
+> (`validate_business_output`) los verifica contra el catálogo de dominio sin regex ad-hoc.
+
+- [x] C2.1 LLM propone `experience.vehicle_type` en `explicit_facts`. Policy valida usando
+      `normalize_domain_values.normalize_vehicle` sobre el campo `evidence`. Sin regex ad-hoc.
+- [x] C2.2–C2.6 Cubiertos por `test_business_route_policy.py` y `test_business_route_classifier.py`:
+      sencillo/full kept; quinta rueda/trailer rejected → jerga flag; torton → escuelita;
+      trailero → ambiguity (substring match NEEDS_CLARIFICATION).
 
 ## C3. Detección de business_signals (P0)
-- [ ] C3.1 `detect_business_signals(text, intent, facts) → list[BusinessSignal]`:
-      lógica determinista basada en catálogo y hechos ya extraídos.
-- [ ] C3.2 Test `objetivo_full_sencillo`: full/sencillo confirmado → señal emitida.
-- [ ] C3.3 Test `jerga_ambigua_falta_unidad`: quinta rueda/tráiler/trailero → señal emitida.
-- [ ] C3.4 Test `considerar_escuelita_transmontes`: torton/rabón/reparto → señal emitida.
-- [ ] C3.5 Test `cecati_sugerido`: "no tengo experiencia", "quiero aprender" → señal emitida.
-- [ ] C3.6 Test `considerar_operador_b1`: "busco B1", "vacante Estados Unidos" → señal +
-      `requires_human=True`.
-- [ ] C3.7 Test `reingreso_verificar`: "ya trabajé ahí", "quiero volver" → señal +
-      `requires_human=True`.
-- [ ] C3.8 Test negativo: "torton" NO produce `objetivo_full_sencillo`.
-- [ ] C3.9 Test negativo: "quinta rueda" NO produce `vehicle_type=full` ni `vehicle_type=sencillo`.
 
-## C4. Policy router — guard de evidencia (P1)
-- [ ] C4.1 `policy_router_validate(output: BusinessRouteOutput) → BusinessRouteOutput`:
-      elimina facts sin evidencia literal; elimina señales con confidence < 0.7.
-- [ ] C4.2 Test: fact con `evidence=""` → eliminado del output.
-- [ ] C4.3 Test: señal con `confidence=0.5` → eliminada.
-- [ ] C4.4 Test: output válido pasa sin modificaciones.
+> Implementación: LLM clasifica señales; policy valida contra `BUSINESS_SIGNALS` catalog
+> y umbrales de confidence. Auto-corrección cuando vehicle_type fact es rechazado.
+
+- [x] C3.1–C3.9 Cubiertos por policy y classifier tests: objetivo_full_sencillo,
+      jerga_ambigua, escuelita, cecati, B1+requires_human, reingreso+requires_human,
+      negativos (torton ≠ objetivo_full_sencillo, quinta rueda ≠ vehicle_type confirmado).
+
+## C4. Policy validator — guard de evidencia (P1)
+- [x] C4.1 `validate_business_output(output, text, canonical_profile) → BusinessRouteOutput`
+      en `app/knowledge/business_route_policy.py`: elimina facts sin evidencia literal o con
+      confidence < 0.7; elimina señales desconocidas o con confidence < 0.4; fuerza
+      requires_human para HUMAN_REQUIRED_SIGNALS; detecta conflicto de ciudad vs perfil.
+- [x] C4.2 Test: fact con `evidence=""` → eliminado.
+- [x] C4.3 Test: señal con `confidence=0.3` → eliminada.
+- [x] C4.4 Test: output válido con sencillo/full pass.
 
 ## C5. Integración shadow — clasificador completo (P1)
-- [ ] C5.1 `classify_business_route(text: str) → BusinessRouteOutput`:
-      orquesta `classify_message()` + `extract_explicit_facts()` + `detect_business_signals()`
-      + `policy_router_validate()`. Sin escritura a DB.
-- [ ] C5.2 Verificar que `classify_business_route` no importa `db.py`, `tasks_chatwoot.py`
-      ni ningún módulo que escriba estado.
-- [ ] C5.3 Test smoke: "Me interesa para sencillo" → output completo con señal `objetivo_full_sencillo`.
-- [ ] C5.4 Test smoke: "5ta rueda" → ambiguity_flag `vehicle_type_ambiguous`, señal
-      `jerga_ambigua_falta_unidad`.
+- [x] C5.1 `classify_business_route_shadow(text, *, canonical_profile, asked_field_keys,
+      missing_fields, conversational_classification) → BusinessRouteOutput` en
+      `app/knowledge/business_route_classifier.py`. Orquesta LLM + policy. Sin escritura DB.
+- [x] C5.2 Verificado: `business_route_classifier.py` no importa `app.db`,
+      `tasks_chatwoot` ni `app.app`.
+- [x] C5.3 Test smoke (mock): "Me interesa para sencillo" → `objetivo_full_sencillo`.
+- [x] C5.4 Test smoke (mock): "5ta rueda" → `vehicle_type_ambiguous` flag,
+      `jerga_ambigua_falta_unidad` signal.
 
 ## C6. Harness QA — integración shadow output (P1)
 - [ ] C6.1 Añadir `--mode shadow` a `scripts/qa_response_matrix.py`: llama
