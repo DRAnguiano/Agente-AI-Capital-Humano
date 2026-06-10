@@ -78,7 +78,7 @@ ROUTE_STRONG: dict[str, set[str] | None] = {
         "greeting", "candidate_interest", "vacancy_question", "acknowledgement",
     },
     "ubicacion_base_traslado": {
-        "logistics_question", "candidate_answer",
+        "logistics_question", "candidate_answer", "on_route",
     },
     "documentos_requisitos": {
         "documents_question", "document_submission", "candidate_answer",

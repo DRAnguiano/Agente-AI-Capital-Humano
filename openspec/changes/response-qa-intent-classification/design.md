@@ -43,6 +43,31 @@ intent conversacional, el harness extrae hechos usando el catálogo de dominio e
 Verificadas sobre la respuesta histórica del agente y (en `--mode full`) sobre la respuesta
 nueva. Verificación literal, sin regex.
 
+## Gaps detectados — bloque 50–100 (revisión manual)
+
+Estos gaps quedan documentados como REVIEW_MAPPING intencional; no ampliar mappings para
+cubrirlos artificialmente.
+
+| qa_id | intent actual | ruta esperada | gap / acción |
+|---|---|---|---|
+| qa_0054 | `complaint` + `logistics_question` | `documentos_requisitos` | `complaint_with_candidate_interest`: respuesta empática + continuar perfilamiento. No mapear. |
+| qa_0071 | `vacancy_question` | `jerga_ambigua_falta_unidad` | PASS_WEAK correcto. "5ta rueda" no confirma full ni sencillo. |
+| qa_0072 | `complaint` | `seguimiento_llamada` | Requiere contexto de hilo (cita para licencia/apto). No mapear `complaint`. |
+| qa_0078 | `vacancy_question` | `jerga_ambigua_falta_unidad` | PASS_WEAK correcto. Mismo criterio que qa_0071. |
+| qa_0093 | `greeting` | `ubicacion_base_traslado` | `classifier_gap_location_question`: "¿Dónde se ubican?" clasificado erróneamente como saludo. No mapear `greeting`. |
+| qa_0096 | `candidate_answer` | `pago_condiciones` | `classifier_gap_multi_intent`: pregunta de km, pagarés y rutas clasificada como respuesta. No mapear `candidate_answer`. Entrada RAG pendiente: pagarés en blanco. |
+| qa_0100 | `on_route` | `ubicacion_base_traslado` | **CORREGIDO**: `on_route` agregado a ROUTE_STRONG de `ubicacion_base_traslado`. Circuito explícito = logística. |
+
+### Nota sobre qa_0096 — entrada RAG pendiente
+
+```text
+Pregunta: ¿En el proceso firman pagarés en blanco?
+Respuesta: No. En el proceso de contratación no se realizan ese tipo de prácticas.
+Categoría: proceso_contratacion / condiciones
+```
+
+No tocar RAG todavía. Documentado para cuando se revisen fuentes de conocimiento.
+
 ## Decisiones clave
 
 1. El harness es **read-only** siempre: ningún modo escribe en DB, Chatwoot ni send real.
