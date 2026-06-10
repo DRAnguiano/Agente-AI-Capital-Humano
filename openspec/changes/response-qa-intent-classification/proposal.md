@@ -1,3 +1,31 @@
+## Hallazgo post-ejecución: gap conversacional vs ruta de negocio
+
+Al correr los primeros 50 casos con `--mode classify`, se confirmó que el classifier
+existente devuelve **intents conversacionales** correctos, pero la matriz QA contiene
+**rutas de negocio** que no siempre tienen correspondencia 1:1.
+
+Ejemplos concretos:
+- `qa_0030`: pregunta con carta de torton + apto → `document_submission` (correcto conversacionalmente),
+  pero la ruta de negocio es `considerar_escuelita_transmontes`.
+- `qa_0042`: "Soy operador sencillo... dónde está la base" → `candidate_interest`
+  (correcto), pero la ruta QA es `ubicacion_base_traslado`.
+- `qa_0047`: "8 meses. El sueldo es muy bajo" → `complaint` (correcto), pero la
+  ruta QA es `pago_condiciones`.
+
+**Conclusión**: El REVIEW no indica falla del LLM. Indica que el harness evalúa
+compatibilidad provisional entre dos vocabularios distintos. El `mapping_status`
+distingue ahora entre:
+- `PASS`: compatible (primary o secondary intent dentro del mapping).
+- `REVIEW_MAPPING`: conversacionalmente razonable; requiere `business_route` futuro.
+- `CONTRACT_GAP`: ruta sin mapping definido.
+- `ERROR`: excepción técnica.
+
+**Prerequisito para activar comportamiento productivo**: no son estos resultados de QA,
+sino 80%+ `mapping_status=PASS` una vez implementado el `business_route` classifier
+en shadow mode.
+
+---
+
 ## Why
 
 La matriz de preguntas reales (`tests/fixtures/response_qa/matriz_qa.csv`, 224 casos)
