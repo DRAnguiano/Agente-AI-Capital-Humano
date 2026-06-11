@@ -14,7 +14,11 @@ from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
 from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY, INTERNAL_API_KEY
-from .chatwoot_note_sync import sync_chatwoot_candidate_note
+from .chatwoot_note_sync import (
+    TERMINAL_LABELS,
+    _filter_official_labels,
+    sync_chatwoot_candidate_note,
+)
 
 app = FastAPI(default_response_class=ORJSONResponse)
 
@@ -552,19 +556,23 @@ def _normalize_chatwoot_labels(labels) -> list[str]:
 def _fallback_chatwoot_labels(result: dict) -> list[str]:
     """
     Labels básicas si por alguna razón no se puede leer v_rh_work_queue.
+    Solo labels del catálogo oficial; las terminales remueven bot_activo.
     """
-    labels = ["bot_activo"]
+    labels = {"bot_activo"}
 
     if result.get("requires_human"):
-        labels.extend(["requiere_humano", "requiere_revision_ch"])
+        labels.update({"requiere_agente", "requiere_revision_ch"})
 
     if result.get("risk_level") == "high":
-        labels.extend(["riesgo_alto", "requiere_humano"])
+        labels.update({"riesgo_alto", "requiere_agente"})
 
     if result.get("current_stage") == "PROFILE_READY":
-        labels.extend(["perfil_listo", "requiere_revision_ch"])
+        labels.update({"perfil_listo", "requiere_revision_ch"})
 
-    return sorted(set(labels))
+    if labels & TERMINAL_LABELS:
+        labels.discard("bot_activo")
+
+    return _filter_official_labels(labels)
 
 
 def _get_rh_work_queue_metadata(conversation_key: str) -> dict:

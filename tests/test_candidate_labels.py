@@ -342,6 +342,127 @@ def test_nota_muestra_considerar_operador_b1_en_humano():
     assert "considerar_operador_b1" not in note
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# candidate-label-safety — tests ROJOS hasta implementar L2
+# (openspec/changes/candidate-label-safety). No modificar las aserciones al
+# implementar: el código debe ponerse verde, no los tests.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _fallback_labels(result: dict) -> list[str]:
+    # Import perezoso: app.app solo se carga en el entorno de test completo.
+    from app.app import _fallback_chatwoot_labels
+    return _fallback_chatwoot_labels(result)
+
+
+# ── 1. Fallback solo emite labels oficiales ───────────────────────────────────
+
+class TestFallbackLabelsOficiales:
+    def test_fallback_no_emite_requiere_humano(self):
+        labels = _fallback_labels({"requires_human": True})
+        assert "requiere_humano" not in labels
+
+    def test_fallback_emite_requiere_agente_cuando_requiere_humano(self):
+        labels = _fallback_labels({"requires_human": True})
+        assert "requiere_agente" in labels
+
+    def test_fallback_riesgo_alto_no_emite_requiere_humano(self):
+        labels = _fallback_labels({"risk_level": "high"})
+        assert "riesgo_alto" in labels
+        assert "requiere_humano" not in labels
+
+    @pytest.mark.parametrize("result", [
+        {},
+        {"requires_human": True},
+        {"risk_level": "high"},
+        {"current_stage": "PROFILE_READY"},
+        {"requires_human": True, "risk_level": "high", "current_stage": "PROFILE_READY"},
+    ])
+    def test_fallback_solo_labels_oficiales(self, result):
+        labels = _fallback_labels(result)
+        assert set(labels) <= OFFICIAL_LABELS, (
+            f"Fallback emitió labels fuera de catálogo: {set(labels) - OFFICIAL_LABELS}"
+        )
+
+
+# ── 2. perfil_listo requiere unidad confirmada ────────────────────────────────
+
+class TestPerfilListoRequiereUnidad:
+    def test_years_sin_vehicle_type_no_perfil_listo(self):
+        facts = {**FULL_FACTS, "experience.years": "5 años"}
+        facts.pop("experience.vehicle_type")
+        result = calculate_candidate_labels(_ctx(facts))
+        assert "perfil_listo" not in result
+        assert "falta_unidad" in result
+
+    @pytest.mark.parametrize("ambiguous", ["quinta rueda", "tráiler", "trailero", "tractocamión"])
+    def test_vehicle_type_ambiguo_no_perfil_listo(self, ambiguous):
+        facts = {**FULL_FACTS, "experience.years": "5 años",
+                 "experience.vehicle_type": ambiguous}
+        result = calculate_candidate_labels(_ctx(facts))
+        assert "perfil_listo" not in result
+        assert "falta_unidad" in result
+
+    def test_full_completo_perfil_listo(self):
+        facts = {**FULL_FACTS, "experience.years": "5 años"}
+        result = calculate_candidate_labels(_ctx(facts))
+        assert "perfil_listo" in result
+        assert "falta_unidad" not in result
+
+    def test_sencillo_completo_perfil_listo(self):
+        facts = {**SENCILLO_FACTS, "experience.years": "5 años"}
+        result = calculate_candidate_labels(_ctx(facts))
+        assert "perfil_listo" in result
+        assert "falta_unidad" not in result
+
+    def test_falta_unidad_y_perfil_listo_nunca_coexisten(self):
+        # Invariante del contrato sobre ambos perfiles completos y el incompleto.
+        for facts in (FULL_FACTS, SENCILLO_FACTS,
+                      {k: v for k, v in FULL_FACTS.items() if k != "experience.vehicle_type"}):
+            result = calculate_candidate_labels(_ctx(dict(facts)))
+            assert not ({"falta_unidad", "perfil_listo"} <= set(result)), (
+                f"falta_unidad y perfil_listo coexisten para facts={facts}"
+            )
+
+
+# ── 3. Labels terminales remueven bot_activo ─────────────────────────────────
+# Conjunto terminal según openspec/specs/chatwoot-label-taxonomy/spec.md:94-101:
+# perfil_listo, requiere_agente, requiere_revision_ch, riesgo_alto,
+# reingreso_verificar. (reingreso_verificar y considerar_operador_b1 aún no
+# tienen path de emisión en calculate_candidate_labels — deuda N7, fuera de
+# este change; su escenario vive en el spec delta.)
+
+class TestBotActivoTerminales:
+    def test_perfil_listo_remueve_bot_activo(self):
+        result = calculate_candidate_labels(_ctx(FULL_FACTS))
+        assert "perfil_listo" in result
+        assert "bot_activo" not in result
+
+    def test_requiere_agente_remueve_bot_activo(self):
+        result = calculate_candidate_labels(_ctx({}, requires_human=True))
+        assert "requiere_agente" in result
+        assert "bot_activo" not in result
+
+    def test_requiere_revision_ch_remueve_bot_activo(self):
+        result = calculate_candidate_labels(_ctx({}, requires_human=True))
+        assert "requiere_revision_ch" in result
+        assert "bot_activo" not in result
+
+    def test_riesgo_alto_remueve_bot_activo(self):
+        result = calculate_candidate_labels(_ctx({}, risk_level="high"))
+        assert "riesgo_alto" in result
+        assert "bot_activo" not in result
+
+    def test_fallback_perfil_listo_remueve_bot_activo(self):
+        labels = _fallback_labels({"current_stage": "PROFILE_READY"})
+        assert "perfil_listo" in labels
+        assert "bot_activo" not in labels
+
+    def test_bot_activo_permanece_sin_terminales(self):
+        result = calculate_candidate_labels(_ctx({}))
+        assert "bot_activo" in result
+
+
 def test_perfil_listo_no_depende_de_disponible_acudir():
     """disponible_acudir no debe completar perfil_listo."""
     facts_sin_disponible = {

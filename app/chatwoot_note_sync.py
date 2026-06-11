@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from .db import get_conn
+from .knowledge.business_route_schema import VALID_VEHICLE_TYPES
 
 PENDING_TEXT = "Pendiente"
 
@@ -32,6 +33,16 @@ OFFICIAL_LABELS: frozenset[str] = frozenset({
     "seguimiento",
     "urgente",
     "validar_traslado",
+})
+
+# Labels terminales: su presencia remueve bot_activo en todo path de emisión
+# (openspec/specs/chatwoot-label-taxonomy — "Labels terminales remueven bot_activo").
+TERMINAL_LABELS: frozenset[str] = frozenset({
+    "perfil_listo",
+    "requiere_agente",
+    "requiere_revision_ch",
+    "riesgo_alto",
+    "reingreso_verificar",
 })
 
 # Display humano de labels en la nota privada
@@ -242,6 +253,9 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
 
     has_license    = bool(facts.get("license.category"))
     has_medical    = facts.get("medical.apto_status") in {"vigente", "sí", "si"}
+    # Unidad confirmada solo si es exactamente full/sencillo; jerga ambigua
+    # ("quinta rueda", "tráiler"…) no confirma — la aclara el pipeline de comprensión.
+    vehicle_confirmed = facts.get("experience.vehicle_type") in VALID_VEHICLE_TYPES
     has_experience = (
         bool(facts.get("experience.vehicle_type"))
         or bool(facts.get("experience.years"))
@@ -253,6 +267,8 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.add("falta_licencia")
     if not has_medical:
         labels.add("falta_apto")
+    if not vehicle_confirmed:
+        labels.add("falta_unidad")
     if not has_letters and (has_license or has_experience):
         labels.add("documentos")
 
@@ -269,11 +285,15 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.update({"foraneo", "validar_traslado"})
 
     accepted = facts.get("candidate.vacancy_accepted") in {"sí", "si", "yes", "true"}
-    if has_experience and has_license and has_medical and accepted:
+    if vehicle_confirmed and has_license and has_medical and accepted:
         labels.update({"perfil_listo", "requiere_revision_ch"})
         labels.discard("falta_licencia")
         labels.discard("falta_apto")
         labels.discard("documentos")
+
+    # Labels terminales detienen el flujo automático: bot_activo no coexiste.
+    if labels & TERMINAL_LABELS:
+        labels.discard("bot_activo")
 
     return _filter_official_labels(labels)
 
