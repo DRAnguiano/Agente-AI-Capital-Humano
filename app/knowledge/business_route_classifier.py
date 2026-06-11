@@ -68,18 +68,24 @@ SEÑALES (business_signals.name):
 
 CATEGORÍAS requested_info:
 payment_per_km, salary, benefits, rest, route_availability, location_base, route_details,
-documents_required, hiring_practice, vacancy_availability, city_info, general_info
+documents_required, hiring_practice, vacancy_availability, vacancy_information,
+visit_availability, travel_logistics, city_info, general_info
 
 POLICY_ANSWER_KEYS (solo si aplica):
 - no_pagares_en_blanco: si pregunta "firman pagarés en blanco" o similar
 
 AMBIGUITY_FLAGS:
-- vehicle_type_ambiguous: quinta rueda/tráiler/trailero sin decir full/sencillo
+- vehicle_type_ambiguous: SOLO para términos vehiculares del catálogo:
+  quinta rueda, 5ta rueda, tráiler, trailer, trailero, tractocamión, tractocamion.
+  NUNCA para texto genérico que no sea terminología de vehículos.
 - multimedia_no_ocr: hay "<Multimedia omitido>" o imagen/archivo en el mensaje
 - multi_intent_unclear: múltiples preguntas sin intención dominante clara
+- context_missing: la pregunta requiere contexto previo para resolverse (ej. "ya se fueron?")
 
 PROFILE_CONTEXT_ACTION:
-- continue_profiling: continuar con el siguiente campo faltante
+- continue_profiling: continuar con el siguiente campo faltante del perfil
+- answer_or_clarify_current_question_first: el candidato hizo una pregunta o petición
+  que debe responderse o aclararse ANTES de continuar el perfilamiento
 - acknowledge_complaint_then_profile: queja → empatía, luego continuar
 - escalate_to_human: B1 / reingreso / dato sensible
 - await_document_update: candidato espera completar un trámite
@@ -121,6 +127,15 @@ Mensaje: "<Multimedia omitido> Necesitas fotos por los dos lados?"
 
 Mensaje: "Donde se ubican ustedes?"
 {"requested_info":[{"category":"location_base","evidence":"Donde se ubican"}],"explicit_facts":[],"business_signals":[{"name":"ubicacion_base_traslado","evidence":"Donde se ubican","confidence":0.9}],"ambiguity_flags":[],"requires_human":false,"profile_context_action":"continue_profiling","policy_answer_keys":[]}
+
+Mensaje: "Quisiera más información sobre la vacante de operador, gracias."
+{"requested_info":[{"category":"vacancy_information","evidence":"más información sobre la vacante de operador"}],"explicit_facts":[],"business_signals":[{"name":"vacante_info_general","evidence":"más información sobre la vacante de operador","confidence":0.9}],"ambiguity_flags":[],"requires_human":false,"profile_context_action":"answer_or_clarify_current_question_first","policy_answer_keys":[]}
+
+Mensaje: "¿Cómo me traslado a la base de Monterrey?\n<Multimedia omitido>"
+{"requested_info":[{"category":"travel_logistics","evidence":"trasladarme a la base de Monterrey"}],"explicit_facts":[],"business_signals":[{"name":"ubicacion_base_traslado","evidence":"base de Monterrey","confidence":0.85}],"ambiguity_flags":[{"name":"multimedia_no_ocr","evidence":"<Multimedia omitido>"}],"requires_human":false,"profile_context_action":"answer_or_clarify_current_question_first","policy_answer_keys":[]}
+
+Mensaje: "¿Siguen ahí? Quiero ir mañana."
+{"requested_info":[{"category":"visit_availability","evidence":"ir mañana"}],"explicit_facts":[],"business_signals":[],"ambiguity_flags":[{"name":"context_missing","evidence":"siguen ahí"}],"requires_human":false,"profile_context_action":"answer_or_clarify_current_question_first","policy_answer_keys":[]}
 """
 
 
