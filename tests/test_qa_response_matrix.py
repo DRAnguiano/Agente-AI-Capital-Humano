@@ -32,17 +32,16 @@ class TestRunBusinessShadow:
         assert result["business_shadow_status"] == "ERROR"
         assert "import_error" in result["business_shadow_error"]
 
-    def test_empty_question_returns_ok_with_empty_fields(self):
-        from app.knowledge.business_route_classifier import classify_business_route_shadow
-        from app.knowledge.business_route_schema import BusinessRouteOutput
-
+    def test_empty_question_returns_error_empty_message(self):
+        # Mensaje vacío: el classifier devuelve safe_empty("empty_message") sin llamar
+        # al LLM, y el harness lo reporta como fila ERROR trazable.
         with patch(
             "app.knowledge.business_route_classifier.call_groq_json",
-            return_value='{"error": "empty_message"}',
+            side_effect=AssertionError("LLM must not be called for empty message"),
         ):
             result = _run_business_shadow("")
-        # safe_empty on empty_message error
-        assert "business_shadow_status" in result
+        assert result["business_shadow_status"] == "ERROR"
+        assert "empty_message" in result["business_shadow_error"]
 
     def test_valid_output_fields_present(self):
         from app.knowledge.business_route_schema import (
@@ -175,6 +174,40 @@ class TestMakeRowFn:
 
         assert captured_conv.get("primary_intent") == "pay_question"
         assert "logistics_question" in captured_conv.get("secondary_intents", [])
+
+
+# ── Presupuesto ───────────────────────────────────────────────────────────────
+
+class TestBudget:
+    def test_effective_tokens_without_shadow_uses_tokens_per_call(self):
+        from qa_response_matrix import _effective_tokens_per_case
+        assert _effective_tokens_per_case("classify", 800, include_business_shadow=False) == 800
+        assert _effective_tokens_per_case("full", 800, include_business_shadow=False) == 800
+
+    def test_effective_tokens_with_shadow_adds_estimate(self):
+        from qa_response_matrix import SHADOW_TOKENS_ESTIMATE, _effective_tokens_per_case
+        assert (
+            _effective_tokens_per_case("classify", 800, include_business_shadow=True)
+            == 800 + SHADOW_TOKENS_ESTIMATE
+        )
+
+    def test_effective_tokens_dry_with_shadow_is_shadow_only(self):
+        # En modo dry el base run no llama LLM; solo cuenta el shadow.
+        from qa_response_matrix import SHADOW_TOKENS_ESTIMATE, _effective_tokens_per_case
+        assert (
+            _effective_tokens_per_case("dry", 800, include_business_shadow=True)
+            == SHADOW_TOKENS_ESTIMATE
+        )
+
+    def test_budget_row_limit_uses_effective_tokens(self):
+        from qa_response_matrix import _budget_row_limit
+        # 10_000 de budget: a 800/caso caben 12; a 2_000/caso (con shadow) caben 5.
+        assert _budget_row_limit(10_000, 800) == 12
+        assert _budget_row_limit(10_000, 2_000) == 5
+
+    def test_budget_row_limit_never_divides_by_zero(self):
+        from qa_response_matrix import _budget_row_limit
+        assert _budget_row_limit(10_000, 0) == 10_000
 
 
 # ── SHADOW_COLUMNS / OUTPUT_COLUMNS ──────────────────────────────────────────

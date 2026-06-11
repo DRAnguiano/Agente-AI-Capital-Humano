@@ -639,6 +639,30 @@ def run_full(row: dict[str, str]) -> dict[str, Any]:
 RUN_FN = {"dry": run_dry, "classify": run_classify, "full": run_full}
 
 
+# ── Presupuesto ───────────────────────────────────────────────────────────────
+
+def _effective_tokens_per_case(
+    mode: str,
+    tokens_per_call: int,
+    include_business_shadow: bool,
+) -> int:
+    """Tokens estimados por caso según modo y shadow.
+
+    Sin shadow: tokens_per_call. Con shadow: tokens_per_call + SHADOW_TOKENS_ESTIMATE
+    (en modo dry solo el shadow llama al LLM, así que es SHADOW_TOKENS_ESTIMATE).
+    """
+    if include_business_shadow:
+        if mode == "dry":
+            return SHADOW_TOKENS_ESTIMATE
+        return tokens_per_call + SHADOW_TOKENS_ESTIMATE
+    return tokens_per_call
+
+
+def _budget_row_limit(daily_budget: int, effective_tokens: int) -> int:
+    """Máximo de filas que caben en el presupuesto diario al costo efectivo por caso."""
+    return daily_budget // max(effective_tokens, 1)
+
+
 # ── Runner principal ──────────────────────────────────────────────────────────
 
 def run(
@@ -674,20 +698,14 @@ def run(
         rows = rows[:limit]
 
     needs_llm = mode in ("classify", "full") or include_business_shadow
-    if include_business_shadow:
-        if mode == "dry":
-            effective_tokens = SHADOW_TOKENS_ESTIMATE
-        else:
-            effective_tokens = tokens_per_call + SHADOW_TOKENS_ESTIMATE
-    else:
-        effective_tokens = tokens_per_call
+    effective_tokens = _effective_tokens_per_case(mode, tokens_per_call, include_business_shadow)
     eff_sleep = _effective_sleep(rpm, tpm, effective_tokens, sleep_override) if needs_llm else 0.0
 
     if needs_llm and stop_before_budget and daily_budget > 0:
-        max_by_budget = daily_budget // tokens_per_call
+        max_by_budget = _budget_row_limit(daily_budget, effective_tokens)
         if len(rows) > max_by_budget:
             print(
-                f"[budget] {len(rows)} × {tokens_per_call} = {len(rows)*tokens_per_call:,} "
+                f"[budget] {len(rows)} × {effective_tokens} = {len(rows)*effective_tokens:,} "
                 f"> budget {daily_budget:,}. Recortando a {max_by_budget} casos.",
                 file=sys.stderr, flush=True,
             )
