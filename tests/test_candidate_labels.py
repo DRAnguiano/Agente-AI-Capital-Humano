@@ -301,15 +301,17 @@ def _nota_con_labels(labels: list[str]) -> str:
     return render_candidate_note(ctx, labels)
 
 
-def test_nota_muestra_cecati_sugerido_en_humano():
+def test_nota_sin_labels_en_cuerpo_con_cecati_sugerido():
+    # Contrato chatwoot-ai-note: las labels NO se renderizan en el cuerpo de la nota
+    # (antes este test exigía el display "CECATI sugerido"; el contrato lo supersedió).
     note = _nota_con_labels(["bot_activo", "cecati_sugerido"])
-    assert "CECATI sugerido" in note
+    assert "🏷️ Labels" not in note
     assert "cecati_sugerido" not in note
 
 
-def test_nota_muestra_considerar_escuelita_en_humano():
+def test_nota_sin_labels_en_cuerpo_con_considerar_escuelita():
     note = _nota_con_labels(["bot_activo", "considerar_escuelita_transmontes"])
-    assert "Considerar Escuelita Transmontes" in note
+    assert "🏷️ Labels" not in note
     assert "considerar_escuelita_transmontes" not in note
 
 
@@ -336,9 +338,9 @@ def test_label_display_no_contiene_deprecated():
     assert "disponible_acudir" not in _LABEL_DISPLAY
 
 
-def test_nota_muestra_considerar_operador_b1_en_humano():
+def test_nota_sin_labels_en_cuerpo_con_considerar_operador_b1():
     note = _nota_con_labels(["bot_activo", "considerar_operador_b1"])
-    assert "Considerar operador B1" in note
+    assert "🏷️ Labels" not in note
     assert "considerar_operador_b1" not in note
 
 

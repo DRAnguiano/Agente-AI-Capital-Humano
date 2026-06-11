@@ -314,8 +314,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     apto_exp_text = _fact(facts, "medical.apto_expiration_text", default="")
     documents_status_raw = _fact(facts, "documents.submission_status", "documents.labor_letters", "interest.requirements_documents")
     city = _fact(facts, "candidate.city")
-    availability_raw = _fact(facts, "candidate.availability_status")
-    payment_raw = _fact(facts, "interest.payment", default="No detectado")
+    age = _fact(facts, "candidate.age")
 
     if vehicle_type_raw == "full":
         experience_display = "Tracto full"
@@ -327,19 +326,14 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         experience_display = PENDING_TEXT
     medical_status = _human_fact(medical_status_raw)
     documents_status = _human_fact(documents_status_raw)
-    availability = _human_fact(availability_raw)
-    payment = _human_fact(payment_raw, "No detectado")
 
     next_action = _text(lead.get("next_best_action"), "Continuar flujo automático según etapa actual.")
-    memory = _text(lead.get("memory_summary"), "Candidato en seguimiento. Falta completar datos clave del perfil.")
     stage_value = lead.get("funnel_stage")
 
     # Protección contra memoria vieja: si el apto está vigente, no pedir actualización.
     if _is_vigente(medical_status_raw):
         if "actualice apto" in next_action.lower() or "actualizar apto" in next_action.lower():
             next_action = "Continuar revisión del perfil; apto médico reportado como vigente."
-        if "vencido" in memory.lower() or "próximo a vencer" in memory.lower() or "proximo a vencer" in memory.lower():
-            memory = "El candidato reportó apto médico vigente."
         if str(stage_value or "").lower() == "apto_pending_update":
             stage_value = "profile_hint_collected"
 
@@ -365,38 +359,49 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     elif not has_city:
         blocker = "Falta confirmar ciudad de residencia"
 
+    # ⚠️ condicional: derivada de los mismos has_* del blocker (campos núcleo).
+    # El renderer no reclasifica ni inventa pendientes.
+    pendientes: list[str] = []
+    if not has_vehicle_type:
+        pendientes.append("Tipo de unidad: confirmar tracto full o sencillo")
+    if not has_license:
+        pendientes.append("Licencia: pendiente de validar")
+    if not has_medical:
+        pendientes.append("Apto médico: pendiente de validar")
+    if not has_city:
+        pendientes.append("Ciudad: pendiente de confirmar")
+    pendientes_block = (
+        ("⚠️ Pendientes o conflictos\n" + "\n".join(pendientes) + "\n\n")
+        if pendientes else ""
+    )
+
     requires_human = "Sí" if lead.get("requires_human") else "No"
 
     return (
         "🤖 Nota IA: Seguimiento de candidato\n\n"
-        f"Acción: {next_action}\n"
         f"Último mensaje: \"{message}\"\n\n"
         "👤 Contacto\n"
         f"Nombre: {_text(lead.get('display_name'))}\n"
         f"Teléfono: {_text(lead.get('phone'))}\n"
         f"Canal: {_text(channel_label or conversation.get('channel') or lead.get('source_channel'), 'Chatwoot')}\n\n"
-        "🧠 Memoria breve\n"
-        f"{memory}\n\n"
-        "📋 Perfil detectado\n"
+        "📋 Perfil confirmado\n"
         f"Tipo de unidad: {experience_display}\n"
         f"Experiencia: {years}\n"
         f"Licencia: {_human_fact(license_category)}"
-        + (f" · vigencia {apto_exp_text}" if license_exp_text and license_exp_text != PENDING_TEXT else "") + "\n"
+        + (f" · vigencia {license_exp_text}" if license_exp_text and license_exp_text != PENDING_TEXT else "") + "\n"
         f"Apto médico: {medical_status}"
         + (f" · {apto_exp_text}" if apto_exp_text and apto_exp_text != PENDING_TEXT else "") + "\n"
         f"Cartas/documentos: {documents_status}\n"
         f"Ciudad: {city}\n"
-        f"Disponibilidad actual: {availability}\n"
-        f"Interés en pago/compensación: {payment}\n\n"
+        f"Edad: {age}\n\n"
+        + pendientes_block +
         "📍 Embudo\n"
         f"Etapa: {_stage(stage_value)}\n"
         f"Bloqueo actual: {blocker}\n"
         f"Riesgo: {_risk(lead.get('risk_level'))}\n"
         f"Requiere humano: {requires_human}\n\n"
         "⏭️ Siguiente acción\n"
-        f"{next_action}\n\n"
-        "🏷️ Labels\n"
-        f"{', '.join(_LABEL_DISPLAY.get(lbl, lbl) for lbl in labels) if labels else 'N/D'}"
+        f"{next_action}"
     )
 
 

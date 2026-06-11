@@ -47,7 +47,7 @@ def test_f26_nota_sin_temperatura():
 def test_f26_nota_conserva_secciones_clave():
     # No regresión: las secciones operativas siguen presentes.
     nota = _nota_minima()
-    for seccion in ("👤 Contacto", "📋 Perfil detectado", "📍 Embudo", "⏭️ Siguiente acción"):
+    for seccion in ("👤 Contacto", "📋 Perfil confirmado", "📍 Embudo", "⏭️ Siguiente acción"):
         assert seccion in nota
 
 
