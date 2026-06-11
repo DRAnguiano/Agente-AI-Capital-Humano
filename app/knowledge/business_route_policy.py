@@ -5,17 +5,30 @@ Responsabilidades:
 - Rechazar vehicle_type facts donde el catálogo no confirma el término (NEEDS_CLARIFICATION
   o NON_TARGET) y agregar automáticamente la señal/flag correcta.
 - Eliminar señales desconocidas o con confidence insuficiente.
+- Eliminar requested_info con categoría fuera de VALID_REQUESTED_INFO_CATEGORIES.
+- Eliminar ambiguity_flags con nombre fuera de AMBIGUITY_FLAG_NAMES; para
+  vehicle_type_ambiguous exigir evidencia que el catálogo vehicular resuelva
+  a NEEDS_CLARIFICATION.
+- Reemplazar profile_context_action desconocida por continue_profiling.
+- Eliminar policy_answer_keys fuera de POLICY_ANSWER_KEYS.
 - Forzar requires_human=True cuando hay señales que lo exigen (B1, reingreso).
 - Marcar needs_confirmation cuando un city fact contradice el perfil canónico.
+
+Todo descarte o corrección queda trazado en validation_errors.
 """
 from __future__ import annotations
 
 from app.knowledge.business_route_schema import (
     AmbiguityFlag,
+    AMBIGUITY_FLAG_NAMES,
     BusinessRouteOutput,
     BusinessSignal,
     BUSINESS_SIGNALS,
     HUMAN_REQUIRED_SIGNALS,
+    POLICY_ANSWER_KEYS,
+    PROFILE_CONTEXT_ACTIONS,
+    RequestedInfoItem,
+    VALID_REQUESTED_INFO_CATEGORIES,
     VALID_VEHICLE_TYPES,
 )
 from app.knowledge.normalize_domain_values import normalize_vehicle
@@ -136,7 +149,57 @@ def validate_business_output(
         valid_signals.append(sig)
     output.business_signals = valid_signals
 
-    # ── 3. Enforce requires_human ─────────────────────────────────────────────
+    # ── 3. Validate requested_info categories ─────────────────────────────────
+    valid_requested: list[RequestedInfoItem] = []
+    for item in output.requested_info:
+        if item.category not in VALID_REQUESTED_INFO_CATEGORIES:
+            errors.append(f"unknown_requested_info_category: {item.category!r}")
+            continue
+        valid_requested.append(item)
+    output.requested_info = valid_requested
+
+    # ── 4. Validate ambiguity_flags ───────────────────────────────────────────
+    # Nombre debe pertenecer al catálogo. Además, vehicle_type_ambiguous requiere
+    # evidencia que el dominio vehicular resuelva a NEEDS_CLARIFICATION (quinta rueda,
+    # trailer, tractocamion…). Texto no vehicular ("Voi Acer") nunca dispara esa flag.
+    valid_flags: list[AmbiguityFlag] = []
+    for flag in output.ambiguity_flags:
+        if flag.name not in AMBIGUITY_FLAG_NAMES:
+            errors.append(f"unknown_ambiguity_flag: {flag.name!r}")
+            continue
+        if flag.name == "vehicle_type_ambiguous":
+            if not flag.evidence:
+                errors.append("vehicle_type_ambiguous_invalid_evidence: evidence='' status=empty")
+                continue
+            resolution = normalize_vehicle(flag.evidence)
+            if resolution is None or resolution.status != _NEEDS_CLARIFICATION:
+                status = resolution.status if resolution else "no_match"
+                errors.append(
+                    f"vehicle_type_ambiguous_invalid_evidence: "
+                    f"evidence={flag.evidence!r} status={status}"
+                )
+                continue
+        valid_flags.append(flag)
+    output.ambiguity_flags = valid_flags
+
+    # ── 5. Validate profile_context_action ────────────────────────────────────
+    if output.profile_context_action not in PROFILE_CONTEXT_ACTIONS:
+        errors.append(
+            f"unknown_profile_context_action: {output.profile_context_action!r} "
+            f"-> fallback continue_profiling"
+        )
+        output.profile_context_action = "continue_profiling"
+
+    # ── 6. Validate policy_answer_keys ────────────────────────────────────────
+    valid_keys: list[str] = []
+    for key in output.policy_answer_keys:
+        if key not in POLICY_ANSWER_KEYS:
+            errors.append(f"unknown_policy_answer_key: {key!r}")
+            continue
+        valid_keys.append(key)
+    output.policy_answer_keys = valid_keys
+
+    # ── 7. Enforce requires_human ─────────────────────────────────────────────
     if any(s.name in HUMAN_REQUIRED_SIGNALS for s in output.business_signals):
         output.requires_human = True
 

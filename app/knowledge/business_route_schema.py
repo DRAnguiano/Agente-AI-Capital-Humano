@@ -45,6 +45,7 @@ PROFILE_CONTEXT_ACTIONS = frozenset({
     "escalate_to_human",
     "await_document_update",
     "handle_referral",
+    "answer_or_clarify_current_question_first",   # candidato hizo pregunta pendiente
 })
 
 POLICY_ANSWER_KEYS = frozenset({
@@ -56,6 +57,27 @@ AMBIGUITY_FLAG_NAMES = frozenset({
     "multi_intent_unclear",
     "city_needs_confirmation",
     "multimedia_no_ocr",
+    "context_missing",       # pregunta sin contexto suficiente para resolver
+})
+
+# Categorías de requested_info enseñadas por el prompt del classifier.
+# Fuente única: la policy valida contra este catálogo; el prompt debe enseñarlas todas.
+VALID_REQUESTED_INFO_CATEGORIES = frozenset({
+    "payment_per_km",
+    "salary",
+    "benefits",
+    "rest",
+    "route_availability",
+    "route_details",
+    "location_base",
+    "documents_required",
+    "hiring_practice",
+    "vacancy_availability",
+    "vacancy_information",
+    "visit_availability",
+    "travel_logistics",
+    "city_info",
+    "general_info",
 })
 
 HUMAN_REQUIRED_SIGNALS = frozenset({"considerar_operador_b1", "reingreso_verificar"})
