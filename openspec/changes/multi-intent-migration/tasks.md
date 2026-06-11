@@ -38,17 +38,29 @@
 - [x] 4.3 Log comparativo `[MULTI_INTENT_SHADOW]` (shadow vs actual, ms) — `app/knowledge/intent_shadow.py` · `run_shadow` (print JSON) · log
 - [x] 4.4 Endpoint `POST /classify` — `app/app.py:343` · handler `/classify` · curl
 
-## 5. Política de `pay_question` (pendiente — hoy en código es low/rag)
+## 5. Política de `pay_question`
 
-- [ ] 5.1 Cambiar `INTENT_POLICIES["pay_question"]` a `risk_level=medium`, `requires_rag=true`, `requires_human=conditional` — `app/knowledge/intent_enricher.py` · `INTENT_POLICIES`
-- [ ] 5.2 Implementar "sin fuente autorizada suficiente → no inventar → derivar a Capital Humano" — `app/knowledge/intent_orchestrator.py` · `_generate_rag_answer`/`plan_and_respond`
+Estado parcial: clasificación y política base implementadas en Fase 0/F30.
+
+- [x] 5.1 Configurar `pay_question` con política `medium/rag/conditional`.
+  - Evidencia: `INTENT_POLICIES["pay_question"]` en
+    `app/knowledge/intent_enricher.py` y
+    `test_f30_pay_question_policy`.
+- [ ] 5.2 Implementar "sin fuente autorizada suficiente → no inventar → derivar a Capital Humano" — `app/knowledge/intent_orchestrator.py` · `_generate_rag_answer`/`plan_and_respond`. PRIORIDAD ALTA: mientras no exista, una pregunta de pago con RAG pobre depende de la contención del LLM (riesgo de improvisar cifras); candidata a siguiente implementación de código tras el cierre de la Nota IA.
 - [ ] 5.3 Caso de prueba `/classify`: pay sin contexto RAG → handoff (sin cifras inventadas)
 
 ## 6. Conversation memory guard (pendiente)
 
 - [ ] 6.1 Etapa `memory_guard`: leer `lead_memory` y derivar `forbidden_questions` por fact con evidence válido
 - [ ] 6.2 No emitir pregunta de un campo ya respondido — integrar en `funnel_state_planner`
-- [ ] 6.3 Detectar reclamo de memoria ("ya te había dicho que full") como corrección, no mensaje nuevo
+- [ ] 6.3 Detectar reclamo de memoria ("ya te había dicho que full") y resolverlo según el
+  fact canónico, NO como mensaje normal:
+  (1) fact canónico coincidente → reafirmar, no reescribir, no repetir la pregunta;
+  (2) fact canónico ausente → procesar el valor explícito del turno por el pipeline
+  normal de facts (no perder el dato);
+  (3) fact canónico diferente → registrar conflicto, no sobrescribir, pedir
+  confirmación neutral.
+  Distinto de la corrección explícita (7.4), que sí sobrescribe con auditoría.
 - [ ] 6.4 Casos `/classify`: "ya te habia dicho que full"; "si tengo cartas" (no repreguntar)
 
 ## 7. Desambiguación y corrección de facts + estados (pendiente)
@@ -71,6 +83,13 @@
 - [ ] 8.4b Formalizar fields/intents pendientes: `availability`, `general_vacancy_info_request`, reclamo de memoria
 - [ ] 8.5 Caso `/classify`: "10 años de full estoy disponible" → years=10, vehicle_type=full, availability=available, sin repreguntar unidad
 - [ ] 8.6 Caso `/classify`: "¿que mas le falta?" → responde `missing_fields` del planner
+- [ ] 8.7 El pipeline nuevo debe REUSAR la captura estructurada de `asked_field_keys` que ya
+  existe en el camino vivo (`app/lead_memory/last_asked_field.py` + metadata escrita por
+  `knowledge_orchestrator`; tests `test_last_asked_field.py`/`test_guard_asked_field.py`):
+  el `funnel_state_planner` la escribe/consume al emitir `next_question`, sin duplicar
+  mecanismo. Doble propósito: (1) fuente fuerte para el parser contextual de respuestas
+  elípticas (2C.0d: `last_bot_message` textual = apoyo, no fuente fuerte); (2) métrica de
+  embudo: en qué pregunta exacta desisten los candidatos.
 
 ## 9. Validación con tráfico real (en curso)
 
@@ -79,26 +98,35 @@
 - [ ] 9.3 Construir suite de regresión de mensajes reales para `/classify` (casos abajo)
 
 Casos reales de regresión (fixtures `/classify`):
-- [ ] 9.3.1 "10 años de full estoy disponible" → `experience_years=10`, `vehicle_type=full`, `availability=available`; no repreguntar unidad
-- [ ] 9.3.2 "si tengo cartas" → registrar cartas/documentos; no repetir pregunta de unidad
-- [ ] 9.3.3 "ya te habia dicho que full" → `memory_complaint_or_correction`; confirmar `vehicle_type=full`; no repetir
+- [ ] 9.3.1 "10 años de full estoy disponible" → `experience_years=10`, `vehicle_type=full`;
+  "estoy disponible" NO persiste fact de disponibilidad (no existe campo en `ANSWER_FIELDS`;
+  decisión 2C.0/2C.1: availability fuera del gate; frase ambigua: ¿trabajar/viajar/acudir?);
+  no repreguntar unidad
+- [ ] 9.3.2 "si tengo cartas" → `documents.proof=cartas` (fact canónico, `ANSWER_FIELDS` +
+  scenario del spec `multi-intent-pipeline`); no repetir preguntas no relacionadas ya respondidas
+- [ ] 9.3.3 "ya te habia dicho que full" → `memory_complaint_or_correction`; resolver según
+  fact canónico (contrato 6.3): coincide → reafirmar sin reescribir; ausente → procesar
+  `vehicle_type=full` por el pipeline normal; difiere → conflicto + confirmación neutral,
+  sin sobrescribir. En ningún caso repetir la pregunta.
 - [x] 9.3.4 "full" con `last_bot_question` de unidad → `vehicle_type=full` — cobertura **determinista** (`contextual_answer_classifier`/`normalize_vehicle`, Fase 1A). `/classify` LLM pendiente.
 - [x] 9.3.5 "10" sin contexto → no guarda, pide aclaración — cobertura **determinista** (`disambiguate_numeric_units`, Fase 1A). `/classify` LLM pendiente.
 - [x] 9.3.6 "camión" → ambiguo, no infiere full/sencillo — cobertura **determinista** (`normalize_vehicle` + `profile_extractor`, Fase 1A/1B). `/classify` LLM pendiente.
 - [x] 9.3.7 "soy operador de quinta rueda" → compatible, sin `vehicle_type` final — cobertura **determinista** (Fase 1A/1B). `/classify` LLM pendiente.
 - [x] 9.3.8 "manejo tráiler" → `needs_clarification`, sin `vehicle_type` — cobertura **determinista** (Fase 1A/1B). `/classify` LLM pendiente.
 - [ ] 9.3.9 "hola como esta el clima" → out_of_scope; no iniciar perfilamiento
-- [ ] 9.3.10 "Hola. ¿Puedo obtener más información sobre esto?" → `general_vacancy_info_request`; no documentos pendientes
-- [ ] 9.3.11 "no se crea creo que tengo en realidad 10 años" → `correction_candidate`/`needs_confirmation`; no sobrescribir
+- [ ] 9.3.10 "Hola. ¿Puedo obtener más información sobre esto?" → `general_vacancy_info_request` (intent pendiente de formalizar — 8.4b); no documentos pendientes
+- [ ] 9.3.11 "no se crea creo que tengo en realidad 10 años" → categoría `contradicción`
+  (contrato 7.2/7.3) → `needs_confirmation`; no sobrescribir el valor previo; pedir
+  confirmación neutral. Sin estados fuera del catálogo 7.5.
 
 ## 10. Candidate profile label planner (pendiente)
 
 - [ ] 10a.1 Label planner determinista: facts confirmados + estado de perfil → `labels_to_add`/`labels_to_remove` (el LLM no decide labels)
-- [ ] 10a.2 `objetivo_full_sencillo` SOLO con `vehicle_type` confirmado full/sencillo; quinta rueda/tráiler/tractocamión = compatible pero `needs_clarification` → `falta_unidad` (+ `aclaracion_pendiente`), NO `objetivo_full_sencillo`; no objetivo → `cecati` (sin experiencia) / `escuelita` (torton/rabón/local)
+- [ ] 10a.2 `objetivo_full_sencillo` SOLO con `vehicle_type` confirmado full/sencillo; quinta rueda/tráiler/tractocamión = compatible pero `needs_clarification` → `falta_unidad` (+ `aclaracion_pendiente`), NO `objetivo_full_sencillo`; no objetivo → `cecati_sugerido` (sin experiencia) / `considerar_escuelita_transmontes` (torton/rabón/local). No emitir las deprecadas `cecati` ni `escuelita`.
 - [ ] 10a.3 Unidad ambigua ("camión", "tráiler", "caja seca") → no actualizar `vehicle_type`, pedir aclaración
 - [ ] 10a.4 Número aislado sin contexto → no persistir (edad/días/meses/años); pedir aclaración; con `last_bot_question` de años → `experience_years` + `unit=years`
-- [ ] 10a.5 Clasificación local/foráneo vía catálogo de ciudades → `local_laguna` / `foraneo` (+ `validar_traslado`)
-- [ ] 10a.6 Disponibilidad para acudir: preguntar si falta `availability_to_attend`; al confirmar → `disponible_acudir`
+- [ ] 10a.5 Clasificación local/foráneo vía catálogo de ciudades → `local_laguna` / `foraneo` (+ `validar_traslado`). PRIORIDAD ALTA: el agente requiere local/foráneo como información core junto a `perfil_listo` para continuar la contratación; hoy `perfil_listo` llega sin esa señal (emisión de `local_laguna`/`foraneo` diferida en `calculate_candidate_labels`). Es determinista (catálogo de ciudades): bajo riesgo, alto valor; subir en la cola tras el cierre de la Nota IA.
+- [ ] 10a.6 Disponibilidad para acudir: preguntar si falta `availability_to_attend`; al confirmar → `disponible_acudir`. DIFERIDO — `disponible_acudir` es legacy/deprecada; ver futura fase call_scheduling/callback.
 - [ ] 10a.7 Pipeline de faltantes hasta `perfil_listo`: labels de faltantes + `perfil_listo` (elimina `bot_activo`, detiene preguntas)
 - [ ] 10a.8 Reingreso → `reingreso_verificar`, elimina `bot_activo`, deriva a humano, detiene funnel
 - [ ] 10a.9 No modificar facts/labels sin evidencia suficiente
@@ -118,7 +146,7 @@ Casos reales de regresión (fixtures `/classify`):
 - [x] 10b.9 Mapa canónico de nombres de facts + 4 decisiones fijadas — `design.md` · "Mapa canónico de nombres de facts"/"Decisiones fijadas" · verificado vs `rh_lead_facts_v2`
 - [ ] 10b.10 Migración SQL: renombrar `fact_key` `license.category` → `license.type` en `rh_lead_facts_v2` (conservar valores B/E/A/C) — `db/` nueva migración
 - [ ] 10b.11 Migración SQL: consolidar `documents.labor_letters_status`/`labor_letters`/`general_status`/`submission_status`/`availability_claim` → `documents.proof` (cartas|semanas_imss|ninguno) — `db/` nueva migración
-- [ ] 10b.12 Crear fact `candidate.availability_to_attend` (≠ viajar) + label `disponible_acudir` en el planner
+- [ ] 10b.12 Crear fact `candidate.availability_to_attend` (≠ viajar) + label `disponible_acudir` en el planner. DIFERIDO — `disponible_acudir` es legacy/deprecada; ver futura fase call_scheduling/callback.
 - [x] 10b.13 Vocabulario `vehicle_type` = full|sencillo|ambos|ninguno (sin `quinta_rueda`); "quinta rueda"/tráiler/tractocamión = experiencia compatible, NO valor — `app/knowledge/domain_catalog.py` + `app/lead_memory/profile_extractor.py` (camino vivo) · Fase 1B commit `c6e345d` · verificado en producción
 - [ ] 10b.14 Actualizar `v_rh_work_queue` y vistas dependientes tras los renombres de `fact_key` — `db/`/`sql/`
 - [ ] 10b.15 **Fase 2A** — Vista de compatibilidad de LECTURA `v_rh_lead_facts_canonical` (no destructiva; expone `canonical_group/key/value/state` + raw). Diseñada read-only; pendiente de aplicar/probar manual. NO toca datos, NO toca `v_rh_work_queue`, NO toca flujo vivo.
@@ -133,20 +161,20 @@ Casos reales de regresión (fixtures `/classify`):
 - [ ] FUTURO **validador compatibilidad/vigencia** — matriz licencia/unidad (full+B incompatible) + política de vigencia (>3 meses; ≤3 meses → comprobante; vencido+trámite → aclaración; vencido sin trámite → no continúa; sin fecha → no inferir). **Reusar** `needs_confirmation_fields`+`reason` + label `aclaracion_pendiente`/`falta_*` + status `tramite`; NO inventar estados/labels; NO revivir `revisar_licencia`/`*_por_vencer`. NO en 2C.1.
 - [ ] DEUDA copy: `app/persona_config.py` "más de 6 meses de vigencia" → actualizar a ">3 meses" (regla oficial 2C.0c). Fase aparte.
 - [ ] DEUDA (post-diagnóstico 2C.0b): corregir **regla E** de `db/010` (no producir `availability_to_attend_candidate` desde `documents.availability_claim`) + writer legacy de `availability_claim` en `profile_extractor`. NO en 2C.1.
-- [ ] FUTURO **call_scheduling/callback** — concepto nuevo: label operativa `llamada_pendiente` (= contactar por llamada; NO "acudir"; NO sustituye availability_to_attend; fuera del profile planner). Facts futuros opcionales `scheduling.call_window`/`scheduling.call_status=pending`. `llamada_pendiente` se agrega a `chatwoot-label-taxonomy` SOLO al implementar la fase. `disponible_acudir` queda legacy/diferido (10a.6/10b.12).
+- [ ] FUTURO **call_scheduling/callback** — concepto nuevo: label operativa `llamada_pendiente` (= contactar por llamada; NO "acudir"; NO sustituye availability_to_attend; fuera del profile planner). Facts futuros opcionales `scheduling.call_window`/`scheduling.call_status=pending`. `llamada_pendiente` ya existe en el catálogo oficial (`chatwoot-label-taxonomy`, 24 activas); el planner/handoff todavía NO la emite hasta implementar esta fase. `disponible_acudir` queda legacy/diferido (10a.6/10b.12).
 - [ ] 10b.16h **Fase 2C.2** — surfacing por label del backlog (`falta_unidad`/`aclaracion_pendiente`) vía label_planner (cuando exista). Diagnóstico manual de las 5 filas quinta_rueda (no migración).
 - [x] 10b.16d **(doc-only)** Límite explícito 2B.1 documentado — `design.md` ("Límites explícitos de Fase 2B.1") + spec `multi-intent-pipeline` (escenarios "Límite — …"). Reglas fijadas: (1) `license.type` = categoría B/E/…, NO vigencia; (2) `license.status` (vigente/vencida/tramite) por sí solo NO valida la regla >3 meses; (3) `medical.apto_status` (vigente/vencido/tramite) por sí solo NO valida la regla >3 meses; (4) vigencia suficiente requiere fecha/texto de vencimiento interpretable + regla oficial >3 meses; (5) sin fecha clara → NO inferir vigencia suficiente; (6) es **contrato del validador futuro**, NO se implementa aquí (el planner usa el valor del fact tal cual; sin umbrales temporales).
 
 ## 10c. Nota privada simplificada + taxonomía de labels (pendiente)
 
-- [x] 10c.1 Confirmar que la nota actual incluye pago/temperatura/labels — `app/chatwoot_note_sync.py:345,351,355` · `render_candidate_note` · grep
+- [x] 10c.1 Confirmar que la nota actual incluye pago/temperatura/labels — `app/chatwoot_note_sync.py` · `render_candidate_note` · grep. Nota: las líneas originales (`:345,351,355`) pertenecen al código previo a N2 de `chatwoot-ai-note-contract`; la referencia estable es `render_candidate_note`.
 - [ ] 10c.2 Documentar catálogo oficial de labels (baseline) — `openspec/specs/chatwoot-label-taxonomy/spec.md` (hecho como spec; falta validar contra labels reales de Chatwoot)
-- [ ] 10c.3 Quitar de la nota: `Interés en pago/compensación`, `🌡️ Temperatura`, `🏷️ Labels` — `app/chatwoot_note_sync.py` · `render_candidate_note`
-- [ ] 10c.4 Reordenar nota al formato objetivo: Acción, Último mensaje literal, Contacto, Memoria breve, Perfil detectado, Embudo, Siguiente acción
+- [ ] 10c.3 Quitar de la nota: `Interés en pago/compensación`, `🌡️ Temperatura`, `🏷️ Labels` — `app/chatwoot_note_sync.py` · `render_candidate_note`. SUPERSEDIDO por el change `chatwoot-ai-note-contract`: Temperatura ya eliminada en F26; pago, labels, disponibilidad y memoria narrativa pendientes de cierre mediante N2 (targeted del renderer, pruebas relacionadas, suite absoluta, OpenSpec strict y commit aislado).
+- [ ] 10c.4 Formato objetivo de la nota SUPERSEDIDO por `chatwoot-ai-note-contract`: Último mensaje → Contacto → Perfil confirmado → Pendientes o conflictos (condicional) → Embudo → Siguiente acción (única). Sin `Acción` en cabecera, sin `Memoria breve`, sin `Perfil detectado`, sin `Disponibilidad para acudir`. Criterio de cierre: targeted del renderer, pruebas relacionadas, suite absoluta, OpenSpec strict y commit aislado.
 - [ ] 10c.5 Implementar `private_note_builder` (corre después de `label_planner`; recibe facts/stage/missing/completed/conflicts/risk/requires_human/next_action ya calculados; no decide labels ni facts; LLM solo para tono con contrato cerrado)
 - [ ] 10c.6 `Acción` y `Siguiente acción` desde el planner determinista (no LLM)
 - [ ] 10c.7 Mapear campos del perfil a Pendiente/Requiere aclaración según estado en Postgres
-- [ ] 10c.8 Verificar contra labels reales de Chatwoot (catálogo de 23) y exclusividades (`local_laguna`/`foraneo`; `objetivo_full_sencillo`/`cecati`/`escuelita`)
+- [ ] 10c.8 Verificar contra labels reales de Chatwoot (catálogo oficial de 24 labels activas) y exclusividades (`local_laguna`/`foraneo`; `objetivo_full_sencillo`/`cecati`/`escuelita`)
 - [ ] 10c.9 Auditoría: evento de nota (`lead_id`, `conversation_id`, `note_version`, `facts_snapshot`, `missing_fields`, `completed_fields`, `conflicts`, `next_action`, `source_event_id`, `generated_at`)
 - [ ] 10c.10 Auditoría: evento de label sync (`lead_id`, `conversation_id`, `labels_before/after`, `labels_to_add/remove`, `reason`, `facts_source`, `event_id`)
 
@@ -180,4 +208,11 @@ Casos reales de regresión (fixtures `/classify`):
 ## 14. Media guard (G4) — implementación viva (hecho)
 
 - [x] **G4 media_guard vivo** — corte a nivel del webhook de Chatwoot (`app/app.py` · `chatwoot_webhook` + `_chatwoot_has_media`), **agnóstico al canal** (Telegram demo / WhatsApp futuro, ambos vía Chatwoot). Si el evento entrante trae `attachments` (top-level o `message.attachments`): responde texto canned, log `[CHATWOOT_MEDIA_GUARD]`, return temprano **antes** de `empty_content`/encolar/orquestador; NO extractor, NO encolar, NO `run_hr_graph_message`, NO facts, NO labels, NO `profile_ready`. Caption bloqueado en v1 (no se parsea como fact). Sin OCR/document-understanding. Spec (doc-only): `multi-intent-pipeline` ("Manejo de media sin OCR/document-understanding") + `message-orchestration` ("Respuesta conversacional ante media sin OCR") + `design.md` (Non-Goal). Tests: `tests/test_chatwoot_media_guard.py` (suite `56 passed`) + smoke test vivo (imagen/sticker/audio/documento/imagen+caption, 200 OK). Commits `018b5e5` (código+tests) · `6c35043` (CONTEXTO.md). NO tocó `knowledge_orchestrator`/`profile_extractor`/`funnel_state_planner`/labels/BD.
+- [ ] FUTURO **evento `media_blocked`** — persistir en `rh_lead_events_v2` un evento mínimo
+  (lead_id, conversation_id, tipo de attachment, timestamp) cuando G4 corta multimedia.
+  El evento documenta únicamente "llegó multimedia y no fue procesada porque no hay OCR":
+  NO produce facts (`license.type`/`medical.apto_status`/`experience.years`), NO afirma qué
+  contiene el archivo, NO OCR. Motivo: el análisis de embudo debe ver al candidato que
+  intentó entregar un documento y fue redirigido a texto (hoy solo queda en el log
+  `[CHATWOOT_MEDIA_GUARD]`, invisible para el record). Change OpenSpec aparte; NO en media v1.
 - [ ] FUTURO **media v2** — captions explícitos y/o capa OCR/document-understanding validada (solo entonces la media podría producir facts). NO ahora.
