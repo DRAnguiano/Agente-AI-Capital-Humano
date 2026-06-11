@@ -54,12 +54,28 @@
       `jerga_ambigua_falta_unidad` signal.
 
 ## C6. Harness QA — integración shadow output (P1)
-- [ ] C6.1 Añadir `--mode shadow` a `scripts/qa_response_matrix.py`: llama
-      `classify_business_route()` en lugar de solo `classify_message()`.
-- [ ] C6.2 Columnas nuevas en reporte: `shadow_business_signals`, `shadow_explicit_facts`,
-      `shadow_ambiguity_flags`, `shadow_requires_human`.
-- [ ] C6.3 Correr `--mode shadow --priority Alta` (13 casos) y registrar baseline.
-- [ ] C6.4 Correr `--mode shadow` 224 casos completos → baseline para activación.
+
+> Implementación real: flag `--include-business-shadow` (no `--mode shadow`): el shadow
+> corre además del modo base elegido y agrega columnas `business_*` al reporte.
+> Read-only. Errores por fila (`business_shadow_status=ERROR` + `business_shadow_error`)
+> sin abortar la corrida. El presupuesto diario usa tokens efectivos (base + shadow).
+
+- [x] C6.1 Flag `--include-business-shadow` en `scripts/qa_response_matrix.py`:
+      `_make_row_fn` envuelve el row-fn base y `_run_business_shadow` llama
+      `classify_business_route_shadow()` por caso. Nunca lanza.
+      Tests: `tests/test_qa_response_matrix.py` (mocks, sin LLM).
+- [x] C6.2 Columnas nuevas `business_*` en el reporte (`SHADOW_COLUMNS`): JSON completo
+      (`business_requested_info`, `business_explicit_facts`, `business_signals`,
+      `business_ambiguity_flags`, `business_policy_answer_keys`,
+      `business_validation_errors`) + escalares (`business_requires_human`,
+      `business_profile_action`, `business_signal_names`,
+      `business_requested_info_topics`, `business_fact_keys`,
+      `business_ambiguity_names`, `business_shadow_status`, `business_shadow_error`,
+      `profile_context_available`). Sin solapamiento con `OUTPUT_COLUMNS` (test).
+- [ ] C6.3 Correr `--include-business-shadow --priority Alta` y registrar baseline.
+- [ ] C6.4 Correr los 224 casos completos con shadow → baseline para activación.
+      Pendientes asociados: qa_0219 reintento (RateLimit); qa_0220–qa_0224 holdout ciego;
+      qa_0216–qa_0218 ya cubiertos como regresiones en tests.
 
 ## C7. Criterio de activación productiva (P2, bloqueado por C5/C6)
 - [ ] C7.1 ≥ 80% de los 224 casos con `shadow_business_signals` correctos vs `route_esperada_sugerida`.

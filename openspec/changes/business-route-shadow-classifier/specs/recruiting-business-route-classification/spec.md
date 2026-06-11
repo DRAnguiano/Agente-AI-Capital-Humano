@@ -294,3 +294,114 @@ perfil canónico ni disparar acciones de escritura.
 - **AND** el candidato dice "soy de Monterrey"
 - **WHEN** el shadow classifier procesa el mensaje
 - **THEN** `explicit_facts["candidate.city"].needs_confirmation = false`
+
+### Requirement: Solicitud genérica de información sobre vacante → vacante_info_general
+
+El sistema SHALL emitir `vacante_info_general` y `requested_info[category=vacancy_information]`
+cuando el candidato solicita información general sobre la vacante sin mencionar tipo de unidad.
+El `profile_context_action` SHALL ser `answer_or_clarify_current_question_first` ya que la
+pregunta del candidato debe atenderse antes de continuar el perfilamiento.
+
+#### Scenario: "Más información sobre la vacante" → vacante_info_general
+- **GIVEN** el candidato dice "Hola. Más información sobre la vacante Operador Especializado por favor!"
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `business_signals` contiene `vacante_info_general`
+- **AND** `requested_info` contiene al menos un item con `category = vacancy_information`
+- **AND** `profile_context_action = answer_or_clarify_current_question_first`
+- **AND** NO se emite `experience.vehicle_type`
+
+### Requirement: Pregunta logística con multimedia → travel_logistics + multimedia_no_ocr, sin vehicle_type_ambiguous
+
+El sistema SHALL emitir `multimedia_no_ocr` y la señal `ubicacion_base_traslado` cuando el
+candidato pregunta sobre cómo trasladarse a una ciudad o base de operaciones y el mensaje
+incluye `<Multimedia omitido>`. El sistema SHALL NOT emitir `vehicle_type_ambiguous` a menos
+que la evidencia pertenezca explícitamente al catálogo de términos vehiculares ambiguos.
+
+#### Scenario: "cómo irme a Manzanillo + multimedia" → travel_logistics + multimedia, sin vehicle_type_ambiguous
+- **GIVEN** el candidato dice `"Pero como le Voi Acer para irme a Manzanillo\n<Multimedia omitido>"`
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `ambiguity_flags` contiene `multimedia_no_ocr`
+- **AND** `ambiguity_flags` NO contiene `vehicle_type_ambiguous`
+- **AND** `business_signals` contiene `ubicacion_base_traslado`
+- **AND** `requested_info` contiene al menos un item con `category = travel_logistics`
+
+### Requirement: vehicle_type_ambiguous solo para términos vehiculares del catálogo
+
+El sistema SHALL emitir `vehicle_type_ambiguous` ÚNICAMENTE cuando la evidencia contiene
+un término del catálogo vehicular ambiguo: quinta rueda, 5ta rueda, tráiler, trailer,
+trailero, tractocamión. SHALL NOT emitir esta flag para texto que no pertenezca al dominio
+vehicular — una expresión puede tener significado lingüístico válido (incluso en variante
+ortográfica informal) sin ser evidencia de categoría vehicular. El policy router SHALL
+eliminar la flag si la evidencia no resuelve a `status=NEEDS_CLARIFICATION` en el catálogo.
+
+#### Scenario: Evidencia no vehicular hace que la policy elimine vehicle_type_ambiguous
+- **GIVEN** el LLM emite `ambiguity_flags: [{"name": "vehicle_type_ambiguous", "evidence": "Voi Acer"}]`
+  (nota: "Voi Acer" es variante ortográfica de "voy a hacer" — texto válido, no terminología vehicular)
+- **WHEN** `validate_business_output` procesa el output
+- **THEN** `vehicle_type_ambiguous` es eliminado de `ambiguity_flags`
+- **AND** `validation_errors` contiene `vehicle_type_ambiguous_invalid_evidence`
+
+#### Scenario: "quinta rueda" como evidencia conserva vehicle_type_ambiguous
+- **GIVEN** el LLM emite `ambiguity_flags: [{"name": "vehicle_type_ambiguous", "evidence": "quinta rueda"}]`
+- **WHEN** `validate_business_output` procesa el output
+- **THEN** `vehicle_type_ambiguous` se conserva en `ambiguity_flags`
+
+### Requirement: Pregunta contextual pendiente → answer_or_clarify_current_question_first
+
+El sistema SHALL usar `answer_or_clarify_current_question_first` como `profile_context_action`
+cuando el candidato hace una pregunta (aunque sea ambigua o requiera contexto previo).
+`continue_profiling` SHALL NOT emplearse para ignorar la pregunta actual del candidato;
+la intención presente debe atenderse o aclararse antes de continuar el perfilamiento.
+
+#### Scenario: Pregunta ambigua sobre visita → clarify antes de continuar perfil
+- **GIVEN** el candidato dice `"Oya se fueron\nSino para ir mañana\n??"`
+- **WHEN** el shadow classifier procesa el mensaje
+- **THEN** `profile_context_action = answer_or_clarify_current_question_first`
+- **AND** `requested_info` contiene un item con `category = visit_availability`
+- **AND** `ambiguity_flags` contiene `context_missing`
+- **AND** el profile_context_action NO es `continue_profiling`
+
+### Requirement: Validación general de catálogos sobre el output del LLM
+
+El policy validator SHALL validar todo el output del LLM contra los catálogos del schema:
+`ambiguity_flags` contra `AMBIGUITY_FLAG_NAMES`, `profile_context_action` contra
+`PROFILE_CONTEXT_ACTIONS`, `policy_answer_keys` contra `POLICY_ANSWER_KEYS` y
+`requested_info.category` contra `VALID_REQUESTED_INFO_CATEGORIES`. Los valores fuera de
+catálogo SHALL eliminarse (o, para `profile_context_action`, reemplazarse por el fallback
+seguro `continue_profiling`) y SHALL registrarse en `validation_errors` con el valor
+rechazado. El sistema SHALL NOT usar regex ni listas duplicadas fuera del schema para
+esta validación.
+
+#### Scenario: Flag desconocido eliminado
+- **GIVEN** el LLM emite `ambiguity_flags: [{"name": "address_needed", "evidence": "x"}]`
+- **WHEN** `validate_business_output` procesa el output
+- **THEN** `address_needed` NO está en `ambiguity_flags`
+- **AND** `validation_errors` contiene `unknown_ambiguity_flag`
+
+#### Scenario: profile_context_action desconocida cae al fallback
+- **GIVEN** el LLM emite `profile_context_action = "continue_profilingg"`
+- **WHEN** `validate_business_output` procesa el output
+- **THEN** `profile_context_action = continue_profiling`
+- **AND** `validation_errors` contiene `unknown_profile_context_action`
+
+#### Scenario: Categoría de requested_info desconocida eliminada
+- **GIVEN** el LLM emite `requested_info: [{"category": "salary_info", "evidence": "sueldo"}]`
+- **WHEN** `validate_business_output` procesa el output
+- **THEN** `requested_info` NO contiene `salary_info`
+- **AND** `validation_errors` contiene `unknown_requested_info_category`
+
+### Requirement: business_shadow_status independiente de la validación semántica
+
+El sistema SHALL exponer `business_validation_errors` y `business_signal_names` como
+columnas independientes de `business_shadow_status` en el reporte del harness. El sistema
+SHALL emitir `business_shadow_status=OK` cuando el pipeline termina sin excepción técnica,
+incluso si `business_validation_errors` no está vacío (la policy corrigió facts o flags
+del LLM) o si el output quedó semánticamente vacío. El sistema SHALL NOT usar
+`business_shadow_status` como indicador de validez semántica del output.
+
+#### Scenario: status=OK con validation_errors no vacío
+- **GIVEN** el LLM emite `vehicle_type_ambiguous` con evidencia no vehicular
+- **WHEN** el shadow classifier procesa y el policy router valida
+- **THEN** `business_shadow_status = OK`
+- **AND** `business_validation_errors` contiene `vehicle_type_ambiguous_invalid_evidence`
+- **AND** `business_ambiguity_names` NO contiene `vehicle_type_ambiguous`
