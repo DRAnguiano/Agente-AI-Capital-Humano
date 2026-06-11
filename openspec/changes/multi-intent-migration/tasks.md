@@ -46,8 +46,8 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
   - Evidencia: `INTENT_POLICIES["pay_question"]` en
     `app/knowledge/intent_enricher.py` y
     `test_f30_pay_question_policy`.
-- [ ] 5.2 Implementar "sin fuente autorizada suficiente → no inventar → derivar a Capital Humano" — `app/knowledge/intent_orchestrator.py` · `_generate_rag_answer`/`plan_and_respond`. PRIORIDAD ALTA: mientras no exista, una pregunta de pago con RAG pobre depende de la contención del LLM (riesgo de improvisar cifras); candidata a siguiente implementación de código tras el cierre de la Nota IA.
-- [ ] 5.3 Caso de prueba `/classify`: pay sin contexto RAG → handoff (sin cifras inventadas)
+- [x] 5.2 Implementar "sin fuente autorizada suficiente → no inventar → derivar a Capital Humano" — `app/knowledge/intent_orchestrator.py` · `_generate_rag_answer`/`plan_and_respond` (fail-closed: 0 chunks del filtro `preferred_sources` o LLM vacío → `_HANDOFF_REPLY` + `handoff_reason="no_authorized_source"`, sin invocar LLM cuando no hay fuente; corta como handoff sin encimar funnel; demás intents RAG conservan fallback telefónico) · Docker 461 passed (2026-06-11)
+- [x] 5.3 Caso de prueba: pay sin contexto RAG → handoff (sin cifras inventadas) — `tests/test_intent_orchestrator_pay.py` (7 tests deterministas, sin Groq/Chroma/DB; incluye end-to-end enricher→orquestador y no-regresión de logistics) · Docker 461 passed (2026-06-11). `/classify` con clasificación LLM real queda cubierto al activar 9.x.
 
 ## 6. Conversation memory guard (pendiente)
 

@@ -96,13 +96,23 @@ _HANDOFF_REPLY = "Ese punto lo revisa nuestro equipo directamente. Lo dejo anota
 _NO_FUNNEL_SIGNALS = {"greeting", "on_route", "farewell", "dropoff", "out_of_scope", "complaint", "reingreso"}
 
 
-def _generate_rag_answer(question: dict[str, Any], message: str) -> str:
-    """Genera la respuesta a una pregunta usando el RAG existente."""
+def _generate_rag_answer(question: dict[str, Any], message: str) -> tuple[str, bool]:
+    """Genera la respuesta a una pregunta usando el RAG existente.
+
+    Devuelve (texto, derive_to_human). Fase 5.2, fail-closed: para intents con
+    `requires_human_if_no_authorized_source` (pay_question), si no hay chunks de
+    la fuente autorizada — o el LLM no genera respuesta teniéndola — el bot NO
+    inventa: deriva a Capital Humano con el handoff genérico. Los demás intents
+    RAG conservan el fallback telefónico.
+    """
+    conditional = bool(question.get("requires_human_if_no_authorized_source"))
     context = retrieve_preferred_context(
         message, preferred_sources=question.get("preferred_sources") or []
     )
     if not context.get("items"):
-        return ("Para ese dato le recomiendo llamarnos de 8:00 a 17:30 hrs y se lo confirmamos.")
+        if conditional:
+            return _HANDOFF_REPLY, True
+        return ("Para ese dato le recomiendo llamarnos de 8:00 a 17:30 hrs y se lo confirmamos.", False)
 
     contract = {
         "intent": question.get("intent"),
@@ -117,7 +127,10 @@ def _generate_rag_answer(question: dict[str, Any], message: str) -> str:
         knowledge_contract=contract,
         context_text=context.get("context_text") or "",
     )
-    return (call_llm(prompt) or "").strip()
+    answer = (call_llm(prompt) or "").strip()
+    if conditional and not answer:
+        return _HANDOFF_REPLY, True
+    return answer, False
 
 
 def plan_and_respond(
@@ -154,7 +167,21 @@ def plan_and_respond(
     # 2. Responder preguntas (RAG) — prioriza la primera; ofrece la segunda
     if questions:
         action_order.append("answer_primary_question")
-        response_parts.append(_generate_rag_answer(questions[0], message))
+        answer_text, derive_to_human = _generate_rag_answer(questions[0], message)
+        # Fase 5.2 — fail-closed: intent condicional sin fuente autorizada (o sin
+        # generación). No inventar; derivar a Capital Humano y cortar como handoff
+        # (sin encimar pregunta de funnel sobre la derivación).
+        if derive_to_human:
+            action_order.append("human_handoff")
+            return {
+                "recommended_action_order": action_order,
+                "facts_to_persist": answers,
+                "response_text": answer_text,
+                "core_completeness": core_completeness(merged),
+                "handoff": True,
+                "handoff_reason": "no_authorized_source",
+            }
+        response_parts.append(answer_text)
         if len(questions) > 1:
             action_order.append("offer_secondary_question")
             response_parts.append("Si gusta, también le platico sobre lo otro que preguntó.")
