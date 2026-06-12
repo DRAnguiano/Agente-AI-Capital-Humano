@@ -52,9 +52,15 @@ FAREWELL_REPLY = (
     "cuando guste retomar el proceso, por aquí lo apoyamos."
 )
 
+# Saludo/contrato de apertura aprobado por negocio (2026-06-12): anuncia el
+# perfilamiento, invita a preguntar primero, y adelanta documentación + agente.
 GREETING_REPLY = (
     "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
-    "¿Le interesa la vacante de operador de tracto full o sencillo?"
+    "Con gusto le platico de la vacante de operador de tracto full o sencillo. "
+    "Le haré unas preguntas breves para conocer su perfil; si antes tiene dudas "
+    "de pago, rutas o requisitos, pregúnteme con confianza. Al completar sus "
+    "datos podrá subir su documentación y lo canalizamos con un agente de "
+    "reclutamiento. ¿En qué ciudad se encuentra?"
 )
 
 _GREETING_TERMS = (
@@ -298,6 +304,48 @@ def _looks_like_greeting(message: str) -> bool:
     if _message_has_any(message, BUSINESS_QUESTION_TERMS):
         return False
     return any(normalize_text(t) in text for t in _GREETING_TERMS)
+
+
+# Marcadores de residencia en primera persona: solo con uno presente se acepta
+# geo (city/state) extraído de un mensaje-pregunta. "¿qué rutas maneja para
+# nuevo laredo?" NO fija ciudad; "soy de laredo, ¿a dónde salen?" SÍ.
+_RESIDENCE_MARKERS = ("soy de", "vivo en", "radico en", "resido en", "estoy en", "me encuentro en")
+
+
+def _drop_geo_facts_from_questions(facts: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
+    """Filtra candidate.city/state cuando el mensaje es pregunta sin marcador de residencia."""
+    from app.knowledge.current_turn import is_question
+
+    if not is_question(message):
+        return facts
+    text = normalize_text(message or "")
+    if any(marker in text for marker in _RESIDENCE_MARKERS):
+        return facts
+    return [
+        f for f in facts
+        if not (f.get("fact_group") == "candidate" and f.get("fact_key") in {"city", "state"})
+    ]
+
+
+def _drop_unanchored_neo4j_geo(facts: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
+    """Con marcador de residencia presente, el geo de Neo4j se descarta.
+
+    Los nodos GeoArea matchean CUALQUIER mención de ciudad (incl. destinos:
+    "para ir a torreon"), mientras el regex de profile_extractor ancla la ciudad
+    al marcador "soy de / vivo en". Si hay marcador, la fuente anclada gana y
+    aquí se remueve el geo de Neo4j ANTES del dedup para que no la suprima.
+    """
+    text = normalize_text(message or "")
+    if not any(marker in text for marker in _RESIDENCE_MARKERS):
+        return facts
+    return [
+        f for f in facts
+        if not (
+            f.get("fact_group") == "candidate"
+            and f.get("fact_key") in {"city", "state"}
+            and f.get("neo4j_node_id")
+        )
+    ]
 
 
 def _apply_deterministic_overrides(message: str, contract: dict[str, Any]) -> dict[str, Any]:
@@ -715,14 +763,14 @@ def _store_lead_memory_updates(
         from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
         from app.lead_memory.profile_extractor import extract_profile_facts
 
-        neo4j_facts = extract_profile_facts_from_neo4j(message)
+        neo4j_facts = _drop_unanchored_neo4j_geo(extract_profile_facts_from_neo4j(message), message)
         neo4j_keys = {(f["fact_group"], f["fact_key"]) for f in neo4j_facts}
         regex_facts = [
             f for f in extract_profile_facts(message, intent)
             if (f["fact_group"], f["fact_key"]) not in neo4j_keys
         ]
 
-        for pf in neo4j_facts + regex_facts:
+        for pf in _drop_geo_facts_from_questions(neo4j_facts + regex_facts, message):
             upsert_lead_fact(
                 lead_key=lead_key,
                 fact_group=pf["fact_group"],

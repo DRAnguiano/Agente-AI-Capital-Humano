@@ -58,17 +58,36 @@ def _extract_city(message: str, text: str) -> dict[str, Any] | None:
     if re.search(r"\bme\s+dic[ei]\s+\w+", text):
         return None
 
+    # Si hay marcador de residencia, los aliases se buscan SOLO después del
+    # marcador y gana el MÁS CERCANO — "soy de gomez palacio ... para ir a
+    # torreon" debe dar Gómez Palacio, no el destino mencionado después.
+    marker = re.search(r"\b(?:resido|radico|vivo|soy)\s+(?:en|de)\s+", text)
+    search_zone = text[marker.end():] if marker else text
+    best: tuple[int, str] | None = None
     for alias, canonical in KNOWN_CITY_ALIASES:
-        if alias in text:
-            return _fact("candidate", "city", canonical, 0.9)
+        idx = search_zone.find(alias)
+        if idx >= 0 and (best is None or idx < best[0]):
+            best = (idx, canonical)
+    if best:
+        return _fact("candidate", "city", best[1], 0.9)
 
+    # Sobre texto NORMALIZADO: ahí ya aplicó la canonicalización de jerga/typos
+    # ("soy d gomez palasio" → "soy de gomez palacio"), así que el marcador de
+    # residencia y el nombre capturado llegan en forma canónica.
     match = re.search(
-        r"\b(?:resido|radico|vivo|soy)\s+(?:en|de)\s+([a-záéíóúñ .]{3,40})",
-        message.lower(),
+        r"\b(?:resido|radico|vivo|soy)\s+(?:en|de)\s+([a-z0-9áéíóúñ .]{3,40})",
+        text,
         flags=re.IGNORECASE,
     )
     if match:
-        raw_city = re.split(r"\b(?:y|con|tengo|licencia|apto|cartas)\b", match.group(1))[0].strip(" .,")
+        # Corta en conectores/interrogativos para no tragarse la frase
+        # ("soy de Laredo ahí de donde a donde me toca ir" → "laredo").
+        raw_city = re.split(
+            r"\b(?:y|con|tengo|licencia|apto|cartas|ahi|ahí|a|donde|dónde|que|qué|para|pero|cual|cuál|como|cómo|cuando|cuándo)\b",
+            match.group(1),
+        )[0].strip(" .,")
+        # Tope defensivo: ninguna ciudad objetivo supera 4 tokens.
+        raw_city = " ".join(raw_city.split()[:4])
         if raw_city:
             return _fact("candidate", "city", raw_city.title(), 0.65)
     return None

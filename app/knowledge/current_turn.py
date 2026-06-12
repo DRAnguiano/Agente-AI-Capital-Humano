@@ -63,7 +63,17 @@ def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str
     }
     has_negation = any(tok in _neg_hints for tok in t.split())
 
-    strong_yes = (
+    # "si" CONDICIONAL (if), no afirmativo: "si me cuentas un chiste te digo..."
+    # no confirma nada — sin esta guarda, el guard infería license.status=vigente
+    # y pisaba la respuesta correcta (smoke 2026-06-12 19:46). Acotado a
+    # pronombre+verbo de petición para NO bloquear confirmaciones reales tipo
+    # "si me queda todavia un año".
+    _conditional_si = bool(re.match(
+        r"^si\s+(?:me|te|le|nos|les|usted|tu)\s+"
+        r"(?:cuenta|cuentas|dice|dices|da|das|pasa|pasas|explica|explicas|manda|mandas|dan|dicen)\b",
+        t,
+    ))
+    strong_yes = not _conditional_si and (
         t == "si"
         or (t.startswith("si ") and not t.startswith("si no "))
         or t.startswith("si,")
@@ -137,18 +147,65 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
     return facts
 
 
+# Entradas de campaña/interés (incluye el mensaje default de la publicación de
+# Facebook). El interés NO es un dato de perfil: detona la apertura, no el ack.
+CAMPAIGN_INTEREST_TERMS = (
+    "me interesa la vacante",
+    "me interesa el puesto",
+    "me interesa el trabajo",
+    "me interesa la chamba",
+    "informacion de la vacante",
+    "info de la vacante",
+    "informes de la vacante",
+)
+
+
+def is_campaign_or_interest_entry(message: str | None) -> bool:
+    """True si el mensaje es una entrada de campaña/interés sin pregunta.
+
+    En primer contacto debe responderse con el saludo oficial de Mundo, nunca
+    con el ack del guard ("Perfecto, lo dejo registrado").
+    """
+    if is_question(message):
+        return False
+    t = normalize_text(message or "")
+    return any(term in t for term in CAMPAIGN_INTEREST_TERMS)
+
+
+# Facts que NO cuentan como señal de perfil para el guard: el interés en la
+# vacante no es un dato del candidato (regla de negocio 2026-06-12).
+_NON_PROFILE_SIGNAL_KEYS = {"candidate.vacancy_accepted"}
+
+
 def has_current_turn_profile_signal(message: str | None, last_bot_message: str | None = None) -> bool:
     facts = extract_current_turn_facts(message, last_bot_message)
     # location.is_local_laguna is always computed — exclude it from the signal check
     return any(
         key.startswith(("candidate.", "license.", "medical.", "documents.", "experience."))
+        and key not in _NON_PROFILE_SIGNAL_KEYS
         for key in facts
     )
 
 
+# Pregunta de negocio EMBEBIDA sin "?" ni inicio interrogativo (jerga real:
+# "soy d gomez palasio, que rutas ay y dan voleto pa ir a torreon"). Si está
+# presente, el orquestador debe responder la duda — el guard no secuestra el
+# turno; los facts se persisten igual en la extracción del orquestador.
+_EMBEDDED_QUESTION_RE = re.compile(
+    r"\b(?:que|cuanto|cuanta|cuantos|cuando|como|cual|donde|a donde|pa donde|pa onde|hay|ay|dan)\b"
+    r"[^.]{0,60}?"
+    r"\b(?:rutas?|corridas?|vueltas?|tramos?|pagan?|pago|sueldo|salario|boletos?|"
+    r"prestaciones|vacantes?|tiran|descansos?|bonos?|requisitos?)\b"
+)
+
+
+def has_embedded_business_question(message: str | None) -> bool:
+    return bool(_EMBEDDED_QUESTION_RE.search(normalize_text(message or "")))
+
+
 def should_prioritize_current_turn(message: str | None, last_bot_message: str | None = None) -> bool:
     """Evita que RAG/memoria pisen una respuesta clara del candidato."""
-    if is_question(message):
+    if is_question(message) or has_embedded_business_question(message):
         return False
     return has_current_turn_profile_signal(message, last_bot_message)
 

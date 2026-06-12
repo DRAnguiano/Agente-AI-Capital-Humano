@@ -84,12 +84,20 @@ def _conversation_turns_count(result: dict[str, Any]) -> int | None:
     return None
 
 
-def _maybe_prepend_first_reply_intro(reply: str, result: dict[str, Any]) -> str:
+def _maybe_prepend_first_reply_intro(
+    reply: str, result: dict[str, Any], is_first_reply: bool | None = None
+) -> str:
     """
     Adds Mundo's public intro only on the first assistant reply of a conversation.
 
     This is intentionally done at the Chatwoot/Telegram delivery layer so curl
     tests and internal graph behavior stay clean.
+
+    ``is_first_reply`` is the authoritative signal (computed by the caller as
+    "no previous assistant message in lead memory"). The legacy
+    ``conversation_memory_built`` event path is kept only as fallback: nothing
+    emits that event today, so without the explicit flag the intro never fired
+    (bug observado en smoke 2026-06-12 12:12).
     """
     clean = (reply or "").strip()
     if not clean:
@@ -111,11 +119,13 @@ def _maybe_prepend_first_reply_intro(reply: str, result: dict[str, Any]) -> str:
     if "soy mundo" in normalized[:180]:
         return clean
 
-    turns_count = _conversation_turns_count(result)
+    if is_first_reply is None:
+        turns_count = _conversation_turns_count(result)
+        # Legacy: only first real assistant response; if the event is missing,
+        # avoid adding the intro to prevent accidental repeated greetings.
+        is_first_reply = turns_count == 0
 
-    # Only first real assistant response. If the event is missing, avoid adding
-    # the intro to prevent accidental repeated greetings.
-    if turns_count is None or turns_count > 0:
+    if not is_first_reply:
         return clean
 
     return f"{intro}\n\n{clean}"
@@ -289,6 +299,7 @@ def process_chatwoot_debounced_message(
         from app.knowledge.current_turn import (
             build_current_turn_ack,
             extract_current_turn_facts,
+            is_campaign_or_interest_entry,
             should_prioritize_current_turn,
         )
         from app.chatwoot_note_sync import sync_chatwoot_candidate_note
@@ -314,8 +325,41 @@ def process_chatwoot_debounced_message(
 
         current_turn_facts = extract_current_turn_facts(combined_content, last_bot_message)
 
+        # Primer contacto con entrada de campaña/interés (p. ej. el mensaje
+        # default de la publicación de Facebook): Mundo SIEMPRE recibe con su
+        # saludo oficial; el current-turn guard no aplica en ese turno.
+        first_contact_greeting = (
+            last_bot_message is None
+            and not result.get("requires_human")
+            and is_campaign_or_interest_entry(combined_content)
+        )
+        if first_contact_greeting:
+            from app.orchestrators.knowledge_orchestrator import GREETING_REPLY
+
+            result.update(
+                {
+                    "reply": GREETING_REPLY,
+                    "text": GREETING_REPLY,
+                    "selected_route": "profile",
+                    "route": "profile",
+                    "intent": "greeting",
+                    "risk_level": "low",
+                    "requires_human": False,
+                    "first_contact_greeting_applied": True,
+                }
+            )
+            print(
+                "[FIRST_CONTACT_GREETING_APPLIED]",
+                json.dumps(
+                    {"conversation_id": conversation_id, "channel_user_id": channel_user_id},
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+
         if (
-            not result.get("requires_human")
+            not first_contact_greeting
+            and not result.get("requires_human")
             and should_prioritize_current_turn(combined_content, last_bot_message)
             and current_turn_facts
         ):
@@ -413,7 +457,9 @@ def process_chatwoot_debounced_message(
             )
 
         reply = (result.get("reply") or result.get("text") or "").strip()
-        reply = _maybe_prepend_first_reply_intro(reply, result)
+        reply = _maybe_prepend_first_reply_intro(
+            reply, result, is_first_reply=(last_bot_message is None)
+        )
 
         if not reply:
             return {
