@@ -228,7 +228,9 @@ def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | N
     vt = current.get("experience.vehicle_type")
     if vt == "sencillo":
         detected.append("experiencia en camión sencillo")
-    elif vt in ("quinta_rueda", "full"):
+    elif vt == "full":
+        # Solo full confirma tracto full; jerga (quinta rueda/tráiler) nunca
+        # llega aquí como vehicle_type y no debe afirmarse como full.
         detected.append("experiencia en tracto full")
 
     if detected:

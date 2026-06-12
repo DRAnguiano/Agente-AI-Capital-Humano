@@ -53,7 +53,7 @@ _CAMPO_DISPLAY: dict[str, str] = {
 
 _PLANTILLAS: dict[str, list[str]] = {
     "new": [
-        "Hola {nombre}, ¿tuvo oportunidad de revisar la vacante de operador de quinta rueda? "
+        "Hola {nombre}, ¿tuvo oportunidad de revisar la vacante de operador de tracto full o sencillo? "
         "Con gusto le cuento más sobre el proceso.",
 
         "Hola {nombre}, seguimos con la vacante disponible. "

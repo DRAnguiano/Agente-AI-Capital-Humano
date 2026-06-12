@@ -54,7 +54,7 @@ FAREWELL_REPLY = (
 
 GREETING_REPLY = (
     "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
-    "¿Le interesa la vacante de operador de quinta rueda?"
+    "¿Le interesa la vacante de operador de tracto full o sencillo?"
 )
 
 _GREETING_TERMS = (

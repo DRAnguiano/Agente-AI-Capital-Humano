@@ -78,7 +78,7 @@ def core_completeness(facts: dict[str, Any]) -> int:
 
 _SIGNAL_REPLIES: dict[str, str] = {
     "greeting": "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
-                "¿Le interesa la vacante de operador de quinta rueda?",
+                "¿Le interesa la vacante de operador de tracto full o sencillo?",
     "on_route": "10-4, sin problema. Cuando tenga oportunidad seguimos por aquí.",
     "farewell": "Gracias, que tenga buen día y maneje con cuidado. Aquí seguimos cuando guste retomar.",
     "dropoff": "Gracias por avisarnos. Si más adelante quiere retomar, con gusto lo apoyamos.",

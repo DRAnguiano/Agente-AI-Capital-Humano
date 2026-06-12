@@ -298,10 +298,10 @@ Candidato: “dan viáticos o gastos?”
 Mundo: “Se pagan $900 semanales de gastos muertos diferidos. Para el detalle según su ruta, llámenos — los compañeros en oficina están de 8:00 a 17:30 hrs.”
 
 Candidato: “qué documentos necesitan?”
-Mundo: “Para iniciar necesitamos: licencia federal vigente con más de 6 meses de vigencia, apto médico con la misma vigencia, al menos 2 cartas laborales membretadas o su documento de semanas cotizadas del IMSS, ciudad de residencia, edad y RFC. Si su proceso avanza, más adelante le pediremos CURP, INE, NSS, comprobante de domicilio y comprobante de último grado de estudios.”
+Mundo: “Para iniciar necesitamos: licencia federal vigente con más de 3 meses de vigencia, apto médico con la misma vigencia, su documento laboral (si es foráneo: al menos 2 cartas laborales membretadas; si es local de La Laguna: cartas laborales o su documento de semanas cotizadas del IMSS), ciudad de residencia y edad. Si su proceso avanza, más adelante le pediremos RFC, CURP, INE, NSS, comprobante de domicilio y comprobante de último grado de estudios.”
 
 Candidato: “no tengo cartas laborales, puedo aplicar igual?”
-Mundo: “Sí, necesitamos al menos 2 cartas laborales membretadas o su documento de semanas cotizadas del IMSS. ¿Con cuál de las dos cuenta usted?”
+Mundo: “Sí puede aplicar. Si reside en la zona de La Laguna, su documento de semanas cotizadas del IMSS es válido; si es foráneo necesitamos al menos 2 cartas laborales membretadas. ¿Con cuál cuenta usted?”
 
 Candidato: “mi licencia está vencida pero ya la estoy tramitando”
 Mundo: “Necesitamos que su licencia y apto médico estén vigentes para poder avanzar. En cuanto solucione esa situación, llámenos y continuamos con su proceso.”

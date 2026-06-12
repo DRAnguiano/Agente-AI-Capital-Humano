@@ -36,7 +36,7 @@ SET r.label = row.label;
 UNWIND [
   {
     id:'static_greeting',
-    text:'Hola, soy Mundo del equipo de reclutamiento de Transmontes. ¿Le interesa la vacante de operador de quinta rueda?'
+    text:'Hola, soy Mundo del equipo de reclutamiento de Transmontes. ¿Le interesa la vacante de operador de tracto full o sencillo?'
   },
   {
     id:'static_on_route',
@@ -114,7 +114,8 @@ UNWIND [
   {id:'candidate_dropoff_recovery', risk_level:'medium', topic:null, route:'candidate_dropoff_recovery'},
   {id:'candidate_dropoff_close', risk_level:'low', topic:null, route:'fallback'},
   {id:'ambiguous_slang_clarification', risk_level:'medium', topic:null, route:'clarification'},
-  {id:'sensitive_handoff', risk_level:'high', topic:'safety', route:'human_handoff'}
+  {id:'sensitive_handoff', risk_level:'high', topic:'safety', route:'human_handoff'},
+  {id:'driving_school', risk_level:'low', topic:'documents', route:'rag'}
 ] AS row
 MERGE (intent:Intent {id: row.id})
 SET intent.risk_level = row.risk_level,
@@ -196,9 +197,25 @@ UNWIND [
     intent:'candidate_profile_signal', reply:null, source:null
   },
   {
-    id:'fifth_wheel_full', canonical:'full / quinta rueda', category:'jargon',
-    aliases:['full','quinta rueda','quinta','doble remolque','tracto'],
+    id:'fifth_wheel_full', canonical:'full', category:'jargon',
+    aliases:['full','doble remolque'],
     intent:'candidate_profile_signal', reply:null, source:null
+  },
+  {
+    // Jerga del oficio/tractocamión: NO es tipo de unidad y NO equivale a full.
+    // Señal de experiencia compatible; la unidad se confirma preguntando full o sencillo.
+    id:'fifth_wheel_jargon', canonical:'quinta rueda (jerga, confirmar full o sencillo)', category:'jargon',
+    aliases:['quinta rueda','quinta','5ta rueda','kinta rueda','op 5ta','operador 5ta','tracto','tractocamion','tractocamión'],
+    intent:'candidate_profile_signal', reply:null, source:null
+  },
+  {
+    // Escuelita: SOLO señales de falta de experiencia / interés en curso.
+    // La jerga de quinta rueda NO va aquí: tener quinta rueda = experiencia
+    // compatible, no candidato a escuelita (esos aliases viven en fifth_wheel_jargon).
+    // Definido en el seed para sobrescribir el nodo legacy del grafo (SET aliases).
+    id:'escuelita', canonical:'escuela de manejo', category:'jargon',
+    aliases:['escuelita','escuela','eskuela','curso','kurso','capacitacion','capacitación','entrenamiento','me falta experiencia','falta experiencia','sin experiencia','no tengo experiencia','aprender','aprendo','ensenan','enseñan','me enseñan','me ensenan'],
+    intent:'driving_school', reply:null, source:'documents_policy'
   },
   {
     id:'on_route_unavailable', canonical:'va manejando', category:'dropoff_signal',
