@@ -51,8 +51,89 @@
 - [x] K3.3 `openspec validate rag-corpus-alignment --strict` — valid (2026-06-12).
 - [x] K3.4 Chroma reindexado con el corpus nuevo — `POST /reindex`: 6 files / 87 chunks / colección `rh_rag_docs_bge_m3` (2026-06-12).
 - [x] K3.5 Re-seed de Neo4j aplicado y verificado — query de aliases familia quinta rueda devuelve SOLO `fifth_wheel_jargon`; `escuelita` limpia (2026-06-12).
-- [ ] K3.6 Smoke en canal demo: saludo, "manejo quinta rueda", requisitos, pago
-  con ciudad conocida, boleto (local vs foráneo).
+- [~] K3.6 Smoke en canal demo (conv. 81, 2026-06-12): saludo ✓ ("tracto full o
+  sencillo"); pago con cifras documentadas ✓ (Bajío/Bocar/Clarios, sin fallback
+  telefónico). Falló: `vehicle_type=quinta_rueda` persistido otra vez → causa
+  raíz K2.8; pregunta de ruta ignorada/derivada (faltaba contenido → K1.6);
+  ciudad glotona (regex, fuera de este change). Re-smoke pendiente tras K3.7.
+
+## Fase 4 — Hallazgos del smoke 81 (mismo change)
+
+- [x] K1.6 Contenido de rutas/modo de trabajo en `04_bases_rutas.md` (decisiones
+  de negocio 2026-06-12): zona del corredor para RUTAS = Monterrey, Nuevo
+  Laredo/Laredo, Torreón y ZM de La Laguna (Durango y Coahuila) → rutas
+  habituales del corredor Torreón ↔ Monterrey ↔ Nuevo Laredo ida y vuelta, con
+  pedidos ocasionales al sur (cajas/pedidos de clientes, referencia Bocar
+  $2.90/km). Fuera de esas ciudades → prioridad Bocar y Clarios sobre la ruta
+  del Bajío (mencionando igualmente las rutas habituales). Misma respuesta para
+  todas las vacantes. NOTA: esta clasificación de zona para rutas es DISTINTA a
+  la de apoyo de traslado/boleto (local = solo ZM Laguna). Jerga
+  tramo/corrida/vuelta/salida documentada en `05` y `01`.
+- [x] K2.8 **Causa raíz del quinta_rueda persistido**: nodo
+  `VehicleType vehicle_quinta_rueda` en `db/neo4j_seed_geo_vehicle.cypher`
+  escribía `experience.vehicle_type=quinta_rueda` vía
+  `extract_profile_facts_from_neo4j` (knowledge_orchestrator:712-735),
+  brincándose `normalize_vehicle` y suprimiendo el manejo limpio de
+  `profile_extractor` por el dedup. Nodo eliminado del seed + `DETACH DELETE`
+  autocurativo al re-correrlo.
+- [ ] K3.7 Re-aplicar `db/neo4j_seed_geo_vehicle.cypher` + reindexar Chroma +
+  re-smoke (quinta rueda NO debe fijar unidad; pregunta de rutas debe responder
+  con el corredor).
+- [x] K2.9 Humor ligero determinista (decisión 2026-06-12, smoke 13:34): Term
+  `smalltalk_joke` + ReplyTemplate `static_joke` en el seed hr_rules — chiste
+  benigno responde una línea simpática y el nudge agrega la siguiente pregunta
+  del funnel; guía de humor/small talk en `05_jerga_rcontrol.md` (sin humor en
+  temas sensibles). Evita el misfire "te digo que licencia tengo" → listado de
+  documentos. Requiere re-seed + reindex.
+
+## Fuera de este change — bugs de código detectados en smoke 81 (tests rojos primero)
+
+- [ ] Regex de ciudad glotona en `profile_extractor`: "soy de Laredo ahí de
+  donde a donde me toca ir?" → `candidate.city="Laredo Ahí De Donde A Donde Me
+  Toca Ir"`. Acotar la captura (límite de tokens / cortar en signos de pregunta
+  y conectores). Además "laredo" solo no es alias de ningún GeoArea (decidir si
+  Laredo TX/NLD ambiguo → aclarar).
+- [ ] Pregunta tomada como respuesta: el turno con "?" se procesó como respuesta
+  de ciudad y la pregunta de rutas se ignoró tres veces (ack "Laredo, anotado" +
+  pregunta de licencia). `should_prioritize_current_turn` ya excluye preguntas —
+  rastrear por qué el camino vivo no respetó `is_question`.
+- [ ] Extractor geo de Neo4j extrae ciudad desde PREGUNTAS (smoke 10:17): "¿qué
+  rutas maneja para nuevo laredo?" → `candidate.city=Nuevo Laredo` + labels
+  `foraneo`/`validar_traslado`. La extracción de facts en
+  knowledge_orchestrator:712-735 corre "regardless of route/intent" sin guard de
+  pregunta; aplicar `is_question`/contexto de respuesta también al camino Neo4j.
+- [ ] Mensaje de campaña FB "Me interesa la vacante de operador de quinta rueda"
+  (texto por default de la publicación) debe tratarse como APERTURA del flujo
+  (presentación + contrato de apertura), no como dato registrable ("lo dejo
+  registrado") ni mucho menos fijar unidad.
+- [ ] Fallback de horario sigue saliendo sin importar la hora actual ("llámenos
+  de 8:00 a 17:30" estando en horario): inyectar hora actual al contrato de
+  generación (frente grounding).
+- [ ] CONFLICTO media guard vs flujo de documentos — RESUELTO por decisión de
+  negocio (2026-06-12): media esperada (tras pedir documentos) → acuse +
+  revisión humana sin OCR; canned de rechazo solo para multimedia no esperada.
+  Contrato registrado en multi-intent-migration (sección 14, "acuse de
+  documentos esperados") y flujo de llamada en FUTURO call_scheduling.
+  Implementación pendiente con tests rojos.
+- [ ] Copy: respuestas con comillas literales ("Laredo, anotado.").
+- [x] Prefijo "Nuestro equipo valida el avance." — causa raíz: el LLM parroteaba
+  el `public_guidance` de la Policy `no_hiring_promise` (seed hr_rules:135).
+  Guidance reformulada como regla interna explícita "NO copiar esta frase"
+  (2026-06-12; requiere re-seed).
+- [x] Machaca en "¿cuánto paga esa ruta?" — causa raíz: intent de pago filtra
+  retrieval a `01_pago_prestaciones.md` y el pago del corredor vivía solo en
+  `04_bases_rutas.md`. Pago del corredor cross-listado en `01` con respuesta
+  sugerida propia (2026-06-12; requiere reindex).
+- [ ] BUG LATENTE filtros RAG: el seed `neo4j_seed_hr_rules.cypher` define
+  `InternalSource` con ids `routes_policy`/`payment_policy`/etc., pero el filtro
+  de Chroma (`_source_where`) espera el nombre de archivo (`04_bases_rutas.md`).
+  Hoy funciona solo porque el grafo vivo conserva nodos legacy con ids de
+  archivo y `collect(DISTINCT s.id)` junta ambos. Alinear los ids del seed a
+  los nombres de archivo reales (y limpiar los nodos `*_policy` huérfanos), o
+  los filtros quedarán vacíos en un grafo reconstruido desde el seed.
+- [ ] Grounding ante contexto vacío en preguntas de ruta: "Laredo es una ciudad
+  importante en el norte de México" pasó el guard de grounding (smoke 10:06).
+  Conectar con el change `live-reply-grounding-and-quality`.
 
 ## Fuera de este change (próximos, con tests rojos primero)
 

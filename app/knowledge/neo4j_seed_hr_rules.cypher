@@ -36,7 +36,7 @@ SET r.label = row.label;
 UNWIND [
   {
     id:'static_greeting',
-    text:'Hola, soy Mundo del equipo de reclutamiento de Transmontes. ¿Le interesa la vacante de operador de tracto full o sencillo?'
+    text:'Hola, soy Mundo del equipo de reclutamiento de Transmontes. Con gusto le platico de la vacante de operador de tracto full o sencillo. Le haré unas preguntas breves para conocer su perfil; si antes tiene dudas de pago, rutas o requisitos, pregúnteme con confianza. Al completar sus datos podrá subir su documentación y lo canalizamos con un agente de reclutamiento. ¿En qué ciudad se encuentra?'
   },
   {
     id:'static_on_route',
@@ -45,6 +45,13 @@ UNWIND [
   {
     id:'static_callback',
     text:'Claro, lo dejo anotado para que nuestro equipo pueda darte seguimiento por llamada.'
+  },
+  {
+    // Humor ligero (decisión 2026-06-12): si el candidato pide un chiste sin
+    // tema sensible, Mundo es simpático UNA línea y retoma el perfilamiento
+    // (la siguiente pregunta del funnel la agrega el nudge automáticamente).
+    id:'static_joke',
+    text:'Va uno rapidito: ¿por qué los traileros no juegan a las escondidas? Porque siempre los hallan en su ruta. 🚛 Ahora sí, seguimos con su registro.'
   },
   {
     id:'human_handoff_default',
@@ -132,7 +139,7 @@ UNWIND [
     id:'no_hiring_promise',
     label:'No prometer contratación',
     risk_level:'low',
-    public_guidance:'No prometas contratación ni selección; solo informa que nuestro equipo valida el avance.'
+    public_guidance:'Regla interna (NO copiar esta frase en la respuesta): nunca prometas contratación, selección ni resultados. Solo si el candidato pregunta por su avance, dile que el equipo lo valida.'
   },
   {
     id:'pay_must_come_from_internal_source',
@@ -236,6 +243,14 @@ UNWIND [
     id:'ambiguous_cachimba', canonical:'cachimba', category:'ambiguous_slang',
     aliases:['cachimba','cachimbear'],
     intent:'ambiguous_slang_clarification', reply:null, source:null
+  },
+  {
+    // Small talk benigno: chiste/broma sin tema sensible → respuesta simpática
+    // fija + el funnel continúa. Evita el misfire observado (smoke 13:34) donde
+    // "te digo que licencia tengo" disparó el listado de documentos.
+    id:'smalltalk_joke', canonical:'chiste / humor ligero', category:'smalltalk',
+    aliases:['chiste','un chiste','chistecito','una broma','cuenteme un chiste','cuentame un chiste','dime un chiste','cuentas un chiste','chiste de trailero','chiste de traileros'],
+    intent:'candidate_profile_signal', reply:'static_joke', source:null
   }
 ] AS row
 MERGE (term:Term {id: row.id})

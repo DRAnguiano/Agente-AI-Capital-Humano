@@ -161,7 +161,7 @@ Casos reales de regresión (fixtures `/classify`):
 - [ ] FUTURO **validador compatibilidad/vigencia** — matriz licencia/unidad (full+B incompatible) + política de vigencia (>3 meses; ≤3 meses → comprobante; vencido+trámite → aclaración; vencido sin trámite → no continúa; sin fecha → no inferir). **Reusar** `needs_confirmation_fields`+`reason` + label `aclaracion_pendiente`/`falta_*` + status `tramite`; NO inventar estados/labels; NO revivir `revisar_licencia`/`*_por_vencer`. NO en 2C.1.
 - [ ] DEUDA copy: `app/persona_config.py` "más de 6 meses de vigencia" → actualizar a ">3 meses" (regla oficial 2C.0c). Fase aparte.
 - [ ] DEUDA (post-diagnóstico 2C.0b): corregir **regla E** de `db/010` (no producir `availability_to_attend_candidate` desde `documents.availability_claim`) + writer legacy de `availability_claim` en `profile_extractor`. NO en 2C.1.
-- [ ] FUTURO **call_scheduling/callback** — concepto nuevo: label operativa `llamada_pendiente` (= contactar por llamada; NO "acudir"; NO sustituye availability_to_attend; fuera del profile planner). Facts futuros opcionales `scheduling.call_window`/`scheduling.call_status=pending`. `llamada_pendiente` ya existe en el catálogo oficial (`chatwoot-label-taxonomy`, 24 activas); el planner/handoff todavía NO la emite hasta implementar esta fase. `disponible_acudir` queda legacy/diferido (10a.6/10b.12).
+- [ ] FUTURO **call_scheduling/callback** — concepto nuevo: label operativa `llamada_pendiente` (= contactar por llamada; NO "acudir"; NO sustituye availability_to_attend; fuera del profile planner). Facts futuros opcionales `scheduling.call_window`/`scheduling.call_status=pending`. `llamada_pendiente` ya existe en el catálogo oficial (`chatwoot-label-taxonomy`, 24 activas); el planner/handoff todavía NO la emite hasta implementar esta fase. `disponible_acudir` queda legacy/diferido (10a.6/10b.12). **CONTRATO FIJADO (negocio, 2026-06-12)**: disparador = núcleo completo + documentos confirmados por el candidato → bot: "Para avanzar en su proceso, suba fotos de los documentos que nos confirmó. ¿Gusta que le agendemos una llamada?" (+ foráneo: "...y validamos su traslado a Torreón para continuar con su proceso") → emite `llamada_pendiente` para que el agente llame dentro de horario (8:00–17:30). Depende del acuse de documentos del media guard (ver sección 14).
 - [ ] 10b.16h **Fase 2C.2** — surfacing por label del backlog (`falta_unidad`/`aclaracion_pendiente`) vía label_planner (cuando exista). Diagnóstico manual de las 5 filas quinta_rueda (no migración).
 - [x] 10b.16d **(doc-only)** Límite explícito 2B.1 documentado — `design.md` ("Límites explícitos de Fase 2B.1") + spec `multi-intent-pipeline` (escenarios "Límite — …"). Reglas fijadas: (1) `license.type` = categoría B/E/…, NO vigencia; (2) `license.status` (vigente/vencida/tramite) por sí solo NO valida la regla >3 meses; (3) `medical.apto_status` (vigente/vencido/tramite) por sí solo NO valida la regla >3 meses; (4) vigencia suficiente requiere fecha/texto de vencimiento interpretable + regla oficial >3 meses; (5) sin fecha clara → NO inferir vigencia suficiente; (6) es **contrato del validador futuro**, NO se implementa aquí (el planner usa el valor del fact tal cual; sin umbrales temporales).
 
@@ -186,11 +186,24 @@ Casos reales de regresión (fixtures `/classify`):
 
 ## 12. Cutover (pendiente, behind flag)
 
+> PRIORIDAD ALTA (decisión 2026-06-12): acelerar fases 6-8 + cutover. Los choques
+> regex-vs-intent del camino vivo se resuelven aquí (clasificador LLM con catálogo
+> cerrado + evidencia literal), NO con más parches al camino vivo — solo bugs
+> críticos se parchan mientras tanto. Decisión acompañada de: generación SIEMPRE
+> en 70B (el downgrade a 8b fue causa principal de alucinaciones), chunking RAG
+> redimensionado (900/150/3200/1400) y observabilidad LLM (ver FUTURO Langfuse).
+
 - [ ] 12.1 Definir el flag de cutover y el punto de delegación en `handle_message`
 - [ ] 12.2 Resolver Open Questions del design (coexistencia con `profile_extractor`; emisión de labels; persistencia de auditoría)
 - [ ] 12.3 Definir el mapeo `field → label` de Chatwoot (documento del Paso 2)
 - [ ] 12.4 Activar cutover en staging; validar paridad con baseline y rollback por flag
 - [ ] 12.5 Actualizar `CONTEXTO.md` y la spec `message-orchestration` tras el cutover
+
+- [ ] FUTURO **observabilidad LLM (Langfuse self-hosted)** — decisión 2026-06-12:
+  contenedor en compose + SDK mínimo en `call_llm`: traza por turno de modelo,
+  prompt, contexto recuperado (fuentes y chars), respuesta y latencia. Objetivo:
+  auditar alucinaciones/truncamientos sin cazar logs (el downgrade a 8b y el
+  contexto cortado habrían sido visibles en dashboard). Change OpenSpec aparte.
 
 ## 13. Auditoría de regex/if de negocio (REPORTE primero — no tocar código)
 
@@ -215,4 +228,11 @@ Casos reales de regresión (fixtures `/classify`):
   contiene el archivo, NO OCR. Motivo: el análisis de embudo debe ver al candidato que
   intentó entregar un documento y fue redirigido a texto (hoy solo queda en el log
   `[CHATWOOT_MEDIA_GUARD]`, invisible para el record). Change OpenSpec aparte; NO en media v1.
+- [ ] FUTURO **acuse de documentos esperados** (decisión negocio 2026-06-12): cuando el
+  bot pidió documentos (flujo call_scheduling) y llega un attachment, el guard responde
+  acuse — "Recibimos sus documentos, nuestro equipo los revisa y le confirma el siguiente
+  paso" — en lugar del canned de rechazo, marca el lead para revisión humana (evento
+  media + label) y sigue SIN OCR/facts. El canned de rechazo queda solo para multimedia
+  NO esperada (stickers, audios, imágenes fuera de flujo). Resuelve el conflicto
+  "pedimos fotos pero G4 las rebota".
 - [ ] FUTURO **media v2** — captions explícitos y/o capa OCR/document-understanding validada (solo entonces la media podría producir facts). NO ahora.

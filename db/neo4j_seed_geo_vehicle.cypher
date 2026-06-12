@@ -308,15 +308,15 @@ SET n.canonical = 'Sonora',
 // "quinta" alone is excluded: "quinta de mayo", "quinta avenida" etc.
 // "tracto" alone is excluded: could be either trailer type.
 // Only unambiguous terms or explicit multi-word phrases are included.
+//
+// REGLA (contrato domain_catalog / 10b.13): "quinta rueda" y variantes NO son
+// un tipo de unidad — son jerga del oficio (experiencia compatible). El nodo
+// legacy vehicle_quinta_rueda escribía experience.vehicle_type=quinta_rueda
+// brincándose normalize_vehicle (bug observado en vivo, conv. 80/81). Se
+// elimina y la limpieza es autocurativa al re-correr este seed:
 
-MERGE (n:VehicleType {id: 'vehicle_quinta_rueda'})
-SET n.canonical = 'quinta rueda',
-    n.category = 'single_trailer',
-    n.aliases = ['quinta rueda', '5ta rueda', 'kinta rueda', 'tracto camion', 'tracto camión'],
-    n.profile_fact_group = 'experience',
-    n.profile_fact_key = 'vehicle_type',
-    n.profile_fact_value = 'quinta_rueda',
-    n.confidence = 0.88;
+MATCH (n:VehicleType {id: 'vehicle_quinta_rueda'})
+DETACH DELETE n;
 
 MERGE (n:VehicleType {id: 'vehicle_full'})
 SET n.canonical = 'full',
