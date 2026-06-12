@@ -85,6 +85,12 @@
   del funnel; guía de humor/small talk en `05_jerga_rcontrol.md` (sin humor en
   temas sensibles). Evita el misfire "te digo que licencia tengo" → listado de
   documentos. Requiere re-seed + reindex.
+- [x] K2.10 Humor LLM con barda (decisión 2026-06-12, "el mismo chiste dos
+  veces"): la detección sigue determinista (Term), pero la respuesta la genera
+  el LLM con `_JOKE_PROMPT` (blanco, 2 frases, sin temas vetados); validación
+  de longitud + lista de vetados sobre texto normalizado; el template del seed
+  queda como FALLBACK ante error/vacío/violación; puente al funnel fijo en
+  código (`_JOKE_BRIDGE`). 7 tests con monkeypatch de call_llm.
 
 ## Fuera de este change — bugs de código detectados en smoke 81 (tests rojos primero)
 

@@ -156,10 +156,52 @@ def _clean_reply(text: str) -> str:
     return clean
 
 
+# ── Humor LLM con barda (decisión 2026-06-12) ────────────────────────────────
+# El Term smalltalk_joke detecta el chiste de forma determinista; la respuesta
+# la genera el LLM bajo reglas estrictas. La plantilla del seed es el FALLBACK
+# si el LLM falla, devuelve vacío o el chiste viola la barda. El puente al
+# funnel lo agrega el código (no el modelo) para que sea idéntico siempre.
+
+_JOKE_PROMPT = (
+    "Eres Mundo, asistente de reclutamiento de Transmontes. Cuenta UN chiste "
+    "corto y blanco sobre traileros, tractocamiones o la vida en carretera, en "
+    "español mexicano. Reglas estrictas: máximo 2 frases; prohibido doble "
+    "sentido, albures, sustancias, alcohol, accidentes, muerte, religión, "
+    "política o burlas a personas; tono amable. Devuelve SOLO el chiste, sin "
+    "comillas, sin saludo y sin cierre."
+)
+
+_JOKE_BRIDGE = "🚛 Ahora sí, seguimos con su registro."
+
+# Términos vetados (sobre texto normalizado): si el chiste generado toca
+# cualquiera, se usa el fallback determinista del seed.
+_JOKE_BANNED = (
+    "drog", "alcohol", "cerveza", "borrach", "muert", "accident", "choc",
+    "sexo", "sexual", "albur", "desnud", "matar", "pistol", "narco",
+    "secuestr", "religio", "politic", "vieja", "gord",
+)
+
+
+def _generate_joke_reply(fallback: str) -> str:
+    try:
+        joke = (call_llm(_JOKE_PROMPT) or "").strip().strip('"').strip()
+    except Exception:
+        return fallback
+    if not (10 <= len(joke) <= 240):
+        return fallback
+    normalized = normalize_text(joke)
+    if any(term in normalized for term in _JOKE_BANNED):
+        return fallback
+    return f"{joke} {_JOKE_BRIDGE}"
+
+
 def _controlled_reply_from_contract(contract: dict[str, Any]) -> str:
     template = contract.get("reply_template")
     if isinstance(template, dict) and template.get("text"):
-        return str(template["text"])
+        text = str(template["text"])
+        if template.get("id") == "static_joke":
+            return _generate_joke_reply(fallback=text)
+        return text
     if contract.get("requires_clarification"):
         return CONTROLLED_CLARIFICATION_REPLY
     if contract.get("requires_human"):
