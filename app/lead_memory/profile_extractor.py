@@ -7,6 +7,95 @@ from app.knowledge.text_normalizer import normalize_text
 from app.knowledge.normalize_domain_values import normalize_vehicle
 
 
+_NUMBER_WORDS = {
+    "un": 1,
+    "una": 1,
+    "uno": 1,
+    "dos": 2,
+    "tres": 3,
+    "cuatro": 4,
+    "cinco": 5,
+    "seis": 6,
+    "siete": 7,
+    "ocho": 8,
+    "nueve": 9,
+    "diez": 10,
+}
+
+_MONTHS = (
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "setiembre", "octubre",
+    "noviembre", "diciembre",
+)
+
+
+def _number_word_to_text(value: str) -> str:
+    value = normalize_text(value)
+    mapped = _NUMBER_WORDS.get(value)
+    return str(mapped) if mapped is not None else value
+
+
+def _find_expiration_text(text: str) -> str | None:
+    rel = re.search(
+        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
+        r"(?:\s+(?:como|aprox(?:imadamente)?))?"
+        r"\s+en\s+(\d{1,2}|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
+        r"\s+(dias?|semanas?|mes(?:es)?|ano|anos|anio|anios)\b",
+        text,
+    )
+    if rel:
+        n = _number_word_to_text(rel.group(1))
+        unit = rel.group(2)
+        unit_label = "años" if unit in {"ano", "anos", "anio", "anios"} else unit
+        return f"vence en {n} {unit_label}"
+
+    numeric_date = re.search(
+        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
+        r"\s+(?:el\s+)?(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
+        text,
+    )
+    if numeric_date:
+        return numeric_date.group(1)
+
+    month_pattern = "|".join(_MONTHS)
+    long_date = re.search(
+        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
+        rf"\s+(?:el\s+)?(\d{{1,2}}\s+de\s+(?:{month_pattern})(?:\s+de\s+\d{{4}})?)\b",
+        text,
+    )
+    if long_date:
+        return long_date.group(1)
+
+    month_year = re.search(
+        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
+        rf"\s+(?:en\s+|para\s+)?((?:{month_pattern})(?:\s+de)?\s+\d{{4}})\b",
+        text,
+    )
+    if month_year:
+        return month_year.group(1)
+    return None
+
+
+def _has_renewal_proof(text: str) -> str | None:
+    if not any(term in text for term in ("papel", "comprobante", "pago", "cita", "tramite", "tramit")):
+        return None
+    if re.search(r"\b(?:no|todavia no|aun no|sin)\b", text):
+        return "no"
+    if re.search(r"\b(?:si|sí|ya|tengo|cuento)\b", text):
+        return "sí"
+    return None
+
+
+def _expiry_text_is_short_unknown(expiration_text: str) -> bool:
+    t = normalize_text(expiration_text)
+    m = re.search(r"\b(\d{1,2})\s+(dias?|semanas?|mes(?:es)?)\b", t)
+    if not m:
+        return False
+    amount = int(m.group(1))
+    unit = m.group(2)
+    return unit.startswith("dia") or unit.startswith("semana") or (unit.startswith("mes") and amount <= 3)
+
+
 # Geo fallback — used when Neo4j is unavailable.
 # Multi-word aliases must precede any shorter alias they contain.
 KNOWN_CITY_ALIASES: list[tuple[str, str]] = [
@@ -146,6 +235,12 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         if "cartas" in text:
             upsert("documents", "labor_letters_status", "available", 0.80)
 
+    expiration_text = _find_expiration_text(text)
+    if expiration_text and any(t in text for t in ("licencia", "lic", "tipo e", "tipo b")):
+        upsert("license", "expiration_text", expiration_text, 0.90)
+        if not _expiry_text_is_short_unknown(expiration_text):
+            upsert("license", "status", "vigente", 0.80)
+
     # Future expiry = still valid
     if "licencia" in text and re.search(r"\b(?:vence|vencen|se vence)\b", text):
         if re.search(r"\bvence\s+en\s+\d+\s+(?:ano|anos|anio|anios)\b", text):
@@ -174,6 +269,12 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
             upsert("medical", "apto_status", "vigente", 0.95)
             upsert("document", "apto_status", "vigente", 0.95)
 
+    if expiration_text and any(t in text for t in ("apto", "medico")):
+        upsert("medical", "apto_expiration_text", expiration_text, 0.90)
+        if not _expiry_text_is_short_unknown(expiration_text):
+            upsert("medical", "apto_status", "vigente", 0.80)
+            upsert("document", "apto_status", "vigente", 0.80)
+
     m = re.search(
         r"\bapto(?:\s+medico)?\s+(?:vence|se vence)\s+en\s+(\d+)\s+(?:ano|anos|anio|anios)\b", text
     )
@@ -197,6 +298,10 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("medical", "apto_status", "vigente", 0.88)
         upsert("medical", "apto_expiration_text", exp_text, 0.88)
         upsert("document", "apto_status", "vigente", 0.88)
+
+    proof = _has_renewal_proof(text)
+    if proof:
+        upsert("documents", "renewal_proof", proof, 0.80)
 
     # ── Experience ───────────────────────────────────────────────────────────
     DRIVING_TERMS = ("manejando", "manejo", "experiencia", "operador", "full", "quinta", "fulero", "fulera", "tracto")
@@ -300,10 +405,12 @@ def missing_profile_fields(active_facts: dict[str, Any] | None) -> list[str]:
     facts = active_facts or {}
     required = [
         ("candidate.city", "ciudad"),
-        ("license.category", "tipo de licencia"),
-        ("license.status", "vigencia de licencia"),
-        ("medical.apto_status", "apto médico"),
+        ("candidate.age", "edad"),
         ("experience.vehicle_type", "tipo de unidad (tracto full o sencillo)"),
+        ("license.category", "tipo de licencia"),
+        ("license.expiration_text", "vencimiento de licencia"),
+        ("medical.apto_expiration_text", "vencimiento de apto médico"),
+        ("experience.years", "años de experiencia"),
         ("documents.labor_letters_status", "cartas laborales"),
     ]
     return [label for key, label in required if key not in facts]

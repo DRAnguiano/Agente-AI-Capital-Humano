@@ -30,6 +30,14 @@ def test_canonical_license_category_to_type():
     assert KO._canonical_asked_keys({"license.category"}) == ["license.type"]
 
 
+def test_canonical_age_identity():
+    assert KO._canonical_asked_keys({"candidate.age"}) == ["candidate.age"]
+
+
+def test_canonical_expiration_text_identity():
+    assert KO._canonical_asked_keys({"license.expiration_text"}) == ["license.expiration_text"]
+
+
 def test_canonical_documents_to_proof():
     assert KO._canonical_asked_keys({"documents.labor_letters_status"}) == ["documents.proof"]
 
@@ -76,26 +84,38 @@ def test_nudge_first_step_returns_city_key(no_extraction):
     assert keys == ["candidate.city"]
 
 
-def test_nudge_vigencia_step_text_but_no_keys(no_extraction):
-    # city y license.category ya presentes → siguiente step incompleto es el mixto
-    # de vigencia → hay pregunta visible pero NO se registran keys (conservador).
+def test_nudge_age_step_returns_age_key(no_extraction):
     mem = _facts(
         ("candidate", "city", "Torreon"),
-        ("license", "category", "E"),
     )
     text, keys = KO._build_funnel_nudge("ok", {"intent": "info", "route": "rag"}, mem)
     assert text is not None
-    assert keys == []
+    assert "años" in text
+    assert keys == ["candidate.age"]
+
+
+def test_nudge_license_step_records_type_and_expiration(no_extraction):
+    mem = _facts(
+        ("candidate", "city", "Torreon"),
+        ("candidate", "age", "45"),
+        ("experience", "vehicle_type", "full"),
+    )
+    text, keys = KO._build_funnel_nudge("ok", {"intent": "info", "route": "rag"}, mem)
+    assert text is not None
+    assert "licencia" in text.lower()
+    assert keys == ["license.expiration_text", "license.type"]
 
 
 def test_nudge_all_facts_no_nudge(no_extraction):
     mem = _facts(
         ("candidate", "city", "Torreon"),
+        ("candidate", "age", "45"),
         ("license", "category", "E"),
-        ("license", "status", "vigente"),
+        ("license", "expiration_text", "vence en 1 año"),
         ("medical", "apto_status", "vigente"),
+        ("medical", "apto_expiration_text", "vence en 1 año"),
         ("experience", "years", "5"),
-        ("experience", "vehicle_type", "quinta_rueda"),
+        ("experience", "vehicle_type", "full"),
         ("documents", "labor_letters_status", "disponibles"),
     )
     text, keys = KO._build_funnel_nudge("ok", {"intent": "info", "route": "rag"}, mem)

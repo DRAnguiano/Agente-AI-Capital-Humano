@@ -24,25 +24,40 @@ def asked_field_keys_for_guard(facts: dict[str, Any]) -> list[str]:
 
     Mismo orden y predicados que ``next_question_from_missing_facts``:
     - ``candidate.city`` faltante                         → ``["candidate.city"]``
-    - licencia (``not category and not status``, MIXTA)   → ``[]``
-    - ``experience.years`` faltante                       → ``["experience.years"]``
+    - ``candidate.age`` faltante                          → ``["candidate.age"]``
     - ``experience.vehicle_type`` faltante                → ``["experience.vehicle_type"]``
-    - ``medical.apto_status`` faltante (advisory)         → ``[]``
-    - ``documents.labor_letters`` faltante                → ``["documents.proof"]``
-    - perfil completo (cierre)                            → ``[]``
+    - ``license.category`` faltante                       → ``[]`` (tipo+vencimiento)
+    - ``license.expiration_text`` faltante                → ``[]`` (vigencia advisory)
+    - ``medical.apto_expiration_text`` faltante           → ``[]`` (vigencia advisory)
+    - ``experience.years`` faltante                       → ``["experience.years"]``
+    - documento laboral faltante                          → ``["documents.proof"]``
+    - perfil completo / descarte por edad                 → ``[]``
     """
     if not facts.get("candidate.city"):
         return ["candidate.city"]
-    # Pregunta MIXTA tipo+vigencia: predicado literal del guard (and). Conservador → [].
-    if not facts.get("license.category") and not facts.get("license.status"):
+    if not facts.get("candidate.age"):
+        return ["candidate.age"]
+    try:
+        if int(str(facts.get("candidate.age") or "").strip()) >= 50:
+            return []
+    except ValueError:
+        pass
+    if not facts.get("experience.vehicle_type"):
+        return ["experience.vehicle_type"]
+    # Pregunta MIXTA tipo+vencimiento. Conservador → [].
+    if not facts.get("license.category"):
+        return []
+    # Vigencias/trámite: advisory hasta cutover canónico → [].
+    if not facts.get("license.expiration_text"):
+        return []
+    if not facts.get("medical.apto_expiration_text"):
         return []
     if not facts.get("experience.years"):
         return ["experience.years"]
-    if not facts.get("experience.vehicle_type"):
-        return ["experience.vehicle_type"]
-    # Apto/vigencia advisory: diferido (igual que el funnel) → [].
-    if not facts.get("medical.apto_status"):
-        return []
-    if not facts.get("documents.labor_letters"):
+    if not (
+        facts.get("documents.labor_letters")
+        or facts.get("documents.labor_letters_status")
+        or facts.get("documents.proof")
+    ):
         return ["documents.proof"]
     return []

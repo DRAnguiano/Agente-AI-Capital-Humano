@@ -702,6 +702,14 @@ def _stage_for_contract(contract: dict[str, Any], message: str) -> str:
     route = str(contract.get("route") or "fallback")
     text = normalize_text(message)
 
+    try:
+        from app.lead_memory.profile_extractor import extract_profile_facts_as_dict
+        age = int(str(extract_profile_facts_as_dict(message).get("candidate.age") or "").strip())
+        if age >= 50:
+            return "closed"
+    except Exception:
+        pass
+
     if contract.get("requires_human"):
         return "human_review"
     if intent == "farewell" or route == "candidate_dropoff_recovery" or intent == "candidate_dropoff_risk":
@@ -725,6 +733,8 @@ def _stage_for_contract(contract: dict[str, Any], message: str) -> str:
 
 def _next_action_for_stage(stage: str, contract: dict[str, Any]) -> str | None:
     intent = str(contract.get("intent") or "unknown")
+    if stage == "closed":
+        return "Cierre automático: edad fuera de perfil."
     if stage == "apto_pending_update":
         return "Dar seguimiento cuando el candidato actualice apto médico."
     if stage == "documents_pending":
@@ -949,6 +959,12 @@ def _build_profile_ack_reply(message: str) -> str | None:
         return None
 
     by_key = {f"{f['fact_group']}.{f['fact_key']}": f["fact_value"] for f in raw}
+    try:
+        if int(str(by_key.get("candidate.age") or "").strip()) >= 50:
+            from app.knowledge.current_turn import AGE_DISQUALIFICATION_REPLY
+            return AGE_DISQUALIFICATION_REPLY
+    except ValueError:
+        pass
 
     parts: list[str] = []
 
@@ -1020,19 +1036,35 @@ _FUNNEL_STEPS: list[dict] = [
         ],
     },
     {
-        "keys": {"license.category"},
+        "keys": {"candidate.age"},
         "variants": [
-            "¿Con qué tipo de licencia federal cuenta, A, B o E?",
-            "Para su perfil, ¿su licencia federal es tipo A, B o E?",
-            "¿Qué tipo de licencia federal maneja, A, B o E?",
+            "Para continuar con su perfil, ¿cuántos años tiene?",
+            "¿Me puede compartir su edad para seguir con el registro?",
+            "¿Cuántos años tiene actualmente?",
         ],
     },
     {
-        "keys": {"license.status", "medical.apto_status"},
+        "keys": {"experience.vehicle_type"},
         "variants": [
-            "¿Tiene vigentes su licencia federal y apto médico?",
-            "Para continuar, ¿cómo está la vigencia de su licencia y apto médico?",
-            "¿Su licencia y apto médico están al corriente?",
+            "¿Su experiencia es en tracto full o en sencillo?",
+            "¿Maneja tracto full o sencillo?",
+            "¿Cuál es su tipo de unidad, tracto full o sencillo?",
+        ],
+    },
+    {
+        "keys": {"license.category", "license.expiration_text"},
+        "variants": [
+            "¿Qué tipo de licencia federal tiene y cuándo vence?",
+            "Para su perfil, ¿su licencia federal es tipo A, B o E, y cuándo vence?",
+            "¿Qué tipo de licencia federal maneja y en cuánto tiempo se le vence?",
+        ],
+    },
+    {
+        "keys": {"medical.apto_expiration_text"},
+        "variants": [
+            "¿Cuándo vence su apto médico?",
+            "Para continuar, ¿en cuánto tiempo se le vence su apto médico?",
+            "¿Qué fecha de vencimiento tiene su apto médico?",
         ],
     },
     {
@@ -1041,14 +1073,6 @@ _FUNNEL_STEPS: list[dict] = [
             "¿Cuántos años tiene de experiencia como operador?",
             "Para su perfil, ¿cuántos años lleva manejando de manera profesional?",
             "¿Cuánto tiempo tiene de experiencia al volante?",
-        ],
-    },
-    {
-        "keys": {"experience.vehicle_type"},
-        "variants": [
-            "¿Tu experiencia es en tracto full o en sencillo?",
-            "¿Manejas tracto full o sencillo?",
-            "¿Cuál es tu tipo de unidad, tracto full o sencillo?",
         ],
     },
     {
@@ -1083,8 +1107,11 @@ _NUDGE_SKIP_ROUTES = frozenset({
 # (no inventar, no mezclar legacy/canonical, no inferir desde texto).
 _FUNNEL_KEY_CANONICAL: dict[str, str] = {
     "candidate.city": "candidate.city",
+    "candidate.age": "candidate.age",
     "license.category": "license.type",
+    "license.expiration_text": "license.expiration_text",
     "medical.apto_status": "medical.apto_status",
+    "medical.apto_expiration_text": "medical.apto_expiration_text",
     "experience.years": "experience.years",
     "experience.vehicle_type": "experience.vehicle_type",
     "documents.labor_letters_status": "documents.proof",
@@ -1163,6 +1190,13 @@ def _build_funnel_nudge(
                 active_facts[k] = str(f["fact_value"])
     except Exception as exc:
         log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
+
+    try:
+        age = int(str(active_facts.get("candidate.age") or "").strip())
+        if age >= 50:
+            return None, []
+    except ValueError:
+        pass
 
     for step in _FUNNEL_STEPS:
         if any(k not in active_facts for k in step["keys"]):

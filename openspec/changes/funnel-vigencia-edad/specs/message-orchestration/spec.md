@@ -2,18 +2,22 @@
 
 ## ADDED Requirements
 
-### Requirement: Edad temprana con descarte por mayor de 56
+### Requirement: Edad temprana con descarte desde 50 años
 
-El funnel vivo SHALL preguntar la edad inmediatamente después de la ciudad. Si
-el candidato declara más de 56 años, el sistema SHALL responder el guion de
-descarte cortés aprobado y NO SHALL continuar el perfilamiento.
+El funnel vivo SHALL preguntar la edad inmediatamente después de la ciudad. La
+edad SHALL ser menor a 50 años; con 50 años o más, el sistema SHALL responder
+el guion de descarte cortés aprobado y NO SHALL continuar el perfilamiento.
 
-#### Scenario: Mayor de 56 se descarta
-- **WHEN** el candidato responde "tengo 58 años"
+#### Scenario: 50 o más se descarta
+- **WHEN** el candidato responde "tengo 52 años"
 - **THEN** el bot responde el guion de descarte y no emite más preguntas del funnel
 
-#### Scenario: 56 o menos continúa
-- **WHEN** el candidato responde "tengo 45 años"
+#### Scenario: Frontera exacta
+- **WHEN** el candidato responde "tengo 50"
+- **THEN** aplica el descarte (la regla es estrictamente menor a 50)
+
+#### Scenario: Menor de 50 continúa
+- **WHEN** el candidato responde "tengo 49 años"
 - **THEN** el funnel continúa con la siguiente pregunta (tipo de unidad)
 
 ### Requirement: Preguntas de vencimiento en lugar de vigencia

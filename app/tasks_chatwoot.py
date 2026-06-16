@@ -381,7 +381,15 @@ def process_chatwoot_debounced_message(
                 context_new = {
                     k: v for k, v in current_turn_facts.items()
                     if k not in saved_facts
-                    and k in {"medical.apto_status", "license.status", "documents.labor_letters"}
+                    and k in {
+                        "candidate.age",
+                        "medical.apto_status",
+                        "medical.apto_expiration_text",
+                        "license.status",
+                        "license.expiration_text",
+                        "documents.labor_letters",
+                        "documents.renewal_proof",
+                    }
                 }
                 for _k, _v in context_new.items():
                     _parts = _k.split(".", 1)
@@ -436,8 +444,16 @@ def process_chatwoot_debounced_message(
                     "requires_human": False,
                     "current_turn_guard_applied": True,
                     "current_turn_facts": current_turn_facts,
-                    "funnel_stage": "profile_hint_collected",
-                    "next_best_action": "Validar datos del perfil y solicitar únicamente lo que falte.",
+                    "funnel_stage": (
+                        "closed"
+                        if guarded_reply.startswith("Gracias por su interés. Por el momento")
+                        else "profile_hint_collected"
+                    ),
+                    "next_best_action": (
+                        "Cierre automático: edad fuera de perfil."
+                        if guarded_reply.startswith("Gracias por su interés. Por el momento")
+                        else "Validar datos del perfil y solicitar únicamente lo que falte."
+                    ),
                     "memory_summary": "El candidato proporcionó datos explícitos de perfil en el último mensaje.",
                 }
             )

@@ -27,6 +27,7 @@ def test_funnel_pregunta_tracto_full_o_sencillo():
     """Si falta vehicle_type, la pregunta visible habla de tracto full o sencillo."""
     facts = {
         "candidate.city": "Torreón",
+        "candidate.age": "45",
         "license.category": "E",
         "experience.years": "5 años",
     }
@@ -38,6 +39,7 @@ def test_funnel_pregunta_tracto_full_o_sencillo():
 def test_funnel_no_pregunta_vehicle_type_si_ya_esta():
     facts = {
         "candidate.city": "Torreón",
+        "candidate.age": "45",
         "license.category": "E",
         "experience.years": "5 años",
         "experience.vehicle_type": "full",

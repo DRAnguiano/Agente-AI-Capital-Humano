@@ -292,6 +292,51 @@ class TestTypoVacante:
         assert CT.is_campaign_or_interest_entry("me interesa la bacante de operador") is True
 
 
+# ── 10. Reclamo "ya...", años elípticos y pregunta de cartas (smoke 16:16) ────
+
+PREGUNTA_DOBLE_VIGENCIA = "¿Tiene vigentes su licencia federal y apto médico?"
+PREGUNTA_ANIOS = "¿Cuántos años de experiencia tienes como operador?"
+
+
+class TestYaReclamoNoConfirma:
+    def test_ya_le_habia_dicho_no_confirma_apto(self):
+        facts = CT.extract_current_turn_facts("Ya le habia dicho que 10 años", PREGUNTA_DOBLE_VIGENCIA)
+        assert facts.get("medical.apto_status") != "vigente"
+        assert facts.get("license.status") != "vigente"
+
+    def test_ya_solo_sigue_confirmando(self):
+        facts = CT.extract_current_turn_facts("ya", "¿Tu apto médico está vigente?")
+        assert facts.get("medical.apto_status") == "vigente"
+
+
+class TestAniosElipticos:
+    def test_numero_con_anos_tras_pregunta_de_experiencia(self):
+        facts = CT.extract_current_turn_facts("10 años", PREGUNTA_ANIOS)
+        assert facts.get("experience.years") == "10 años"
+
+    def test_numero_solo_tras_pregunta_de_experiencia(self):
+        facts = CT.extract_current_turn_facts("10", PREGUNTA_ANIOS)
+        assert facts.get("experience.years") == "10 años"
+
+    def test_numero_sin_contexto_no_se_guarda(self):
+        facts = CT.extract_current_turn_facts("10", "¿En qué ciudad te encuentras actualmente?")
+        assert "experience.years" not in facts
+
+    def test_numero_tras_pregunta_de_ciudad_no_es_experiencia(self):
+        facts = CT.extract_current_turn_facts("10 años", None)
+        assert "experience.years" not in facts
+
+
+class TestPreguntaDeCartas:
+    def test_cuantas_necesita_es_pregunta(self):
+        assert CT.has_embedded_business_question(
+            "Nada más tengo 1 si le sirve o cuantas nececita?"
+        ) is True
+
+    def test_cuantas_cartas_piden(self):
+        assert CT.has_embedded_business_question("cuantas cartas piden") is True
+
+
 # ── 9. Humor LLM con barda (fallback determinista del seed) ───────────────────
 
 FALLBACK_JOKE = "Va uno rapidito: ¿por qué los traileros no juegan a las escondidas? Porque siempre los hallan en su ruta. 🚛 Ahora sí, seguimos con su registro."

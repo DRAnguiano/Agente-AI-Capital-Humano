@@ -22,9 +22,13 @@ vigencia suficiente (límite 2B.1).
 ### Requirement: Edad como dato temprano del perfil
 
 El extractor SHALL capturar `candidate.age` desde respuestas a la pregunta de
-edad y el planner SHALL evaluar el descalificador (>56) en cuanto exista el
-dato.
+edad y el planner SHALL evaluar el descalificador (50 años o más) en cuanto
+exista el dato.
 
 #### Scenario: Edad declarada
+- **WHEN** el candidato responde "tengo 45" tras la pregunta de edad
+- **THEN** se persiste `candidate.age=45` y el funnel continúa
+
+#### Scenario: Edad descalificante también se persiste
 - **WHEN** el candidato responde "tengo 52" tras la pregunta de edad
-- **THEN** se persiste `candidate.age=52` y el funnel continúa
+- **THEN** se persiste `candidate.age=52` y el planner dispara el descarte

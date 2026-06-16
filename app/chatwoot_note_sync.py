@@ -107,6 +107,13 @@ def _is_vigente(value: Any) -> bool:
     return str(value or "").strip().lower() in {"vigente", "sí", "si", "yes", "true"}
 
 
+def _age_disqualified(facts: dict[str, Any]) -> bool:
+    try:
+        return int(str(facts.get("candidate.age") or "").strip()) >= 50
+    except ValueError:
+        return False
+
+
 
 def _risk(value: str | None) -> str:
     return {"low": "Bajo", "medium": "Medio", "high": "Alto"}.get((value or "").lower(), value or "No disponible")
@@ -246,6 +253,9 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     facts_summary = lead.get("facts_summary") or {}
     labels = {"bot_activo"}
 
+    if _age_disqualified(facts):
+        return []
+
     if lead.get("requires_human"):
         labels.update({"requiere_agente", "requiere_revision_ch"})
     if (lead.get("risk_level") or "").lower() == "high":
@@ -344,9 +354,14 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     has_medical  = _is_vigente(medical_status_raw)
     has_documents = documents_status_raw != PENDING_TEXT
     has_city     = city != PENDING_TEXT
+    age_disqualified = _age_disqualified(facts)
 
     blocker = "Faltan datos base del perfil"
-    if has_vehicle_type and has_license and has_medical and has_documents and has_city:
+    if age_disqualified:
+        blocker = "Edad fuera de perfil"
+        next_action = "Cierre automático: edad fuera de perfil."
+        stage_value = "closed"
+    elif has_vehicle_type and has_license and has_medical and has_documents and has_city:
         blocker = "Validar documentos con Capital Humano"
     elif documents_status_raw == "pending_candidate_will_send":
         blocker = "Esperando envío documental"

@@ -62,7 +62,7 @@ def test_strip_leading_perfecto_recapitalizes_next_word():
 def test_ack_city_license_single_perfecto():
     reply = build_current_turn_ack("soy de Torreón y tengo licencia tipo E")
     assert reply.count("Perfecto") == 1
-    assert "¿Cuántos años" in reply
+    assert "¿Cuántos años tiene" in reply
     assert "Perfecto. ¿" not in reply  # no quedó el doble prefijo
 
 

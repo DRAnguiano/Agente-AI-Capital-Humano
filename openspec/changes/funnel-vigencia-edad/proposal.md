@@ -5,8 +5,9 @@
 Smoke 2026-06-12 11:31 (canal demo) + decisiones de negocio del mismo día:
 
 1. **La edad nunca se pregunta** en el flujo vivo, y es un descalificador duro:
-   mayores de 56 años se descartan. Debe preguntarse TEMPRANO para no gastar
-   turnos en perfiles no viables.
+   la edad debe ser MENOR a 50 años; con 50 o más se descarta (regla actualizada
+   2026-06-12, antes 56). Debe preguntarse TEMPRANO para no gastar turnos en
+   perfiles no viables.
 2. **"¿Está vigente?" es una pregunta débil**: el candidato dice "sí" y el
    sistema acepta vigencia sin fecha (el smoke aceptó un apto que vencía en 18
    días). Las preguntas deben provocar la fecha: "¿Cuándo vence su licencia?" /
@@ -20,8 +21,8 @@ Smoke 2026-06-12 11:31 (canal demo) + decisiones de negocio del mismo día:
 - **Flujo vivo reordenado**: ciudad → edad → tipo de unidad → licencia (tipo +
   "¿cuándo vence?") → apto ("¿cuándo vence?") → años de experiencia → documento
   laboral según residencia.
-- **Edad**: pregunta temprana; >56 → guion de descarte cortés y cierre del
-  funnel (sin seguir perfilando).
+- **Edad**: pregunta temprana; 50 años o más → guion de descarte cortés y
+  cierre del funnel (sin seguir perfilando).
 - **Vencimientos**: capturar fecha o tiempo relativo ("en 2 años", "en
   diciembre"); si el candidato responde "sí está vigente" sin fecha →
   repreguntar "¿En cuánto tiempo se le vence?" (la del documento que
@@ -35,13 +36,14 @@ Smoke 2026-06-12 11:31 (canal demo) + decisiones de negocio del mismo día:
   con "Cuando guste continuamos con su registro — me decía, ¿...?" (máx. una
   pregunta por turno).
 
-## Open questions (requieren confirmación de negocio)
+## Decisiones de negocio cerradas (2026-06-12)
 
-- Copy exacto del descarte por edad. Borrador: "Gracias por su interés. Por el
-  momento el perfil de esta vacante considera operadores de hasta 56 años, por
-  lo que no podemos continuar con su solicitud."
-- Etiqueta/etapa del descartado por edad (¿solo cierre + nota, sin label nueva?).
-- ¿El descarte por edad es definitivo o CH puede revisar excepciones?
+- Umbral: edad menor a 50; con 50 o más, descarte.
+- Copy del descarte (APROBADO): "Gracias por su interés. Por el momento el
+  perfil de esta vacante considera operadores menores de 50 años, por lo que
+  no podemos continuar con su solicitud."
+- El descarte es DEFINITIVO: sin revisión de CH, sin `requiere_revision_ch`;
+  cierre del funnel, `bot_activo` removido, motivo visible en la Nota IA.
 
 ## Impact
 
