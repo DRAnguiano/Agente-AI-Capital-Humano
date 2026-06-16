@@ -1,3 +1,16 @@
+"""Recuperación de contexto RAG para la capa de generación.
+
+Capa intermedia entre Neo4j (que decide el *bucket* de fuente autorizada) y
+ChromaDB (que recupera chunks dentro de ese bucket). A diferencia de
+`indexer.retrieve_context_for_guardrail`, esta ruta es deliberadamente
+acotada: sin reranker y sin web search. El filtro `preferred_sources` es lo
+que habilita el fail-closed de `pay_question` aguas arriba — si Neo4j no
+entrega una fuente autorizada, `retrieve_preferred_context` no devuelve
+chunks y el orquestador deriva a humano en vez de inventar.
+
+Contrato: este módulo recupera y arma el prompt; NO decide facts del
+candidato ni emite labels.
+"""
 from __future__ import annotations
 
 import os

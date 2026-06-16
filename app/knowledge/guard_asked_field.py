@@ -38,6 +38,8 @@ def asked_field_keys_for_guard(facts: dict[str, Any]) -> list[str]:
     if not facts.get("candidate.age"):
         return ["candidate.age"]
     try:
+        # Umbral de edad replicado como literal (deuda D-1, docs/deuda_tecnica.md);
+        # la fuente canónica es current_turn.AGE_LIMIT_EXCLUSIVE.
         if int(str(facts.get("candidate.age") or "").strip()) >= 50:
             return []
     except ValueError:

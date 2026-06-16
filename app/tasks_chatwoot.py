@@ -1,3 +1,18 @@
+"""Worker Celery del path entrante (queue ``inbound``).
+
+Entre el webhook (`app/app.py`) y el orquestador. Responsabilidades:
+
+- **Debounce** (~6s) y combinado de mensajes consecutivos del mismo lead, para
+  no orquestar ráfagas mensaje a mensaje.
+- Aplicar el `current_turn` guard y, si procede, persistir facts inferidos por
+  contexto (p. ej. "sí" ⇒ apto vigente) para que el funnel no vuelva a
+  preguntar lo ya respondido.
+- Llamar al orquestador, persistir en Postgres (fuente de verdad) y disparar el
+  sync a Chatwoot (reply + nota + labels).
+
+NO define reglas de negocio nuevas: edad, labels y copy canónico viven en sus
+módulos de dominio; aquí solo se invocan/propagan.
+"""
 import asyncio
 import json
 import os
@@ -450,6 +465,8 @@ def process_chatwoot_debounced_message(
                         else "profile_hint_collected"
                     ),
                     "next_best_action": (
+                        # Copy de cierre por edad replicado en 3 módulos (deuda D-4,
+                        # docs/deuda_tecnica.md). No editar aquí de forma aislada.
                         "Cierre automático: edad fuera de perfil."
                         if guarded_reply.startswith("Gracias por su interés. Por el momento")
                         else "Validar datos del perfil y solicitar únicamente lo que falte."

@@ -1,3 +1,20 @@
+"""Indexación RAG y clientes LLM.
+
+Dos responsabilidades:
+
+1. **Construcción del índice** (`build_index`): lee fuentes en ``DATA_DIR``
+   (PDF/txt/md), las trocea (`_split_text`) y las persiste como embeddings
+   `BAAI/bge-m3` en la colección ChromaDB. El volumen ``.cache/`` (~2.4 GB con
+   el modelo) NO se borra; ver constraint 7 en ``openspec/project.md``.
+2. **Recuperación y generación**: `retrieve_context_for_guardrail` (recupera +
+   rerank Cohere para el guardrail) y los clientes LLM Groq/Cohere
+   (`call_llm`, `call_groq_json`, …).
+
+Nota: la recuperación acotada por fuente autorizada (fail-closed de pago) vive
+en `app/knowledge/context_builder.py`, que reutiliza los helpers privados de
+este módulo (`_embed_texts`, `_get_collection`). El RAG responde políticas/HR;
+nunca decide facts del candidato.
+"""
 import os
 import re
 from pathlib import Path

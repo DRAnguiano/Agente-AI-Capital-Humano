@@ -1,3 +1,14 @@
+"""Extractor de facts del candidato por regex (licencia, apto, experiencia,
+documentos, edad, ciudad).
+
+**Único** extractor regex del proyecto: Neo4j cubre geo/vehículo; aquí NO se
+dispersa lógica equivalente (constraint 2 en ``openspec/project.md``). El RAG
+nunca extrae facts.
+
+Opera sobre texto ya **normalizado** (jerga/typos canonicalizados aguas
+arriba), por lo que los marcadores de residencia y los nombres capturados
+llegan en forma canónica. Puro: no persiste; devuelve dicts de fact.
+"""
 from __future__ import annotations
 
 import re
@@ -98,6 +109,9 @@ def _expiry_text_is_short_unknown(expiration_text: str) -> bool:
 
 # Geo fallback — used when Neo4j is unavailable.
 # Multi-word aliases must precede any shorter alias they contain.
+# Catálogo de ciudades inline para anclar candidate.city por regex. Convive con
+# rh_city_catalog (Postgres), que resuelve normalización/geo estructurada; ver
+# deuda D-5 (docs/deuda_tecnica.md) sobre cuál fuente manda al crecer.
 KNOWN_CITY_ALIASES: list[tuple[str, str]] = [
     ("nuevo laredo", "Nuevo Laredo"),
     ("nvo laredo", "Nuevo Laredo"),

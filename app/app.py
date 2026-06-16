@@ -1,3 +1,19 @@
+"""Entry HTTP (FastAPI) del asistente de reclutamiento "Mundo".
+
+Responsabilidad: recibir el webhook de Chatwoot, aplicar las defensas de borde
+y encolar el trabajo. NO orquesta ni genera respuestas — eso vive en el worker
+(`tasks_chatwoot.py` → `orchestrators/knowledge_orchestrator.py`).
+
+Defensas de borde en el path del webhook (`/chatwoot/webhook`):
+- auth **fail-closed** (sin API key válida ⇒ 401),
+- filtros de evento (ignora eventos no entrantes / sin contenido útil),
+- rate limit en Redis db2 (separado del broker Celery en db1),
+- `media_guard` (G4): mensajes con attachments se cortan ANTES de extraer u
+  orquestar — no hay OCR; ver `_chatwoot_has_media`.
+
+`/classify` es un endpoint **aislado de prueba** del pipeline multi-intent
+(shadow): no persiste ni envía a Chatwoot, no es el path de producción.
+"""
 import time
 import traceback
 import os
@@ -557,6 +573,13 @@ def _fallback_chatwoot_labels(result: dict) -> list[str]:
     """
     Labels básicas si por alguna razón no se puede leer v_rh_work_queue.
     Solo labels del catálogo oficial; las terminales remueven bot_activo.
+
+    OJO — ruta DEGRADADA: el criterio de `perfil_listo` aquí es
+    `current_stage == "PROFILE_READY"`, distinto del de la ruta principal
+    (`chatwoot_note_sync.calculate_candidate_labels`, que exige
+    vehículo+licencia+apto+`vacancy_accepted`). Ambas comparten
+    `OFFICIAL_LABELS`/`TERMINAL_LABELS` pero pueden discrepar en cuándo emiten
+    una label terminal. Deuda registrada en `docs/deuda_tecnica.md` (D-3).
     """
     labels = {"bot_activo"}
 
