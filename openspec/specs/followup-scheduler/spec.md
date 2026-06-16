@@ -9,6 +9,40 @@ persiste las tareas en `rh_seguimiento_tareas`.
 
 ## Requirements
 
+### Requirement: Elegibilidad por canal productivo
+
+El sistema SHALL programar seguimientos automaticos solo para leads que provienen
+de canales productivos operados por Chatwoot. Chatwoot es la capa operativa y de
+centralizacion: hoy puede recibir pruebas desde Telegram demo, y el canal final
+esperado es WhatsApp via Chatwoot; en el futuro tambien podra recibir webchat u
+otros inboxes integrados a Chatwoot.
+
+El sistema SHALL tratar `telegram_demo`, canales `test_*`, `debug_*`,
+`shadow_test*`, `test_faq*` y `test_verify*` como canales o claves de laboratorio,
+no como leads productivos para follow-up. `telegram_demo` MAY generar follow-up
+solo si existe un flag explicito de laboratorio, por ejemplo
+`ENABLE_DEMO_FOLLOWUP=true`.
+
+#### Scenario: Lead productivo via Chatwoot
+- **WHEN** un lead proviene de `source_channel='chatwoot'` y cumple las reglas de
+  temperatura, etapa e intentos
+- **THEN** el sistema puede crear una tarea de seguimiento automatico
+
+#### Scenario: Telegram demo bloqueado por default
+- **WHEN** un lead proviene de `source_channel='telegram_demo'`
+- **AND** `ENABLE_DEMO_FOLLOWUP` no esta activado
+- **THEN** el sistema no crea tareas de seguimiento automatico para ese lead
+
+#### Scenario: Canal de prueba bloqueado
+- **WHEN** el `lead_key` o `source_channel` empieza con `test_`, `debug_`,
+  `shadow_test`, `test_faq` o `test_verify`
+- **THEN** el sistema no crea tareas de seguimiento automatico para ese lead
+
+#### Scenario: Nuevos inboxes via Chatwoot
+- **WHEN** WhatsApp, webchat u otro canal futuro entra por Chatwoot
+- **THEN** el scheduler lo trata como lead productivo usando `source_channel='chatwoot'`
+  y no necesita acoplarse al nombre del inbox final
+
 ### Requirement: Detección de leads fríos y creación de tareas
 
 El sistema SHALL detectar leads elegibles para seguimiento y crear una tarea en
