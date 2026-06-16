@@ -74,16 +74,33 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
   `tests/test_memory_guard.py` (deterministas vía `plan_and_respond`, sin Groq/Chroma/DB). La
   cobertura por `/classify` con clasificación LLM real queda cubierta al activar 9.x.
 
-## 7. Desambiguación y corrección de facts + estados (pendiente)
+## 7. Desambiguación y corrección de facts + estados
 
 - [x] 7.1a **(PARCIAL — solo unidad/vehicle)** Etapa `normalize_domain_values` + `domain_catalog`: full/sencillo→confirmed; quinta rueda/tráiler/tractocamión→needs_clarification; camión→ambiguo; torton/rabón/reparto/local/camioneta→no objetivo — `app/knowledge/normalize_domain_values.py`·`domain_catalog.py` · tests Fase 1A · commit `8262c7d`. **PENDIENTE:** normalización de licencia/B/E/apto/vigente/documentos (siguen como regex en `profile_extractor`).
 - [x] 7.1b Etapa `disambiguate_numeric_units`: números según `last_bot_question`; sin contexto → aclarar — `app/knowledge/disambiguate_numeric_units.py` · tests deterministas · commit `8262c7d`
 - [x] 7.1c Etapa `contextual_answer_classifier`: sí/no/elípticas con `last_bot_question` + estado del funnel (sin regex global; persiste solo si sabe el campo) — `app/knowledge/contextual_answer_classifier.py` · tests · commit `8262c7d`
-- [ ] 7.2 Etapa `detect_fact_corrections`: dato nuevo | incompleto | corrección | contradicción
-- [ ] 7.3 Etapa `resolve_fact_conflicts`: contradicción sin confirmación → `needs_confirmation` (no sobrescribe)
-- [ ] 7.4 Corrección explícita ("me equivoqué, son 10 años") → `corrected` + auditoría
-- [ ] 7.5 Estados de fact `confirmed | inferred_from_context | needs_confirmation | conflict | corrected` — definir persistencia (¿columna en `rh_lead_facts_v2`?)
-- [ ] 7.6 Casos `/classify`: "10" sin contexto (no guarda); "10" tras años (=10); "no se creo que 10" (no sobrescribe 9)
+- [x] 7.2 Etapa `detect_fact_corrections`: dato nuevo | corrección | contradicción —
+  `app/knowledge/fact_corrections.py` · `resolve_facts`/`_resolve_one` clasifican el acto a
+  partir de la **señal estructurada del clasificador** (`is_correction`/`certainty`) + estado
+  previo, NO de regex/frases. (El caso "incompleto" lo resuelve el funnel planner como
+  `missing`/`needs_confirmation`, no esta etapa.) · `tests/test_fact_corrections.py`
+- [x] 7.3 Etapa `resolve_fact_conflicts`: contradicción sin confirmación → `conflict`/`needs_confirmation`
+  (no sobrescribe) — `fact_corrections._resolve_one`; antes de declarar conflicto NORMALIZA ambos
+  valores dentro del dominio F (`normalize_fact_value`: caja/acentos/dígitos↔palabras/unidad), así
+  un mismo valor en distinta forma NO genera conflicto; sin valor canónico resoluble NO genera
+  conflicto estructurado · `tests/test_fact_corrections.py`
+- [x] 7.4 Corrección explícita ("me equivoqué, son 10 años") → `corrected` + auditoría
+  (`previous_value`/`new_value`/`correction_evidence`/`source_turn_id`) que sobrescribe —
+  `fact_corrections` (estado `corrected` + lista `corrections`) · `tests/test_fact_corrections.py::test_explicit_correction_overwrites_with_audit`
+- [x] 7.5 Estados de fact `confirmed | inferred_from_context | needs_confirmation | conflict | corrected` —
+  `fact_corrections.FACT_STATES` + `ResolvedFact.state`. **Persistencia:** el estado viaja en el
+  fact resuelto y la Fase 4 (cutover) lo escribe en una columna `state` de `rh_lead_facts_v2`;
+  las correcciones persisten una fila de auditoría. La etapa es pura y no escribe BD todavía
+  (design.md · Migration Plan: construir etapas → cutover) · `tests/test_fact_corrections.py::test_all_emitted_states_are_in_catalog`
+- [x] 7.6 Casos: "10" sin contexto (no guarda); "10" tras años (=10); "no se creo que 10"
+  (no sobrescribe 9) — cubiertos deterministas vía `resolve_facts` (sin contexto → no llega answer
+  núcleo → no persiste; corrección dudosa `certainty=low` → `needs_confirmation`) en
+  `tests/test_fact_corrections.py`. Cobertura por `/classify` con LLM real al activar 9.x.
 
 ## 8. Funnel state planner + auditoría (pendiente)
 
