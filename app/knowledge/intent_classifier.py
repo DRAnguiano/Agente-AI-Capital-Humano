@@ -30,6 +30,9 @@ ANSWER_FIELDS = {
     "medical.apto_status",       # vigente | vencido | tramite
     "experience.years",          # número
     "documents.proof",           # cartas | semanas_imss | ninguno
+    # Campo NO-núcleo (tarea 8.4b): se captura pero NO gatea profile_ready ni
+    # entra al funnel de 6 (ver turn_planner.NON_CORE_FIELDS / esquema v1).
+    "candidate.availability",    # available | en_ruta_o_no_disponible_ahora
 }
 
 QUESTION_INTENTS = {

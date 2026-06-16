@@ -102,22 +102,35 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
   núcleo → no persiste; corrección dudosa `certainty=low` → `needs_confirmation`) en
   `tests/test_fact_corrections.py`. Cobertura por `/classify` con LLM real al activar 9.x.
 
-## 8. Funnel state planner + auditoría (pendiente)
+## 8. Funnel state planner + auditoría
 
-- [ ] 8.1 Calcular por turno `completed_fields`, `missing_fields`, `forbidden_questions`, `next_question`, `facts_before`, `facts_after`
-- [ ] 8.2 El sistema fija `next_question`; el LLM (70B) solo la redacta (no elige campo)
-- [ ] 8.3 Traza de auditoría: `facts_before`, `candidate_corrections`, `facts_pending_confirmation`, `facts_after`, `missing_fields`, `forbidden_questions`, `next_question`, `confirmation_question`
+- [x] 8.1 Calcular por turno `completed_fields`, `missing_fields`, `forbidden_questions`,
+  `next_question`, `facts_before`, `facts_after` — `app/knowledge/turn_planner.py` · `plan_turn`
+  (integra memory_guard + fact_corrections + funnel de 6) · `tests/test_turn_planner.py`
+- [x] 8.2 El sistema fija `next_question`; el LLM (70B) solo la redacta (no elige campo) —
+  `turn_planner` produce `next_question`/`next_question_field` deterministas desde el funnel; la
+  redacción cordial sigue en el 70B (sin elegir campo) · `tests/test_turn_planner.py::test_next_question_emits_asked_field_keys`
+- [x] 8.3 Traza de auditoría: `facts_before`, `candidate_corrections`, `facts_pending_confirmation`,
+  `facts_after`, `missing_fields`, `forbidden_questions`, `next_question`, `confirmation_question` —
+  `plan_turn` devuelve la traza completa · `tests/test_turn_planner.py::test_trace_has_all_audit_keys`
 - [x] 8.4a Intents meta `roleplay_instruction`/`prompt_injection_like` añadidos al clasificador + reglas de prompt (ortografía / roleplay no obedecido) — `app/knowledge/intent_classifier.py` (`META_INTENTS`) · commit `8262c7d`
-- [ ] 8.4b Formalizar fields/intents pendientes: `availability`, `general_vacancy_info_request`, reclamo de memoria
-- [ ] 8.5 Caso `/classify`: "10 años de full estoy disponible" → years=10, vehicle_type=full, availability=available, sin repreguntar unidad
-- [ ] 8.6 Caso `/classify`: "¿que mas le falta?" → responde `missing_fields` del planner
-- [ ] 8.7 El pipeline nuevo debe REUSAR la captura estructurada de `asked_field_keys` que ya
-  existe en el camino vivo (`app/lead_memory/last_asked_field.py` + metadata escrita por
-  `knowledge_orchestrator`; tests `test_last_asked_field.py`/`test_guard_asked_field.py`):
-  el `funnel_state_planner` la escribe/consume al emitir `next_question`, sin duplicar
-  mecanismo. Doble propósito: (1) fuente fuerte para el parser contextual de respuestas
-  elípticas (2C.0d: `last_bot_message` textual = apoyo, no fuente fuerte); (2) métrica de
-  embudo: en qué pregunta exacta desisten los candidatos.
+- [x] 8.4b Formalizar fields/intents pendientes: `availability`, `general_vacancy_info_request`,
+  reclamo de memoria — `candidate.availability` añadido a `ANSWER_FIELDS` y marcado no-núcleo
+  (`turn_planner.NON_CORE_FIELDS`: se captura, no gatea); reclamo de memoria formalizado como etapa
+  (`memory_guard`, sección 6); info general de vacante cubierta por el intent `vacancy_question`. La
+  enumeración en el prompt del clasificador se activa con la clasificación LLM (9.x).
+- [x] 8.5 Caso "10 años de full estoy disponible" → years=10, vehicle_type=full, availability=available,
+  sin repreguntar unidad — `tests/test_turn_planner.py::test_compound_extracts_all_and_does_not_reask_unit`
+  (determinista vía `plan_turn`; `/classify` con LLM real al activar 9.x)
+- [x] 8.6 Caso "¿que mas le falta?" → responde `missing_fields` del planner —
+  `plan_turn` calcula `missing_fields` desde Postgres/known_facts (no lista inventada por el LLM) ·
+  `tests/test_turn_planner.py::test_missing_fields_reflect_known_facts`. La redacción de la respuesta
+  con esos `missing_fields` en `/classify` con LLM real se activa en 9.x.
+- [x] 8.7 REUSO de la captura de `asked_field_keys` del camino vivo —
+  `turn_planner` emite `asked_field_keys` en el MISMO espacio canónico que consume
+  `app/lead_memory/last_asked_field.py` (sin duplicar el reader): la Fase 4 las persiste en
+  `external_metadata.asked_field_keys` por el mecanismo existente. Doble propósito (apoyo al parser
+  contextual + métrica de embudo) intacto · `tests/test_turn_planner.py::test_asked_field_keys_match_next_field`
 
 ## 9. Validación con tráfico real (en curso)
 
