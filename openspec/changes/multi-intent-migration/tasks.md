@@ -137,7 +137,12 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
 
 ## 9. Validación con tráfico real (en curso)
 
-- [ ] 9.1 Activar `MULTI_INTENT_SHADOW=true` en entorno con tráfico real y recolectar logs
+- [ ] 9.1 Activar `MULTI_INTENT_SHADOW=true` en entorno con tráfico real y recolectar logs.
+  Sin usuarios reales todavía → **variante replay** lista: `scripts/shadow_replay.py` replaya el
+  último turno usuario→assistant de cada lead histórico (excluye prefijos de laboratorio) por el
+  pipeline actual y emite las líneas `[MULTI_INTENT_SHADOW]` que consume 9.2. Pendiente: correrlo
+  vía api-test (Groq+Postgres) y analizar divergencias. Helper `_last_user_exchange` cubierto por
+  `tests/test_shadow_replay.py`.
 - [x] 9.2 Comparar `shadow_reply` vs `actual_reply` y medir `shadow_ms` — `scripts/shadow_log_report.py`
   (parser/reporte offline y puro: divergencia de reply, distribución de intents, handoffs, errores y
   estadística de `shadow_ms` min/p50/p95/max/mean). MIDE, NO DECIDE; no toca BD/Groq/flujo vivo ·
