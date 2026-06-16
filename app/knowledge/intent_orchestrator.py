@@ -19,6 +19,7 @@ from typing import Any
 
 from app.indexer import call_llm
 from app.knowledge.context_builder import build_generation_prompt, retrieve_preferred_context
+from app.knowledge.memory_guard import apply_memory_guard
 
 # ── Funnel de 6 preguntas (esquema v1 §1) ────────────────────────────────────
 # Cada paso: la pregunta canónica + función que decide si el campo está completo.
@@ -61,9 +62,20 @@ FUNNEL_STEPS: list[dict[str, Any]] = [
 ]
 
 
-def next_funnel_question(facts: dict[str, Any]) -> str | None:
-    """Devuelve la siguiente pregunta del funnel, o None si el núcleo está completo."""
+def next_funnel_question(
+    facts: dict[str, Any],
+    forbidden_questions: list[str] | None = None,
+) -> str | None:
+    """Devuelve la siguiente pregunta del funnel, o None si el núcleo está completo.
+
+    ``forbidden_questions`` (del memory_guard, tarea 6.2): campos que NO deben
+    preguntarse aunque el predicado los vea incompletos — p. ej. un dato que el
+    candidato ya dio o que reclama haber dado. Se saltan sin emitir pregunta.
+    """
+    forbidden = set(forbidden_questions or ())
     for step in FUNNEL_STEPS:
+        if step["field"] in forbidden:
+            continue
         if not step["complete"](facts):
             return step["question"]
     return None
@@ -93,6 +105,16 @@ _SIGNAL_REPLIES: dict[str, str] = {
 }
 
 _HANDOFF_REPLY = "Ese punto lo revisa nuestro equipo directamente. Lo dejo anotado para que le den seguimiento."
+
+# Reclamo de memoria (memory_guard, tarea 6.3). El fact previo coincide con lo
+# que el candidato dice haber dicho: se reafirma sin reescribir ni repreguntar.
+_MEMORY_REAFFIRM_REPLY = "Sí, ya lo tengo anotado, gracias por confirmarlo."
+# El fact previo difiere del valor reclamado: no se sobrescribe; se pide
+# confirmación neutral para resolver el conflicto.
+_MEMORY_CONFLICT_REPLY = (
+    "Tengo registrado algo distinto en ese dato. Para no equivocarnos, "
+    "¿me confirma cuál es el correcto?"
+)
 
 # Signals que NO deben continuar con la pregunta del funnel.
 # greeting incluido: la presentación ya invita ("¿le interesa la vacante?"); no
@@ -151,9 +173,21 @@ def plan_and_respond(
     action_order: list[str] = []
     response_parts: list[str] = []
 
+    # memory_guard (tarea 6): forbidden_questions desde memoria previa + resolución
+    # de reclamo de memoria ("ya te había dicho que full"). Se corre sobre la
+    # memoria PREVIA (known_facts), no sobre merged.
+    mg = apply_memory_guard(enriched, message, known_facts)
+    claim = mg["memory_claim"]
+
+    # En reaffirm/conflict NO se reescribe el fact reclamado (spec 6.3): se filtra
+    # de los facts a persistir; process_as_fact sí fluye normal.
+    facts_to_persist = answers
+    if claim and claim["resolution"] in {"reaffirm", "conflict"}:
+        facts_to_persist = [a for a in answers if a.get("field") != claim["field"]]
+
     # facts proyectados (multi-intent registra en silencio → afectan el funnel)
-    merged = {**known_facts, **{a["field"]: a["value"] for a in answers}}
-    if answers:
+    merged = {**known_facts, **{a["field"]: a["value"] for a in facts_to_persist}}
+    if facts_to_persist:
         action_order.append("persist_answers_silently")
 
     # 1. Handoff (riesgo / escalamiento) — corta el flujo
@@ -162,7 +196,7 @@ def plan_and_respond(
         reply = _SIGNAL_REPLIES.get(primary, _HANDOFF_REPLY)
         return {
             "recommended_action_order": action_order,
-            "facts_to_persist": answers,
+            "facts_to_persist": facts_to_persist,
             "response_text": reply,
             "core_completeness": core_completeness(merged),
             "handoff": True,
@@ -179,7 +213,7 @@ def plan_and_respond(
             action_order.append("human_handoff")
             return {
                 "recommended_action_order": action_order,
-                "facts_to_persist": answers,
+                "facts_to_persist": facts_to_persist,
                 "response_text": answer_text,
                 "core_completeness": core_completeness(merged),
                 "handoff": True,
@@ -194,9 +228,21 @@ def plan_and_respond(
     elif primary in _SIGNAL_REPLIES:
         response_parts.append(_SIGNAL_REPLIES[primary])
 
-    # 4. Siguiente pregunta del funnel (salvo signals que no deben continuar)
-    if primary not in _NO_FUNNEL_SIGNALS:
-        nq = next_funnel_question(merged)
+    # 3.5 Reclamo de memoria (tarea 6.3). reaffirm: reafirma y sigue el funnel
+    # saltando el campo; conflict: confirmación neutral y NO encima pregunta de
+    # funnel; process_as_fact: nada especial (el dato ya fluye como answer).
+    if claim and claim["resolution"] == "reaffirm":
+        action_order.append("reaffirm_from_memory")
+        response_parts.append(_MEMORY_REAFFIRM_REPLY)
+    elif claim and claim["resolution"] == "conflict":
+        action_order.append("register_memory_conflict")
+        response_parts.append(_MEMORY_CONFLICT_REPLY)
+
+    # 4. Siguiente pregunta del funnel (salvo signals que no continúan, o cuando
+    # un conflicto de memoria ya pidió confirmación). Respeta forbidden_questions.
+    conflict_pending = bool(claim and claim["resolution"] == "conflict")
+    if primary not in _NO_FUNNEL_SIGNALS and not conflict_pending:
+        nq = next_funnel_question(merged, mg["forbidden_questions"])
         if nq:
             action_order.append("emit_funnel_question")
             response_parts.append(nq)
@@ -214,8 +260,10 @@ def plan_and_respond(
 
     return {
         "recommended_action_order": action_order,
-        "facts_to_persist": answers,
+        "facts_to_persist": facts_to_persist,
         "response_text": "\n\n".join(p for p in response_parts if p),
         "core_completeness": core_completeness(merged),
+        "forbidden_questions": mg["forbidden_questions"],
+        "memory_claim": claim,
         "handoff": False,
     }

@@ -49,19 +49,30 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
 - [x] 5.2 Implementar "sin fuente autorizada suficiente → no inventar → derivar a Capital Humano" — `app/knowledge/intent_orchestrator.py` · `_generate_rag_answer`/`plan_and_respond` (fail-closed: 0 chunks del filtro `preferred_sources` o LLM vacío → `_HANDOFF_REPLY` + `handoff_reason="no_authorized_source"`, sin invocar LLM cuando no hay fuente; corta como handoff sin encimar funnel; demás intents RAG conservan fallback telefónico) · Docker 461 passed (2026-06-11)
 - [x] 5.3 Caso de prueba: pay sin contexto RAG → handoff (sin cifras inventadas) — `tests/test_intent_orchestrator_pay.py` (7 tests deterministas, sin Groq/Chroma/DB; incluye end-to-end enricher→orquestador y no-regresión de logistics) · Docker 461 passed (2026-06-11). `/classify` con clasificación LLM real queda cubierto al activar 9.x.
 
-## 6. Conversation memory guard (pendiente)
+## 6. Conversation memory guard
 
-- [ ] 6.1 Etapa `memory_guard`: leer `lead_memory` y derivar `forbidden_questions` por fact con evidence válido
-- [ ] 6.2 No emitir pregunta de un campo ya respondido — integrar en `funnel_state_planner`
-- [ ] 6.3 Detectar reclamo de memoria ("ya te había dicho que full") y resolverlo según el
-  fact canónico, NO como mensaje normal:
+- [x] 6.1 Etapa `memory_guard`: leer `lead_memory` y derivar `forbidden_questions` por fact con
+  evidence válido — `app/knowledge/memory_guard.py` · `apply_memory_guard`/`derive_forbidden_questions`
+  (etapa PURA: recibe `known_facts`, el snapshot de `lead_memory`; la Fase 4 los leerá de Postgres) ·
+  `tests/test_memory_guard.py`
+- [x] 6.2 No emitir pregunta de un campo ya respondido — `app/knowledge/intent_orchestrator.py` ·
+  `next_funnel_question(facts, forbidden_questions)` salta los campos prohibidos; `plan_and_respond`
+  los inyecta desde el memory_guard. (`funnel_state_planner.compute_funnel_state` ya derivaba
+  `forbidden_questions` desde facts canónicos SAFE; aquí se conecta al funnel del path multi-intent
+  `/classify`.) · `tests/test_memory_guard.py::test_plan_does_not_repeat_answered_questions`
+- [x] 6.3 Detectar reclamo de memoria ("ya te había dicho que full") y resolverlo según el
+  fact canónico, NO como mensaje normal — `memory_guard._is_memory_claim` + `apply_memory_guard`
+  (resolution `reaffirm`/`process_as_fact`/`conflict`); `intent_orchestrator` reafirma sin
+  reescribir/repreguntar, procesa como fact normal, o pide confirmación neutral sin encimar funnel:
   (1) fact canónico coincidente → reafirmar, no reescribir, no repetir la pregunta;
   (2) fact canónico ausente → procesar el valor explícito del turno por el pipeline
   normal de facts (no perder el dato);
   (3) fact canónico diferente → registrar conflicto, no sobrescribir, pedir
   confirmación neutral.
   Distinto de la corrección explícita (7.4), que sí sobrescribe con auditoría.
-- [ ] 6.4 Casos `/classify`: "ya te habia dicho que full"; "si tengo cartas" (no repreguntar)
+- [x] 6.4 Casos: "ya te habia dicho que full"; "si tengo cartas" (no repreguntar) —
+  `tests/test_memory_guard.py` (deterministas vía `plan_and_respond`, sin Groq/Chroma/DB). La
+  cobertura por `/classify` con clasificación LLM real queda cubierta al activar 9.x.
 
 ## 7. Desambiguación y corrección de facts + estados (pendiente)
 
