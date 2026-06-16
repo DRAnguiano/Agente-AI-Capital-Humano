@@ -311,7 +311,7 @@ el LLM solo la redacta cordialmente.
 
 #### Scenario: Mensaje compuesto extrae todo y no repregunta la unidad
 - **WHEN** el candidato escribe "10 años de full estoy disponible"
-- **THEN** el sistema extrae `experience.years=10`, `experience.vehicle_type=full` y `availability=available`, los marca completos y NO vuelve a preguntar el tipo de unidad
+- **THEN** el sistema extrae `experience.years=10`, `experience.vehicle_type=full` y `candidate.availability_status=available` (campo NO-núcleo: se captura pero no gatea `profile_ready`), marca completos los núcleo y NO vuelve a preguntar el tipo de unidad
 
 #### Scenario: Candidato pregunta qué falta
 - **WHEN** el candidato escribe "jeje si señor ahorita se lo mando ¿Pero que mas le falta?"

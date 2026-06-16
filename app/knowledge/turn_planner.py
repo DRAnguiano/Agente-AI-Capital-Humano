@@ -29,8 +29,9 @@ from app.knowledge.intent_orchestrator import FUNNEL_STEPS
 
 # Campos capturados que NO gatean profile_ready ni entran al funnel de 6 (8.4b).
 # availability es ruido conversacional para el gate (esquema v1); se registra
-# para la nota/labels pero no se pregunta como parte del perfil núcleo.
-NON_CORE_FIELDS = frozenset({"candidate.availability"})
+# para la nota/labels pero no se pregunta como parte del perfil núcleo. Nombre
+# canónico vivo `candidate.availability_status` (el que ya consume calculate_candidate_labels).
+NON_CORE_FIELDS = frozenset({"candidate.availability_status"})
 
 # Claves canónicas que el funnel "pregunta" por cada paso. Mismo espacio canónico
 # que `last_asked_field.read_*` y `guard_asked_field`; se persisten en

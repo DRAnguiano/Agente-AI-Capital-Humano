@@ -115,12 +115,15 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
   `plan_turn` devuelve la traza completa · `tests/test_turn_planner.py::test_trace_has_all_audit_keys`
 - [x] 8.4a Intents meta `roleplay_instruction`/`prompt_injection_like` añadidos al clasificador + reglas de prompt (ortografía / roleplay no obedecido) — `app/knowledge/intent_classifier.py` (`META_INTENTS`) · commit `8262c7d`
 - [x] 8.4b Formalizar fields/intents pendientes: `availability`, `general_vacancy_info_request`,
-  reclamo de memoria — `candidate.availability` añadido a `ANSWER_FIELDS` y marcado no-núcleo
-  (`turn_planner.NON_CORE_FIELDS`: se captura, no gatea); reclamo de memoria formalizado como etapa
+  reclamo de memoria — `candidate.availability_status` (nombre canónico vivo, el que ya consume
+  `calculate_candidate_labels`) añadido a `ANSWER_FIELDS` y marcado no-núcleo
+  (`turn_planner.NON_CORE_FIELDS`: se captura, no gatea — consistente con 2C.1, que solo excluye del
+  gate al legacy `availability_to_attend`); reclamo de memoria formalizado como etapa
   (`memory_guard`, sección 6); info general de vacante cubierta por el intent `vacancy_question`. La
   enumeración en el prompt del clasificador se activa con la clasificación LLM (9.x).
-- [x] 8.5 Caso "10 años de full estoy disponible" → years=10, vehicle_type=full, availability=available,
-  sin repreguntar unidad — `tests/test_turn_planner.py::test_compound_extracts_all_and_does_not_reask_unit`
+- [x] 8.5 Caso "10 años de full estoy disponible" → years=10, vehicle_type=full,
+  `candidate.availability_status=available` (no-núcleo, no gatea), sin repreguntar unidad —
+  `tests/test_turn_planner.py::test_compound_extracts_all_and_does_not_reask_unit`
   (determinista vía `plan_turn`; `/classify` con LLM real al activar 9.x)
 - [x] 8.6 Caso "¿que mas le falta?" → responde `missing_fields` del planner —
   `plan_turn` calcula `missing_fields` desde Postgres/known_facts (no lista inventada por el LLM) ·
@@ -139,10 +142,10 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
 - [ ] 9.3 Construir suite de regresión de mensajes reales para `/classify` (casos abajo)
 
 Casos reales de regresión (fixtures `/classify`):
-- [ ] 9.3.1 "10 años de full estoy disponible" → `experience_years=10`, `vehicle_type=full`;
-  "estoy disponible" NO persiste fact de disponibilidad (no existe campo en `ANSWER_FIELDS`;
-  decisión 2C.0/2C.1: availability fuera del gate; frase ambigua: ¿trabajar/viajar/acudir?);
-  no repreguntar unidad
+- [ ] 9.3.1 "10 años de full estoy disponible" → `experience.years=10`, `vehicle_type=full`,
+  `candidate.availability_status=available` — campo NO-núcleo: se captura (nombre canónico vivo)
+  pero NO gatea `profile_ready` ni entra al funnel. Consistente con 2C.1 (que solo excluye del gate
+  al legacy `availability_to_attend`/`disponible_acudir`, no la captura). No repreguntar unidad.
 - [ ] 9.3.2 "si tengo cartas" → `documents.proof=cartas` (fact canónico, `ANSWER_FIELDS` +
   scenario del spec `multi-intent-pipeline`); no repetir preguntas no relacionadas ya respondidas
 - [ ] 9.3.3 "ya te habia dicho que full" → `memory_complaint_or_correction`; resolver según
@@ -201,7 +204,16 @@ Casos reales de regresión (fixtures `/classify`):
 - [x] **Fase 2C.0d (decisión documentada con diagnóstico read-only de cobertura y muestras reales de vencimiento)** — vigencia >3m = **advisory / NO gate** (datos observados: `expires_at`/`apto_expires_at` = 0 filas; `license.status`=13 con 0 fechas; `apto_status`=26 con solo 1 texto de vencimiento; cobertura casi nula). Compat licencia/unidad **NO se activa**: universo con ambos facts canónicos (`license.type`+`experience.vehicle_type`) = **0** (solo licencia=27, solo unidad=2); `full+B` = aclaración futura, no bloqueo. Parser contextual requiere `last_asked_field`/`current_question_field` estructurado (`last_bot_message` textual = apoyo, no fuente fuerte; assistant=436/user=413 mensajes con timestamp) — `design.md` ("Decisión 2C.0d") + spec `multi-intent-pipeline` (nota 2C.0c). NO código, NO gate, NO 7º campo.
 - [ ] FUTURO **validador compatibilidad/vigencia** — matriz licencia/unidad (full+B incompatible) + política de vigencia (>3 meses; ≤3 meses → comprobante; vencido+trámite → aclaración; vencido sin trámite → no continúa; sin fecha → no inferir). **Reusar** `needs_confirmation_fields`+`reason` + label `aclaracion_pendiente`/`falta_*` + status `tramite`; NO inventar estados/labels; NO revivir `revisar_licencia`/`*_por_vencer`. NO en 2C.1.
 - [ ] DEUDA copy: `app/persona_config.py` "más de 6 meses de vigencia" → actualizar a ">3 meses" (regla oficial 2C.0c). Fase aparte.
-- [ ] DEUDA (post-diagnóstico 2C.0b): corregir **regla E** de `db/010` (no producir `availability_to_attend_candidate` desde `documents.availability_claim`) + writer legacy de `availability_claim` en `profile_extractor`. NO en 2C.1.
+- [x] DEUDA (post-diagnóstico 2C.0b): **RESUELTA** — eliminada la cadena legacy de disponibilidad
+  (`documents.availability_claim` → `availability_to_attend_candidate`): borrado el writer en
+  `app/lead_memory/profile_extractor.py`, quitada la **regla E** (group/key/state) de
+  `db/010_v_rh_lead_facts_canonical.sql` y las 2 líneas de display en `db/007`. Las filas viejas de
+  `availability_claim` caen al ELSE (`state='ok'`, no-núcleo → ignoradas por el planner). El nombre
+  de disponibilidad **vivo** `candidate.availability_status` se conserva (lo usa
+  `calculate_candidate_labels`) y el pipeline multi-intent se asimiló a él. Guards intactos
+  (`test_phase2b::test_availability_is_ignored_by_profile_planner`, `test_candidate_labels` de
+  `disponible_acudir`). **DEPLOY manual requerido en `hrdb`** (las vistas no se auto-aplican):
+  `psql $DATABASE_URL -f db/010_v_rh_lead_facts_canonical.sql` y `-f db/007_lead_profile_display_and_stages.sql`.
 - [ ] FUTURO **call_scheduling/callback** — concepto nuevo: label operativa `llamada_pendiente` (= contactar por llamada; NO "acudir"; NO sustituye availability_to_attend; fuera del profile planner). Facts futuros opcionales `scheduling.call_window`/`scheduling.call_status=pending`. `llamada_pendiente` ya existe en el catálogo oficial (`chatwoot-label-taxonomy`, 24 activas); el planner/handoff todavía NO la emite hasta implementar esta fase. `disponible_acudir` queda legacy/diferido (10a.6/10b.12). **CONTRATO FIJADO (negocio, 2026-06-12)**: disparador = núcleo completo + documentos confirmados por el candidato → bot: "Para avanzar en su proceso, suba fotos de los documentos que nos confirmó. ¿Gusta que le agendemos una llamada?" (+ foráneo: "...y validamos su traslado a Torreón para continuar con su proceso") → emite `llamada_pendiente` para que el agente llame dentro de horario (8:00–17:30). Depende del acuse de documentos del media guard (ver sección 14).
 - [ ] 10b.16h **Fase 2C.2** — surfacing por label del backlog (`falta_unidad`/`aclaracion_pendiente`) vía label_planner (cuando exista). Diagnóstico manual de las 5 filas quinta_rueda (no migración).
 - [x] 10b.16d **(doc-only)** Límite explícito 2B.1 documentado — `design.md` ("Límites explícitos de Fase 2B.1") + spec `multi-intent-pipeline` (escenarios "Límite — …"). Reglas fijadas: (1) `license.type` = categoría B/E/…, NO vigencia; (2) `license.status` (vigente/vencida/tramite) por sí solo NO valida la regla >3 meses; (3) `medical.apto_status` (vigente/vencido/tramite) por sí solo NO valida la regla >3 meses; (4) vigencia suficiente requiere fecha/texto de vencimiento interpretable + regla oficial >3 meses; (5) sin fecha clara → NO inferir vigencia suficiente; (6) es **contrato del validador futuro**, NO se implementa aquí (el planner usa el valor del fact tal cual; sin umbrales temporales).

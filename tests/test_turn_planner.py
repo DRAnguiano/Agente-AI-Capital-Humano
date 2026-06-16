@@ -60,14 +60,14 @@ def test_compound_extracts_all_and_does_not_reask_unit():
     answers = [
         _ans("experience.years", "10"),
         _ans("experience.vehicle_type", "full"),
-        _ans("candidate.availability", "available"),
+        _ans("candidate.availability_status", "available"),
     ]
     out = plan_turn({}, answers, "10 años de full estoy disponible")
     assert out["facts_after"]["experience.years"] == "10"
     assert out["facts_after"]["experience.vehicle_type"] == "full"
     # availability se captura pero NO gatea el funnel (no-núcleo)
-    assert out["facts_after"]["candidate.availability"] == "available"
-    assert "candidate.availability" not in out["missing_fields"]
+    assert out["facts_after"]["candidate.availability_status"] == "available"
+    assert "candidate.availability_status" not in out["missing_fields"]
     # la unidad ya está completa → no se vuelve a preguntar
     assert "experience.vehicle_type" in out["completed_fields"]
     assert out["next_question_field"] != "experience.vehicle_type"

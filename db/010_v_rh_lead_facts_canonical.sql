@@ -27,7 +27,6 @@ SELECT
     CASE
         WHEN f.fact_group = 'license'   AND f.fact_key = 'category'           THEN 'license'   -- A
         WHEN f.fact_group = 'document'  AND f.fact_key = 'apto_status'        THEN 'medical'   -- B
-        WHEN f.fact_group = 'documents' AND f.fact_key = 'availability_claim' THEN 'candidate' -- E
         ELSE f.fact_group                                                                      -- C,D,F,G,H,I
     END AS canonical_group,
 
@@ -35,7 +34,6 @@ SELECT
     CASE
         WHEN f.fact_group = 'license'   AND f.fact_key = 'category'           THEN 'type'                            -- A
         WHEN f.fact_group = 'documents' AND f.fact_key IN ('labor_letters','labor_letters_status') THEN 'proof'     -- C
-        WHEN f.fact_group = 'documents' AND f.fact_key = 'availability_claim' THEN 'availability_to_attend_candidate' -- E
         ELSE f.fact_key                                                                                            -- B,D,F,G,H,I
     END AS canonical_key,
 
@@ -54,7 +52,7 @@ SELECT
             NULLIF(regexp_replace(f.fact_value, '[^0-9]', '', 'g'), '')
         -- H) vehicle_type=quinta_rueda: NO se expone como valor final
         WHEN f.fact_group = 'experience' AND f.fact_key = 'vehicle_type' AND f.fact_value = 'quinta_rueda' THEN NULL
-        -- A,B,D,E,F,I) sin transformación de valor
+        -- A,B,D,F,I) sin transformación de valor
         ELSE f.fact_value
     END AS canonical_value,
 
@@ -87,9 +85,6 @@ SELECT
         -- D) submission_status: estado de entrega, NO es proof
         WHEN f.fact_group = 'documents' AND f.fact_key = 'submission_status'
             THEN 'separate_delivery_state'
-        -- E) availability_claim: candidato a availability_to_attend, NO confirmado
-        WHEN f.fact_group = 'documents' AND f.fact_key = 'availability_claim'
-            THEN 'review_availability_candidate'
         -- F) general_status: ambiguo
         WHEN f.fact_group = 'documents' AND f.fact_key = 'general_status'
             THEN 'needs_review'

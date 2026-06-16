@@ -373,9 +373,6 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     if any(t in text for t in ("carta", "cartas", "laboral", "laborales")) and "no tengo" not in text:
         upsert("documents", "labor_letters", "sí", 0.90)
 
-    if any(t in text for t in ("lo tengo", "tengo todo", "si tengo", "sí tengo", "cuento con todo", "toda mi informacion")):
-        upsert("documents", "availability_claim", "candidate_says_available", 0.70)
-
     if any(t in text for t in ("en unas horas", "yo le aviso", "luego se los mando", "luego los mando",
                                "dame oportunidad", "deme oportunidad", "conseguirlos", "vengo manejando")):
         upsert("documents", "submission_status", "pending_candidate_will_send", 0.85)
