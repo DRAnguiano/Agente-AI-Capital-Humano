@@ -138,7 +138,11 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
 ## 9. Validación con tráfico real (en curso)
 
 - [ ] 9.1 Activar `MULTI_INTENT_SHADOW=true` en entorno con tráfico real y recolectar logs
-- [ ] 9.2 Comparar `shadow_reply` vs `actual_reply` y medir `shadow_ms`
+- [x] 9.2 Comparar `shadow_reply` vs `actual_reply` y medir `shadow_ms` — `scripts/shadow_log_report.py`
+  (parser/reporte offline y puro: divergencia de reply, distribución de intents, handoffs, errores y
+  estadística de `shadow_ms` min/p50/p95/max/mean). MIDE, NO DECIDE; no toca BD/Groq/flujo vivo ·
+  `tests/test_shadow_log_report.py` (7 deterministas). Consume los logs `[MULTI_INTENT_SHADOW]` que
+  produce 9.1 una vez activado el shadow en tráfico real.
 - [ ] 9.3 Construir suite de regresión de mensajes reales para `/classify` (casos abajo)
 
 Casos reales de regresión (fixtures `/classify`):
