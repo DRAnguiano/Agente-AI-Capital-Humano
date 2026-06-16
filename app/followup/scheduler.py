@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -14,6 +15,50 @@ from app.followup.templates import get_template
 log = logging.getLogger(__name__)
 
 MAX_INTENTOS = 3
+
+# ── Elegibilidad por canal productivo (spec followup-scheduler, task 10b.17) ──
+# El follow-up automático SOLO aplica a canales productivos operados por Chatwoot.
+# El `lead_key` es "{channel}:{channel_user_id}", así que el canal es su prefijo:
+# no hace falta tocar la vista SQL para filtrar.
+PRODUCTIVE_CHANNELS = frozenset({"chatwoot"})   # WhatsApp/webchat futuros entran como 'chatwoot'
+DEMO_CHANNELS = frozenset({"telegram_demo"})     # laboratorio: solo con flag explícito
+# Prefijos de laboratorio/smoke que nunca generan follow-up (test_ cubre test_faq/test_verify).
+_BLOCKED_PREFIXES = ("test_", "debug_", "shadow_test")
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _channel_from_lead_key(lead_key: str | None) -> str:
+    """Canal productivo = prefijo del lead_key antes de ':' (p. ej. 'chatwoot:53' → 'chatwoot')."""
+    return (lead_key or "").split(":", 1)[0]
+
+
+def is_eligible_for_followup(lead_key: str | None, *, enable_demo_followup: bool | None = None) -> bool:
+    """True si el lead puede recibir follow-up automático (canal productivo, no laboratorio).
+
+    - Prefijos de prueba (`test_`, `debug_`, `shadow_test`) → nunca.
+    - `chatwoot` (canal operativo; WhatsApp/web futuros entran por aquí) → sí.
+    - `telegram_demo` → solo si `ENABLE_DEMO_FOLLOWUP=true`.
+    - Cualquier otro canal directo → no (no es productivo hasta integrarse vía Chatwoot).
+    """
+    key = lead_key or ""
+    channel = _channel_from_lead_key(key)
+    if any(channel.startswith(p) for p in _BLOCKED_PREFIXES):
+        return False
+    if ":" not in key:
+        return False  # un lead_key bien formado es "channel:id"; malformado → no productivo
+    if channel in PRODUCTIVE_CHANNELS:
+        return True
+    if channel in DEMO_CHANNELS:
+        if enable_demo_followup is None:
+            enable_demo_followup = _env_bool("ENABLE_DEMO_FOLLOWUP", False)
+        return bool(enable_demo_followup)
+    return False
 
 # Días mínimos entre un intento y el siguiente
 _ESPERA_ENTRE_INTENTOS: dict[int, int] = {
@@ -153,6 +198,10 @@ def _run_scheduler_inner(creadas: list[dict], omitidas: list[dict]) -> dict[str,
 
         for lead in leads:
             lead_key = lead["lead_key"]
+            # Guard de canal productivo (10b.17): no programar para laboratorio/demo.
+            if not is_eligible_for_followup(lead_key):
+                omitidas.append({"lead_key": lead_key, "motivo": "canal_no_productivo"})
+                continue
             etapa = lead["funnel_stage"] or "followup_pending"
             intento = int(lead["seguimientos_enviados"] or 0) + 1
             ultimo_en = lead["ultimo_seguimiento_en"]
@@ -210,6 +259,10 @@ def _run_scheduler_inner(creadas: list[dict], omitidas: list[dict]) -> dict[str,
 
         for lead in leads_avanzados:
             lead_key = lead["lead_key"]
+            # Guard de canal productivo (10b.17): aplica también a solicitud_llamada.
+            if not is_eligible_for_followup(lead_key):
+                omitidas.append({"lead_key": lead_key, "motivo": "canal_no_productivo"})
+                continue
             etapa = lead["funnel_stage"]
             variables = {
                 "nombre": lead["display_name"] or "candidato",
