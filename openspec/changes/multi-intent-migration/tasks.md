@@ -143,29 +143,45 @@ Estado parcial: clasificación y política base implementadas en Fase 0/F30.
   estadística de `shadow_ms` min/p50/p95/max/mean). MIDE, NO DECIDE; no toca BD/Groq/flujo vivo ·
   `tests/test_shadow_log_report.py` (7 deterministas). Consume los logs `[MULTI_INTENT_SHADOW]` que
   produce 9.1 una vez activado el shadow en tráfico real.
-- [ ] 9.3 Construir suite de regresión de mensajes reales para `/classify` (casos abajo)
+- [x] 9.3 Construir suite de regresión de mensajes reales para `/classify` (casos abajo) —
+  `scripts/classify_regression.py` + `tests/fixtures/multi_intent/regression_9_3.jsonl` (8 casos,
+  classify→enrich→plan+turn vs expectativas). **8/8 verde con LLM real (Groq)** vía api-test.
 
 Casos reales de regresión (fixtures `/classify`):
-- [ ] 9.3.1 "10 años de full estoy disponible" → `experience.years=10`, `vehicle_type=full`,
+- [x] 9.3.1 "10 años de full estoy disponible" → `experience.years=10`, `vehicle_type=full`,
   `candidate.availability_status=available` — campo NO-núcleo: se captura (nombre canónico vivo)
   pero NO gatea `profile_ready` ni entra al funnel. Consistente con 2C.1 (que solo excluye del gate
   al legacy `availability_to_attend`/`disponible_acudir`, no la captura). No repreguntar unidad.
-- [ ] 9.3.2 "si tengo cartas" → `documents.proof=cartas` (fact canónico, `ANSWER_FIELDS` +
-  scenario del spec `multi-intent-pipeline`); no repetir preguntas no relacionadas ya respondidas
-- [ ] 9.3.3 "ya te habia dicho que full" → `memory_complaint_or_correction`; resolver según
+  Verde en `classify_regression.py` (LLM real).
+- [x] 9.3.2 "si tengo cartas" → `documents.proof=cartas` (fact canónico, `ANSWER_FIELDS` +
+  scenario del spec `multi-intent-pipeline`); no repetir preguntas no relacionadas ya respondidas.
+  Verde en `classify_regression.py` (LLM real).
+- [x] 9.3.3 "ya te habia dicho que full" → `memory_complaint_or_correction`; resolver según
   fact canónico (contrato 6.3): coincide → reafirmar sin reescribir; ausente → procesar
   `vehicle_type=full` por el pipeline normal; difiere → conflicto + confirmación neutral,
-  sin sobrescribir. En ningún caso repetir la pregunta.
+  sin sobrescribir. En ningún caso repetir la pregunta. Verde en `classify_regression.py`
+  (3 sub-casos 9.3.3a/b/c, LLM real).
 - [x] 9.3.4 "full" con `last_bot_question` de unidad → `vehicle_type=full` — cobertura **determinista** (`contextual_answer_classifier`/`normalize_vehicle`, Fase 1A). `/classify` LLM pendiente.
 - [x] 9.3.5 "10" sin contexto → no guarda, pide aclaración — cobertura **determinista** (`disambiguate_numeric_units`, Fase 1A). `/classify` LLM pendiente.
 - [x] 9.3.6 "camión" → ambiguo, no infiere full/sencillo — cobertura **determinista** (`normalize_vehicle` + `profile_extractor`, Fase 1A/1B). `/classify` LLM pendiente.
 - [x] 9.3.7 "soy operador de quinta rueda" → compatible, sin `vehicle_type` final — cobertura **determinista** (Fase 1A/1B). `/classify` LLM pendiente.
 - [x] 9.3.8 "manejo tráiler" → `needs_clarification`, sin `vehicle_type` — cobertura **determinista** (Fase 1A/1B). `/classify` LLM pendiente.
-- [ ] 9.3.9 "hola como esta el clima" → out_of_scope; no iniciar perfilamiento
-- [ ] 9.3.10 "Hola. ¿Puedo obtener más información sobre esto?" → `general_vacancy_info_request` (intent pendiente de formalizar — 8.4b); no documentos pendientes
-- [ ] 9.3.11 "no se crea creo que tengo en realidad 10 años" → categoría `contradicción`
-  (contrato 7.2/7.3) → `needs_confirmation`; no sobrescribir el valor previo; pedir
-  confirmación neutral. Sin estados fuera del catálogo 7.5.
+- [x] 9.3.9 "hola como esta el clima" → **NO arranca perfilamiento** (decisión C, 2026-06-16):
+  el small-talk fuera de tema no debe iniciar el funnel. Hoy `greeting` ya está en
+  `_NO_FUNNEL_SIGNALS` (plan_and_respond no emite pregunta de funnel) → "no perfila" se cumple.
+  El saludo cordial *específico* para small-talk (sin handoff brusco de out_of_scope) queda como
+  mejora futura (ver FUTURO abajo). Cubierto por `classify_regression.py` (`no_profiling`).
+- [x] 9.3.10 "Hola. ¿Puedo obtener más información sobre esto?" → `vacancy_question` (info general
+  de vacante; formalizado en 8.4b vía el intent `vacancy_question`). Few-shot añadido al
+  `CLASSIFIER_SYSTEM` para que el "Hola" no se trague la intención. Cubierto por `classify_regression.py`.
+- [x] 9.3.11 **El candidato corrige con duda un valor ya registrado** (baja certeza; p. ej.
+  "no sé, creo que en realidad son X") → categoría `contradicción`/corrección dudosa
+  (contrato 7.2/7.3): el sistema NO sobrescribe el valor previo y lo deja en `needs_confirmation`
+  / `conflict` pidiendo confirmación neutral. Sin estados fuera del catálogo 7.5. Cubierto por
+  `classify_regression.py` (`facts_after_unchanged`: el valor previo no se sobrescribe).
+- [ ] FUTURO **small-talk cordial sin funnel** (decisión C) — Mundo saluda/responde el small-talk
+  fuera de tema con cordialidad y reencauza, SIN derivar a humano (out_of_scope) ni arrancar el
+  funnel de inmediato. Comportamiento nuevo (no solo prompt). Fase aparte.
 
 ## 10. Candidate profile label planner (pendiente)
 
