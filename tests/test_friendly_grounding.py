@@ -98,3 +98,24 @@ def test_prompt_drops_fabrication_fewshot(monkeypatch):
     prompt = cap[0]
     assert "Cuatro años ya son experiencia" not in prompt
     assert "no haya dicho" in prompt  # regla anti-fabricación presente
+
+
+# ---------------------------------------------------------------------------
+# Copy: el LLM a veces envuelve toda la respuesta en comillas ("Laredo, anotado.")
+# → _clean_reply quita UN nivel de comillas envolventes (rag-corpus item 124).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,expected", [
+    ('"Laredo, anotado."', "Laredo, anotado."),
+    ("“Perfecto, lo dejo registrado.”", "Perfecto, lo dejo registrado."),
+    ("«Gracias por avisar.»", "Gracias por avisar."),
+    ("'Va, seguimos.'", "Va, seguimos."),
+])
+def test_clean_reply_strips_wrapping_quotes(raw, expected):
+    assert KO._clean_reply(raw) == expected
+
+
+def test_clean_reply_keeps_internal_quotes():
+    # No debe tocar comillas internas legítimas ni apóstrofes de contracción.
+    assert KO._clean_reply('La ruta "MTY-NLD" sale temprano.') == 'La ruta "MTY-NLD" sale temprano.'
+    assert KO._clean_reply("Para el corredor d'México hay vuelta.") == "Para el corredor d'México hay vuelta."

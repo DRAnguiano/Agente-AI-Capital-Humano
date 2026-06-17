@@ -196,6 +196,25 @@ def _extract_city(message: str, text: str) -> dict[str, Any] | None:
     return None
 
 
+# "Laredo" es ambiguo: Nuevo Laredo (Tamaulipas, MX) vs Laredo (Texas, EUA). Solo se
+# desambigua cuando el candidato lo declara como RESIDENCIA; dentro de una pregunta de
+# ruta sin marcador no aplica (ya lo cubre el guard de geo del orquestador). Si trae
+# "nuevo laredo"/"tamaulipas" (MX explícito) o "texas"/"tx" (EUA explícito), NO es ambiguo.
+_LAREDO_RESIDENCE_MARKERS = ("soy de", "vivo en", "radico en", "resido en", "estoy en", "me encuentro en")
+
+
+def detect_laredo_ambiguity(message: str) -> bool:
+    """True si el candidato declara residencia en "Laredo" sin especificar cuál."""
+    text = normalize_text(message or "")
+    if "laredo" not in text:
+        return False
+    # Explícito (no ambiguo): lado mexicano o lado americano ya resuelto.
+    if any(t in text for t in ("nuevo laredo", "tamaulipas", "texas", "laredo tx")):
+        return False
+    # Solo dispara como residencia declarada en primera persona.
+    return any(marker in text for marker in _LAREDO_RESIDENCE_MARKERS)
+
+
 def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[str, Any]]:
     """Extract conservative profile facts from short recruiting messages.
 

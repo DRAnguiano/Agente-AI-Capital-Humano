@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from app.db import get_conversation_state, log_event, make_conversation_key, save_message, update_stage, upsert_conversation
 from app.indexer import call_llm
 from app.knowledge.context_builder import build_generation_prompt, estimate_llm_cost, retrieve_preferred_context
+from app.knowledge.domain_catalog import NON_TARGET, VEHICLE_TERMS
 from app.knowledge.neo4j_client import resolve_message
 from app.knowledge.text_normalizer import normalize_text
 from app.lead_memory.repository import (
@@ -68,12 +69,6 @@ _GREETING_TERMS = (
     "buenas tardes", "buenas noches", "buenas", "ola", "hey", "hi",
 )
 
-GENERIC_CLOSING_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\s*Si tienes (m[aá]s |alguna )?(otra )?duda[s]?,? puedo ayudarte\.?\s*$", re.IGNORECASE),
-    re.compile(r"\s*Si necesitas m[aá]s informaci[oó]n,? puedo ayudarte[^.?!]*(\.|!|\?)?\s*$", re.IGNORECASE),
-    re.compile(r"\s*Estoy aqu[ií] para ayudarte\.?\s*$", re.IGNORECASE),
-    re.compile(r"\s*¿?Tienes alguna otra duda\??\s*$", re.IGNORECASE),
-)
 
 PROFILE_ACK_HINTS = (
     "ya mande", "ya mandé", "ya envie", "ya envié", "ya subi", "ya subí",
@@ -148,12 +143,10 @@ def _route_flags(route: str, risk_level: str) -> dict[str, bool]:
 
 
 def _clean_reply(text: str) -> str:
-    clean = (text or "").strip()
-    clean = re.sub(r"<think>.*?</think>", "", clean, flags=re.IGNORECASE | re.DOTALL)
-    clean = re.sub(r"</?think>", "", clean, flags=re.IGNORECASE).strip()
-    for pattern in GENERIC_CLOSING_PATTERNS:
-        clean = pattern.sub("", clean).strip()
-    return clean
+    """Limpia la respuesta del LLM — delega al cleaner unificado (rag-corpus #13)."""
+    from app.knowledge.reply_cleaner import clean_reply
+
+    return clean_reply(text)
 
 
 # ── Humor LLM con barda (decisión 2026-06-12) ────────────────────────────────
@@ -449,6 +442,94 @@ def _apply_deterministic_overrides(message: str, contract: dict[str, Any]) -> di
         return updated
 
     return contract
+
+
+# ── Guard determinista de reglas de negocio (live-business-rule-enforcement) ──
+# Política operativa que NO vive en el seed Neo4j (vocabulario): se aplica en código
+# determinista sobre el camino vivo, por lo que también obliga cuando Neo4j está en
+# fallback. La detección es léxica con límites de palabra (sobre texto normalizado:
+# minúsculas, sin acentos) para no atrapar subcadenas ("usa" en "usar", "visa" en
+# "revisar"). La detección del concepto puede migrar luego a catálogo/LLM; la DECISIÓN
+# de política permanece determinista.
+_B1_US_RE = re.compile(
+    r"\b(b1|b-1|estados unidos|eeuu|ee uu|eua|usa|ruta americana|lado americano|"
+    r"laredo texas|laredo tx|cruce|cruzar|visa|americana)\b"
+)
+_REINGRESO_RE = re.compile(
+    r"\breingres\w*\b"
+    r"|volver a trabajar"
+    r"|\bya\b.*\btrabaj\w*\b.*\b(ustedes|la empresa|transmontes|aqui|aca)\b"
+    r"|\btrabaj\w*\b.*\b(antes|anteriormente)\b.*\b(ustedes|la empresa|transmontes|aqui|aca)\b"
+)
+# Experiencia no-objetivo (escuelita): reusa el catálogo de dominio en vez de duplicar.
+_NON_TARGET_RE = re.compile(
+    r"\b(" + "|".join(
+        re.escape(term)
+        for term, res in VEHICLE_TERMS.items()
+        if res.status == NON_TARGET
+    ) + r")\b"
+)
+
+
+def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> dict[str, Any]:
+    """Aplica políticas de negocio deterministas al contrato del camino vivo."""
+    text = normalize_text(message or "")
+
+    # B1 / Estados Unidos / Laredo Texas / cruce → revisión humana, sin perfilar.
+    if _B1_US_RE.search(text):
+        updated = dict(contract)
+        updated.update({
+            "route": "human_handoff",
+            "intent": "business_route_us",
+            "requires_human": True,
+            "requires_rag": False,
+            "requires_clarification": False,
+            "reason": "deterministic_b1_us_handoff",
+        })
+        return updated
+
+    # Reingreso (no confundir con "ya conseguí otro trabajo", que es dropoff) → humano.
+    if _REINGRESO_RE.search(text):
+        updated = dict(contract)
+        updated.update({
+            "route": "human_handoff",
+            "intent": "reingreso_verificar",
+            "requires_human": True,
+            "requires_rag": False,
+            "requires_clarification": False,
+            "reason": "deterministic_reingreso_handoff",
+        })
+        return updated
+
+    # Torton/rabón/reparto/local/camioneta → experiencia no-objetivo (escuelita).
+    # No fija vehicle_type full/sencillo; solo agrega la señal para valoración humana.
+    if _NON_TARGET_RE.search(text):
+        updated = dict(contract)
+        signals = list(updated.get("business_signals") or [])
+        if "considerar_escuelita_transmontes" not in signals:
+            signals.append("considerar_escuelita_transmontes")
+        updated["business_signals"] = signals
+        updated["reason"] = "deterministic_non_target_escuelita"
+        return updated
+
+    return contract
+
+
+# Léxico de vigencia: el bot NUNCA emite "caduca/caducidad" al candidato; usa
+# "vence/vencimiento/vigencia". Opera sobre el texto de salida (preserva mayúsculas/
+# acentos), no sobre texto normalizado. Idempotente.
+_CADUCIDAD_RE = re.compile(r"caducidad", re.IGNORECASE)
+_CADUCADO_RE = re.compile(r"caducad([ao]s?)", re.IGNORECASE)
+_CADUCA_RE = re.compile(r"caduca(n|r)?", re.IGNORECASE)
+
+
+def _enforce_vigencia_lexicon(text: str) -> str:
+    if not text:
+        return text
+    out = _CADUCIDAD_RE.sub("vigencia", text)
+    out = _CADUCADO_RE.sub(lambda m: "vencid" + m.group(1), out)
+    out = _CADUCA_RE.sub("vence", out)
+    return out
 
 
 def _is_safe_for_friendly_llm(message: str, contract: dict[str, Any]) -> bool:
@@ -1288,6 +1369,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     contract = resolve_message(message, conversation_state=conversation)
     contract = _apply_profile_guards(message, contract)
     contract = _apply_deterministic_overrides(message, contract)
+    contract = _apply_business_rule_overrides(message, contract)
 
     flags = _route_flags(str(contract.get("route") or "fallback"), str(contract.get("risk_level") or "low"))
     contract.update({**flags, "requires_rag": bool(contract.get("requires_rag")) and flags["requires_rag"]})
@@ -1330,6 +1412,10 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
             reply = f"{reply}\n\n{nudge}"
         else:
             asked_field_keys = []  # no nudge appended → no field was asked
+
+    # Guard de léxico de vigencia sobre la respuesta final (todas las rutas): el bot
+    # nunca emite "caduca/caducidad" al candidato.
+    reply = _enforce_vigencia_lexicon(reply)
 
     # Detect call-time preference response when a solicitud_llamada was recently sent.
     # Saves the candidate's message as a private note in Chatwoot for Capital Humano.

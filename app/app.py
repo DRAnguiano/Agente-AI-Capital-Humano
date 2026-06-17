@@ -55,61 +55,15 @@ def _rate_limit_redis():
     return _rl_redis_client
 
 
-def _sanitize(text: str):
-    if not text:
-        return text
-    return text.replace("\uFFFD", "").encode("utf-8", "ignore").decode("utf-8").strip()
+def _clean_llm_answer(text: str) -> str:
+    """Limpia la respuesta del LLM — delega al cleaner unificado (rag-corpus #13).
 
-
-def _clean_llm_answer(text: str):
+    Antes esta función y `knowledge_orchestrator._clean_reply` eran implementaciones
+    divergentes; ahora ambas usan `reply_cleaner.clean_reply` (unión de sus reglas).
     """
-    Limpia cierres genéricos que algunos modelos agregan aunque el prompt pida no hacerlo.
-    No toca el contenido central de la respuesta.
-    """
-    cleaned = _sanitize(text or "")
+    from app.knowledge.reply_cleaner import clean_reply
 
-    if not cleaned:
-        return cleaned
-
-    # Frases exactas frecuentes.
-    generic_endings = [
-        "Si tienes alguna otra duda sobre el proceso, puedo ayudarte a resolverla.",
-        "Si tienes alguna otra duda sobre el proceso, puedo ayudarte a resolverlas.",
-        "Si tienes alguna otra duda, puedo ayudarte a resolverla.",
-        "Si tienes alguna otra duda, puedo ayudarte a resolverlas.",
-        "Si tienes otra duda, puedo ayudarte.",
-        "Puedo ayudarte si tienes alguna otra duda.",
-        "Estoy aquí para ayudarte.",
-        "¿Tienes alguna otra duda?",
-        "¿Puedo ayudarte con algo más?",
-        "¿Quieres que te aclare algo más?",
-    ]
-
-    changed = True
-    while changed:
-        changed = False
-        for ending in generic_endings:
-            if cleaned.endswith(ending):
-                cleaned = cleaned[: -len(ending)].rstrip()
-                changed = True
-
-    # Variantes abiertas que Cohere puede redactar de formas ligeramente distintas.
-    generic_patterns = [
-        r"\n*Si tienes más dudas sobre .*?, puedo ayudarte a resolverlas\.?\s*$",
-        r"\n*Si tienes más dudas.*, puedo ayudarte.*$",
-        r"\n*Si hay algo más que quieras saber.*, puedo buscar.*$",
-        r"\n*No olvides que Capital Humano puede validar cualquier duda.*$",
-        r"\n*Capital Humano puede confirmar los detalles exactos.*$",
-        r"\n*Estoy aquí para ayudarte.*$",
-        r"\n*Puedo ayudarte a resolver.*$",
-        r"\n*¿Tienes alguna otra duda\?\s*$",
-        r"\n*¿Quieres que te aclare algo más\?\s*$",
-    ]
-
-    for pattern in generic_patterns:
-        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
-
-    return cleaned.strip()
+    return clean_reply(text)
 
 
 def _source_payload(item: dict) -> dict:
