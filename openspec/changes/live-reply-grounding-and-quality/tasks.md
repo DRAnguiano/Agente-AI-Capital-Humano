@@ -62,10 +62,15 @@
       tras escuelita → no escuelita.
 
 ## B9. Datos sensibles / pagos / trámites con costo (P1)
-- [ ] B9.1 El bot no solicita pagos, depósitos, cuentas bancarias, CURP/NSS completos ni
-      comprobantes fuera de flujo autorizado; no inventa trámites/costos.
-- [ ] B9.2 Trámite con costo / datos sensibles → handoff o "el equipo lo confirma por el canal autorizado".
-- [ ] B9.3 Test: pregunta por trámite con costo/cuenta/CURP → no pide datos sensibles, deriva.
+- [x] B9.1 Guard determinista `_PAID_SENSITIVE_RE` en `knowledge_orchestrator`: ante
+      petición de pago/depósito/cuenta-CLABE, el bot responde `_SENSITIVE_PAID_REPLY` que
+      aclara que NO maneja pagos/cobros ni pide datos bancarios por ese medio (no solicita
+      datos sensibles). El "no solicitar" en generación libre lo refuerza el persona prompt.
+- [x] B9.2 Costo al candidato / dato bancario → respuesta controlada "nuestro equipo lo
+      confirma por el canal autorizado", sin handoff (el bot aclara y sigue disponible).
+      Distingue costo-al-candidato de salario ("cuánto pagan" va por RAG, no dispara).
+- [x] B9.3 Tests en `tests/test_live_business_rules.py`: 4 casos de costo/cuenta → reply
+      `sensitive_paid_guard` sin pedir datos; 3 de salario → NO disparan el guard.
 
 ## B10. Decisión operativa unificada (P1)
 - [ ] B10.1 Respuesta visible, nota interna y labels derivan de la misma decisión por turno

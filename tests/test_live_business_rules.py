@@ -125,3 +125,36 @@ def test_laredo_in_route_question_is_not_ambiguous():
 def test_laredo_texas_sets_requires_human_live():
     out = KO._apply_business_rule_overrides("soy de Laredo Texas, del lado americano", _baseline_contract())
     assert out["requires_human"] is True
+
+
+# ---------------------------------------------------------------------------
+# B9 — costo al candidato / datos sensibles → respuesta controlada segura
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("message", [
+    "¿tengo que pagar algo por el curso?",
+    "me piden un depósito para empezar",
+    "¿cuánto cuesta la inscripción?",
+    "necesitan mi número de cuenta o clabe?",
+])
+def test_sensitive_or_paid_request_returns_safe_reply(message):
+    out = KO._apply_business_rule_overrides(message, _baseline_contract())
+    tmpl = out.get("reply_template") or {}
+    assert tmpl.get("id") == "sensitive_paid_guard"
+    assert out["requires_human"] is False          # no handoff; el bot aclara y sigue
+    assert out.get("requires_rag") is False
+
+
+@pytest.mark.parametrize("message", [
+    "¿cuánto pagan a la semana?",
+    "¿cuánto me pagan por kilómetro?",
+    "¿el sueldo es fijo o por km?",
+])
+def test_salary_question_is_not_sensitive_paid(message):
+    # "cuánto pagan / me pagan / sueldo" es salario (va por RAG), NO el guard de costo.
+    out = KO._apply_business_rule_overrides(message, _baseline_contract())
+    assert (out.get("reply_template") or {}).get("id") != "sensitive_paid_guard"
+    assert out.get("reason") != "deterministic_sensitive_paid_guard"

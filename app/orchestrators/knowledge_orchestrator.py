@@ -470,6 +470,24 @@ _NON_TARGET_RE = re.compile(
     ) + r")\b"
 )
 
+# B9 — datos sensibles / costo al candidato. Detecta que al candidato le PIDEN pagar/
+# depositar o le piden datos bancarios (NO el sueldo: "cuánto pagan" es salario y va por
+# RAG). El reclutamiento legítimo nunca cobra al candidato por este medio.
+_PAID_SENSITIVE_RE = re.compile(
+    r"\b("
+    r"tengo que pagar|hay que pagar|debo pagar|tengo que dar dinero|piden dinero|"
+    r"me piden dinero|me cobran|cobran algo|tiene costo|tiene algun costo|algun costo|"
+    r"cuanto cuesta|cuanto sale|costo del curso|curso tiene costo|pagar inscripcion|"
+    r"costo de inscripcion|anticipo|enganche|deposito|cuenta bancaria|numero de cuenta|"
+    r"clabe|tarjeta de credito|hacer una transferencia|hacer transferencia"
+    r")\b"
+)
+_SENSITIVE_PAID_REPLY = (
+    "Por seguridad, no manejamos pagos, depósitos ni cobros por este medio, y nunca le "
+    "pediremos datos bancarios por aquí. Si hubiera algún costo o trámite, nuestro equipo "
+    "se lo confirma directamente por el canal autorizado. ¿Le comparto algo más de la vacante?"
+)
+
 
 def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> dict[str, Any]:
     """Aplica políticas de negocio deterministas al contrato del camino vivo."""
@@ -510,6 +528,21 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> di
             signals.append("considerar_escuelita_transmontes")
         updated["business_signals"] = signals
         updated["reason"] = "deterministic_non_target_escuelita"
+        return updated
+
+    # B9 — costo al candidato / datos bancarios → respuesta controlada segura, sin pedir
+    # datos sensibles ni perfilar. No es handoff: el bot aclara y sigue disponible.
+    if _PAID_SENSITIVE_RE.search(text):
+        updated = dict(contract)
+        updated.update({
+            "route": "profile",
+            "intent": "sensitive_or_paid_request",
+            "requires_human": False,
+            "requires_rag": False,
+            "requires_clarification": False,
+            "reply_template": {"id": "sensitive_paid_guard", "text": _SENSITIVE_PAID_REPLY},
+            "reason": "deterministic_sensitive_paid_guard",
+        })
         return updated
 
     return contract
