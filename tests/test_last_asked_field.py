@@ -70,6 +70,13 @@ def no_extraction(monkeypatch):
         "app.lead_memory.profile_extractor.extract_profile_facts",
         lambda message, intent=None: [],
     )
+    # `_build_funnel_nudge` elige el texto con `random.choice(step["variants"])`. Fijarlo a
+    # la primera variante hace deterministas estos tests: una variante de edad dice "edad"
+    # (no "años") y rompía `"años" in text` al azar (~1/3). El campo/keys ya es determinista;
+    # solo variaba el wording.
+    monkeypatch.setattr(
+        "app.orchestrators.knowledge_orchestrator.random.choice", lambda seq: seq[0]
+    )
 
 
 def _facts(*pairs):

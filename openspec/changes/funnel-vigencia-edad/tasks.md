@@ -37,8 +37,11 @@
 
 ## Fase 3 — Verificación
 
-- [ ] V3.1 pytest targeted + suite completa Docker.
-- [ ] V3.2 `openspec validate funnel-vigencia-edad --strict`.
-- [ ] V3.3 Smoke demo: edad temprana; 50+ descarta; "sí está vigente" repregunta
-  tiempo; apto que vence en 18 días dispara guion de trámite.
-- [ ] V3.4 Commit aislado.
+- [x] V3.1 pytest targeted (`test_funnel_vigencia_edad.py`) + suite completa Docker:
+  targeted 64 passed (junto a first-contact); suite **598 passed, 0 fallos** (2026-06-17).
+- [x] V3.2 `openspec validate funnel-vigencia-edad --strict` → valid (2026-06-17).
+- [~] V3.3 Comportamientos del smoke **cubiertos por tests deterministas**:
+  `test_age_50_or_more_discards_without_more_questions`, `test_age_under_50_continues`,
+  `test_vigente_without_expiration_reprompts_time`, `test_short_expiry_triggers_fixed_renewal_branch`.
+  Falta solo la confirmación en el **stack vivo** (demo Chatwoot/worker) — acción del operador.
+- [ ] V3.4 Commit aislado — pendiente de autorización (regla: no commit/push sin visto bueno).

@@ -94,24 +94,23 @@
 
 ## Fuera de este change — bugs de código detectados en smoke 81 (tests rojos primero)
 
-- [ ] Regex de ciudad glotona en `profile_extractor`: "soy de Laredo ahí de
-  donde a donde me toca ir?" → `candidate.city="Laredo Ahí De Donde A Donde Me
-  Toca Ir"`. Acotar la captura (límite de tokens / cortar en signos de pregunta
-  y conectores). Además "laredo" solo no es alias de ningún GeoArea (decidir si
-  Laredo TX/NLD ambiguo → aclarar).
+- [x] Regex de ciudad glotona en `profile_extractor`: RESUELTO por
+  `live-first-contact-and-fact-guards` G2.4 (`_extract_city`: split en
+  conectores/interrogativos + tope de 4 tokens). La desambiguación "laredo solo"
+  (TX vs NLD) se atiende aparte en `live-business-rule-enforcement`
+  (`detect_laredo_ambiguity` + handoff Laredo Texas).
 - [ ] Pregunta tomada como respuesta: el turno con "?" se procesó como respuesta
   de ciudad y la pregunta de rutas se ignoró tres veces (ack "Laredo, anotado" +
   pregunta de licencia). `should_prioritize_current_turn` ya excluye preguntas —
   rastrear por qué el camino vivo no respetó `is_question`.
-- [ ] Extractor geo de Neo4j extrae ciudad desde PREGUNTAS (smoke 10:17): "¿qué
-  rutas maneja para nuevo laredo?" → `candidate.city=Nuevo Laredo` + labels
-  `foraneo`/`validar_traslado`. La extracción de facts en
-  knowledge_orchestrator:712-735 corre "regardless of route/intent" sin guard de
-  pregunta; aplicar `is_question`/contexto de respuesta también al camino Neo4j.
-- [ ] Mensaje de campaña FB "Me interesa la vacante de operador de quinta rueda"
-  (texto por default de la publicación) debe tratarse como APERTURA del flujo
-  (presentación + contrato de apertura), no como dato registrable ("lo dejo
-  registrado") ni mucho menos fijar unidad.
+- [x] Extractor geo de Neo4j extrae ciudad desde PREGUNTAS: RESUELTO por
+  `live-first-contact-and-fact-guards` G2.3 (`_drop_geo_facts_from_questions` +
+  `_drop_unanchored_neo4j_geo` en knowledge_orchestrator: pregunta sin marcador
+  de residencia → sin `candidate.city/state`, aplicado a facts de Neo4j+regex).
+- [x] Mensaje de campaña FB "Me interesa la vacante de operador de quinta rueda"
+  como APERTURA: RESUELTO por `live-first-contact-and-fact-guards` G2.1/G2.2
+  (`is_campaign_or_interest_entry` + `GREETING_REPLY` en primer contacto, sin
+  acuse "lo dejo registrado" ni fijar unidad).
 - [ ] Fallback de horario sigue saliendo sin importar la hora actual ("llámenos
   de 8:00 a 17:30" estando en horario): inyectar hora actual al contrato de
   generación (frente grounding).
@@ -121,7 +120,9 @@
   Contrato registrado en multi-intent-migration (sección 14, "acuse de
   documentos esperados") y flujo de llamada en FUTURO call_scheduling.
   Implementación pendiente con tests rojos.
-- [ ] Copy: respuestas con comillas literales ("Laredo, anotado.").
+- [x] Copy: respuestas con comillas literales ("Laredo, anotado."): `_clean_reply`
+  quita un nivel de comillas envolventes (`_strip_wrapping_quotes`: `"`, `“”`, `«»`, `'`)
+  sin tocar comillas internas ni apóstrofes. Tests en `test_friendly_grounding.py`.
 - [x] Prefijo "Nuestro equipo valida el avance." — causa raíz: el LLM parroteaba
   el `public_guidance` de la Policy `no_hiring_promise` (seed hr_rules:135).
   Guidance reformulada como regla interna explícita "NO copiar esta frase"
@@ -148,9 +149,12 @@
 - [ ] Vigencia <3 meses **bloquea** `perfil_listo` + `aclaracion_pendiente` +
   comprobante de renovación (endurece 2C.0d; requiere parseo de fechas).
 - [ ] Edad como pregunta del funnel; RFC a expediente (planner).
-- [ ] `is_local_laguna` solo con ciudad en el turno (`current_turn.py`).
-- [ ] Renderer: `has_vehicle_type` con `VALID_VEHICLE_TYPES` (blocker/⚠️
-  consistentes con `falta_unidad`).
+- [x] `is_local_laguna` solo con ciudad en el turno: hecho en
+  `current_turn.extract_current_turn_facts` — `city_norm` sale de `candidate.city`
+  del turno y queda vacío (False) si no hay ciudad; se excluye de la señal de perfil.
+- [x] Renderer: `has_vehicle_type` con `VALID_VEHICLE_TYPES`: hecho en
+  `chatwoot_note_sync.py` (`vehicle_confirmed = experience.vehicle_type in
+  VALID_VEHICLE_TYPES`; jerga ambigua "quinta rueda"/"tráiler" no confirma unidad).
 - [ ] Rastreo del escritor LLM que persistió `vehicle_type=quinta_rueda` en vivo
   (verificar si el corpus/seed era la única fuente o hay normalización faltante
   en el grafo).

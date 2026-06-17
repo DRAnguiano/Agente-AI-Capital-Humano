@@ -46,7 +46,10 @@
 - [x] G3.1 Suite completa en Docker: 503 passed / 8 warnings (2026-06-12);
   targeted previo 59 passed.
 - [x] G3.2 `openspec validate live-first-contact-and-fact-guards --strict` — valid.
-- [ ] G3.3 Smoke en demo: mensaje de campaña FB → saludo oficial; "¿qué rutas
-  maneja para nuevo laredo?" → sin `candidate.city`; "soy de Laredo ahí de
-  donde..." → ciudad "Laredo".
-- [ ] G3.4 Commit aislado.
+- [~] G3.3 Comportamientos del smoke **cubiertos por tests deterministas**
+  (`test_first_contact_and_fact_guards.py`, 2026-06-17, dentro de los 598 passed):
+  entrada de campaña FB → saludo oficial (`test_saludo_oficial_menciona_full_o_sencillo`,
+  `test_helper_detecta_entrada_fb`); pregunta de rutas → sin `candidate.city`
+  (`test_pregunta_de_rutas_no_fija_ciudad`); "soy de Laredo ahí de donde..." → ciudad acotada.
+  Falta solo la confirmación en el **stack vivo** (demo) — acción del operador.
+- [ ] G3.4 Commit aislado — pendiente de autorización (regla: no commit/push sin visto bueno).
