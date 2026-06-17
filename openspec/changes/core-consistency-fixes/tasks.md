@@ -41,6 +41,11 @@
   con `WHERE current_stage='HUMAN_REVIEW_REQUIRED'`, pone `requires_human=false`/`risk_level='low'`.
   `update_stage` conserva el CASE que pin-ea HUMAN_REVIEW (no auto-regresión por mensajes).
   Tests `test_core_consistency.py` pasaron de xfail → verde.
+- [x] 3.3 #8 operativo: endpoint `POST /admin/release-human-review` (guard `INTERNAL_API_KEY`)
+  que invoca `db.release_human_review` — la vía explícita para que un agente/operación
+  libere la conversación. Tests `tests/test_admin_release.py` (3 passed, sin Groq).
+  Alternativa no implementada: detectar la señal de reasignación del agente en el webhook
+  de Chatwoot (queda como opción futura; el endpoint cubre el contrato).
 
 ## Fase 4 — Validación
 
@@ -48,4 +53,5 @@
 - [x] 4.2 `tests/test_core_consistency.py`: **5 passed** (api-test, sin Groq). Suite completa
   diferida (política no-Groq del día); impacto en otros tests descartado por análisis de
   dependencias (nadie depende de las cadenas editadas; `release_human_review` es aditiva).
-- [ ] 4.3 Sin commit/push hasta autorización.
+- [x] 4.3 Commiteado y pusheado (commit `1546ac3`, 2026-06-17). El endpoint operativo (3.3)
+  queda pendiente de su propio commit.

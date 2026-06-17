@@ -336,6 +336,37 @@ def classify(body: ClassifyBody, x_api_key: str | None = Header(default=None)):
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
 
 
+class ReleaseHumanReviewBody(BaseModel):
+    conversation_key: str
+    stage_to: str = "START"
+
+
+@app.post("/admin/release-human-review")
+def release_human_review_endpoint(
+    body: ReleaseHumanReviewBody, x_api_key: str | None = Header(default=None)
+):
+    """Libera una conversación de HUMAN_REVIEW_REQUIRED por acción humana/operativa (#8).
+
+    El bot nunca sale solo de revisión humana (`update_stage` la pin-ea); esta es la
+    ÚNICA vía explícita de regreso, pensada para que un agente u operación la invoque
+    tras tomar y resolver el caso. Protegido con `INTERNAL_API_KEY`.
+    """
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    try:
+        from .db import release_human_review
+
+        release_human_review(body.conversation_key, stage_to=body.stage_to)
+        return {
+            "status": "released",
+            "conversation_key": body.conversation_key,
+            "stage_to": body.stage_to,
+        }
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": _public_error(exc)})
+
+
 def _extract_chatwoot_contact(payload: dict) -> dict:
     """
     Extrae datos del contacto desde distintas formas de payload de Chatwoot.
