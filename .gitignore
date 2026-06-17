@@ -40,3 +40,6 @@ facts_pre_*.sql
 
 # QA generated reports — outputs, no versionar
 reports/
+
+# Scratch temporal (neo_exec, etc.) — no versionar
+.tmp/
