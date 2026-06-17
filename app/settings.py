@@ -76,6 +76,14 @@ CHUNK_SIZE = _env_int("CHUNK_SIZE", 800)
 CHUNK_OVERLAP = _env_int("CHUNK_OVERLAP", 150)
 TOP_K = _env_int("TOP_K", 5)
 
+# Ensamblado de contexto RAG (context_builder.py) — fuente única de defaults.
+# RAG_TOP_K hereda TOP_K por defecto para que un solo knob controle la recuperación
+# (antes context_builder usaba un 3 hardcodeado independiente de TOP_K).
+RAG_TOP_K = _env_int("RAG_TOP_K", TOP_K)
+RAG_MIN_SCORE = _env_float("RAG_MIN_SCORE", 0.25)
+RAG_MAX_CONTEXT_CHARS = _env_int("RAG_MAX_CONTEXT_CHARS", 2200)
+RAG_MAX_CHARS_PER_DOC = _env_int("RAG_MAX_CHARS_PER_DOC", 850)
+
 INDEX_EXTENSIONS = _env_list(
     "INDEX_EXTENSIONS",
     ".pdf,.txt,.md,.markdown",

@@ -3,7 +3,7 @@
 ### Requirement: Labels de perfil listo y seguimiento por llamada
 
 El sistema SHALL, cuando el perfil esté completo (`perfil_listo`) y el candidato pida una
-llamada dentro del horario de oficina (8:00–17:30, `America/Monterrey`, lunes a viernes),
+llamada dentro del horario de oficina (8:00–17:30, `America/Mexico_City`, lunes a viernes),
 poder derivar `perfil_listo` junto con `seguimiento` y, cuando aplique, `urgente`. Fuera del
 horario, el sistema SHALL derivar `perfil_listo` con `seguimiento`. El sistema SHALL NOT
 emitir un label de llamada que aún no exista en el catálogo oficial: `llamada_pendiente`
@@ -14,7 +14,7 @@ SHALL añadirse primero al catálogo de `chatwoot-label-taxonomy` antes de poder
 > El sistema SHALL NOT prometer una agenda real mientras no exista sistema de agendación.
 
 #### Scenario: Perfil listo pide llamada en horario
-- **WHEN** `perfil_listo` y el candidato pide llamada dentro de 8:00–17:30 (`America/Monterrey`, lunes a viernes)
+- **WHEN** `perfil_listo` y el candidato pide llamada dentro de 8:00–17:30 (`America/Mexico_City`, lunes a viernes)
 - **THEN** el sistema puede derivar `perfil_listo` + `seguimiento` (y `urgente` si aplica)
 - **AND** no emite `llamada_pendiente` mientras no esté en el catálogo oficial
 

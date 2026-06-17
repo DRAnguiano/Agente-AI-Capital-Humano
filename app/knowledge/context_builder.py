@@ -17,6 +17,7 @@ import os
 import time
 from typing import Any
 
+from app import settings
 from app.indexer import _embed_texts, _get_collection, _normalize_text, _to_int
 
 _COLLECTION_CACHE: Any | None = None
@@ -129,10 +130,11 @@ def retrieve_preferred_context(
             "source_filter_used": preferred_sources or [],
         }
 
-    requested_k = _to_int(top_k, _to_int(os.getenv("RAG_TOP_K"), 3))
-    min_score = _env_float("RAG_MIN_SCORE", 0.25)
-    max_context_chars = _to_int(os.getenv("RAG_MAX_CONTEXT_CHARS"), 2200)
-    max_chars_per_doc = _to_int(os.getenv("RAG_MAX_CHARS_PER_DOC"), 850)
+    # Defaults centralizados en settings (fuente única); el arg `top_k` aún manda si se pasa.
+    requested_k = _to_int(top_k, settings.RAG_TOP_K)
+    min_score = settings.RAG_MIN_SCORE
+    max_context_chars = settings.RAG_MAX_CONTEXT_CHARS
+    max_chars_per_doc = settings.RAG_MAX_CHARS_PER_DOC
     source_filter = [str(item).strip() for item in preferred_sources or [] if str(item).strip()]
 
     try:

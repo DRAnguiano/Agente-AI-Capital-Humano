@@ -363,6 +363,36 @@ def update_stage(
             )
 
 
+def release_human_review(conversation_key: str, stage_to: str = "START") -> None:
+    """Vía explícita de liberación de HUMAN_REVIEW (acción humana/operativa).
+
+    `update_stage` pin-ea `HUMAN_REVIEW_REQUIRED` a propósito para que el bot NO
+    auto-regrese por mensajes del candidato. Esta función es la ÚNICA vía de salida:
+    debe invocarse solo desde una acción humana/operativa explícita (agente que
+    resuelve/reasigna en Chatwoot, o un endpoint admin), nunca desde el flujo
+    automático del turno. Así se evita el bloqueo permanente sin reabrir el handoff
+    por sí solo. El WHERE acota el efecto a conversaciones realmente en revisión humana.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE rh_conversations
+                SET
+                    current_stage = %(stage_to)s,
+                    requires_human = false,
+                    risk_level = 'low',
+                    updated_at = now()
+                WHERE conversation_key = %(conversation_key)s
+                  AND current_stage = 'HUMAN_REVIEW_REQUIRED';
+                """,
+                {
+                    "conversation_key": conversation_key,
+                    "stage_to": stage_to,
+                },
+            )
+
+
 def sync_conversation_risk_from_profile(
     conversation_key: str,
     *,

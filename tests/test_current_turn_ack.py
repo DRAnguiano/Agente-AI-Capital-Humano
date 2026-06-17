@@ -70,3 +70,22 @@ def test_ack_city_license_apto_single_perfecto_single_question():
     reply = build_current_turn_ack("soy de Torreón, licencia tipo E vigente y mi apto está vigente")
     assert reply.count("Perfecto") == 1
     assert reply.count("?") == 1  # una sola pregunta visible
+
+
+# ---------------------------------------------------------------------------
+# B6.2 — sin fact duplicado en el prefijo ("20 años, 20 años de experiencia").
+# El extractor único (profile_extractor, guard B3) NO saca candidate.age desde
+# una frase de experiencia, así que el ack menciona los años una sola vez.
+# ---------------------------------------------------------------------------
+
+def test_ack_experience_years_not_duplicated_as_age():
+    reply = build_current_turn_ack("tengo 20 años manejando full")
+    assert "20 años de experiencia" in reply
+    # "20 años" aparece solo dentro de "20 años de experiencia", no como edad aparte.
+    assert reply.count("20 años") == 1
+    assert "20 años," not in reply  # no el patrón "20 años, 20 años de experiencia"
+
+
+def test_ack_experience_full_mentioned_once():
+    reply = build_current_turn_ack("tengo 20 años manejando full")
+    assert reply.count("tracto full") == 1

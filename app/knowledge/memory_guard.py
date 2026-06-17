@@ -85,7 +85,7 @@ def _claimed_answer(enriched: dict[str, Any]) -> dict[str, Any] | None:
     """
     for ans in enriched.get("answers_to_persist") or []:
         field = ans.get("field")
-        if field in FUNNEL_FIELD_FACT_KEYS or field == "experience.vehicle_type":
+        if field in FUNNEL_FIELD_FACT_KEYS:  # experience.vehicle_type ya es clave del mapa
             return ans
     return None
 

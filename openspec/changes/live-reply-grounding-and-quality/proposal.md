@@ -39,7 +39,7 @@ bloques pequeños.
 - **Correcciones explícitas**: reconocer la corrección y no repetir el valor anterior
   (cross-reference a tasks de `multi-intent-migration`, sin duplicar).
 - **Perfil listo y llamada**: siguiente paso claro + política de horario **8:00–17:30, lunes a
-  viernes** (`America/Monterrey`) + estado/label de lead; sin prometer agenda real inexistente.
+  viernes** (`America/Mexico_City`) + estado/label de lead; sin prometer agenda real inexistente.
 - **Sin OCR**: registrar documentos para revisión humana sin afirmar validación automática.
 - **Datos sensibles**: el bot no solicita pagos, depósitos, cuentas, CURP/NSS completos ni
   comprobantes fuera de flujo autorizado; ante trámites con costo → handoff / canal autorizado.

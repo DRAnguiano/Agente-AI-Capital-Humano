@@ -82,7 +82,7 @@ rechazó.
 Al completar el perfil o cuando el candidato declara documentos listos, el sistema SHALL
 indicar un siguiente paso claro y, ante una solicitud de llamada, SHALL fijar el estado/label
 de lead correspondiente. La política de contacto SHALL evaluarse contra el horario de oficina
-documentado **8:00–17:30, lunes a viernes**, en la zona canónica **`America/Monterrey`**:
+documentado **8:00–17:30, lunes a viernes**, en la zona canónica **`America/Mexico_City`**:
 dentro del horario, el sistema SHALL indicar que el equipo puede dar seguimiento; fuera del
 horario, SHALL indicar que el perfil quedó tomado en cuenta y ofrecer seguimiento dentro del
 horario. El sistema SHALL NOT prometer una agenda real mientras no exista sistema de
@@ -97,12 +97,12 @@ atención" y SHALL NOT afirmar "ya quedó agendada tu llamada".
 > de `chatwoot-label-taxonomy` antes de emitirse.
 
 #### Scenario: Solicitud de llamada en horario de oficina
-- **WHEN** el perfil está completo y el candidato pide una llamada dentro de 8:00–17:30 (`America/Monterrey`, lunes a viernes)
+- **WHEN** el perfil está completo y el candidato pide una llamada dentro de 8:00–17:30 (`America/Mexico_City`, lunes a viernes)
 - **THEN** el sistema indica que el equipo puede dar seguimiento por llamada
 - **AND** deja registrado el estado/label de lead para contacto, sin afirmar que la llamada ya quedó agendada
 
 #### Scenario: Solicitud de llamada fuera de horario
-- **WHEN** el candidato pide una llamada fuera de 8:00–17:30 (`America/Monterrey`)
+- **WHEN** el candidato pide una llamada fuera de 8:00–17:30 (`America/Mexico_City`)
 - **THEN** el sistema indica que el perfil quedó tomado en cuenta y ofrece seguimiento dentro del horario
 - **AND** no promete una hora agendada
 
