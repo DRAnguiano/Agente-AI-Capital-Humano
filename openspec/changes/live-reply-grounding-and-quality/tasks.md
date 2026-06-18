@@ -28,13 +28,23 @@
       sin `candidate.age`.
 
 ## B4. Higiene de fuentes de conocimiento (P1)
-- [ ] B4.1 Auditar `data/00_*`..`data/05_*`: separar instrucción interna de texto respondible.
-- [ ] B4.2 Filtro/strip en el prompt de RAG para no devolver instrucciones internas.
-- [ ] B4.3 Test: chunk con "Mundo debe..." no aparece en la respuesta final al candidato.
+- [x] B4.1 Auditadas `data/00_*`..`05_*`: cada fuente mezcla instrucción interna ("Mundo debe…",
+      "debe pedir… antes de dar una cifra") con texto respondible. Decisión: NO re-autorar las
+      fuentes (exigiría re-index manual de Chroma); se filtra en tiempo de recuperación (B4.2).
+- [x] B4.2 `context_builder._strip_internal_instructions` quita oraciones-directiva al bot
+      (`_INTERNAL_DIRECTIVE_RE`) de cada chunk ANTES de armar `context_text`, preservando el
+      texto respondible de la misma línea; cableado en `retrieve_preferred_context`. El LLM no
+      puede eco lo que no está en el contexto.
+- [x] B4.3 Tests en `tests/test_rag_grounding.py`: "Mundo debe…" y "antes de dar una cifra"
+      desaparecen del contexto; texto respondible se conserva; verbos-directiva varios.
 
 ## B5. RAG answer grounding / anti over-retrieval (P1)
-- [ ] B5.1 Acotar recuperación/ensamblado a fuentes relacionadas con la pregunta.
-- [ ] B5.2 Test: "pago para sencillo" no mezcla paradas autorizadas ni proceso documental.
+- [x] B5.1 `context_builder._focus_items_by_source` (margen `settings.RAG_SOURCE_FOCUS_MARGIN`,
+      0.08) conserva la fuente del mejor match y solo otras fuentes con score dentro del margen;
+      cableado en `retrieve_preferred_context` antes del ensamblado → no mezcla temas.
+- [x] B5.2 Test en `tests/test_rag_grounding.py`: items de `01_pago` (top) + `04_bases_rutas`
+      (paradas) + `02_documentos` (documental) → focus deja solo `01_pago`; secundaria cercana
+      sí entra; orden preservado.
 
 ## B6. Ack dedup en current_turn (P2)
 - [x] B6.1 Un solo "Perfecto": `_join_ack_and_question` + `_strip_leading_perfecto`

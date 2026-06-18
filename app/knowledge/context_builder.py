@@ -14,6 +14,7 @@ candidato ni emite labels.
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any
 
@@ -59,6 +60,57 @@ def _score_from_distance(distance: Any) -> float:
         return max(0.0, 1.0 - float(distance))
     except Exception:
         return 0.0
+
+
+# B4 — instrucciones internas dirigidas al bot. Se eliminan del contexto ANTES de armar el
+# prompt para que el LLM no las eco a la respuesta del candidato (no re-escribe las fuentes;
+# strip en tiempo de recuperación). Conserva el texto respondible de la misma línea/chunk.
+_INTERNAL_DIRECTIVE_RE = re.compile(
+    r"\bmundo\s+(?:debe|no\s+debe|nunca|no)\b"
+    r"|\bdebe\s+(?:pedir|preguntar|confirmar|orientar|escalar|marcar|evitar|priorizar|atender|intentar|registrar|responder|solicitar)\b"
+    r"|\bantes\s+de\s+dar\s+una\s+cifra\b",
+    re.IGNORECASE,
+)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;:])\s+")
+
+
+def _strip_internal_instructions(text: str) -> str:
+    """Quita oraciones-directiva internas ("Mundo debe…") preservando lo respondible."""
+    kept_lines: list[str] = []
+    for raw_line in (text or "").split("\n"):
+        sentences = _SENTENCE_SPLIT_RE.split(raw_line)
+        kept = [s for s in sentences if s.strip() and not _INTERNAL_DIRECTIVE_RE.search(s)]
+        line = " ".join(kept).strip()
+        if line:
+            kept_lines.append(line)
+    return "\n".join(kept_lines).strip()
+
+
+def _focus_items_by_source(
+    items: list[dict[str, Any]], margin: float | None = None
+) -> list[dict[str, Any]]:
+    """Anti over-retrieval (B5): conserva la fuente del mejor match y otras fuentes cuyo
+    mejor score esté dentro de ``margin`` del top; descarta temas no relacionados.
+
+    Asume ``items`` ordenados por score desc (como los entrega Chroma). Preserva el orden.
+    """
+    if not items:
+        return []
+    if margin is None:
+        margin = settings.RAG_SOURCE_FOCUS_MARGIN
+
+    top_score = max(float(it.get("score") or 0.0) for it in items)
+    dominant_source = items[0].get("source")
+    # Mejor score por fuente para decidir cuáles entran.
+    best_by_source: dict[Any, float] = {}
+    for it in items:
+        src = it.get("source")
+        best_by_source[src] = max(best_by_source.get(src, 0.0), float(it.get("score") or 0.0))
+    allowed = {
+        src for src, best in best_by_source.items()
+        if src == dominant_source or best >= top_score - margin
+    }
+    return [it for it in items if it.get("source") in allowed]
 
 
 def _dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -187,12 +239,19 @@ def retrieve_preferred_context(
         )
 
     items = _dedupe_items(items)[:requested_k]
+    # B5 — acota a la(s) fuente(s) relacionada(s) con la pregunta antes de ensamblar.
+    items = _focus_items_by_source(items)
 
     context_parts: list[str] = []
     used_chars = 0
-    for index, item in enumerate(items, start=1):
+    index = 0
+    for item in items:
         source = item.get("source") or "fuente_interna"
-        text = str(item.get("text") or "").strip()[:max_chars_per_doc]
+        # B4 — quita instrucciones internas del chunk antes de meterlo al contexto.
+        text = _strip_internal_instructions(str(item.get("text") or ""))[:max_chars_per_doc]
+        if not text.strip():
+            continue
+        index += 1
         block = f"[Fuente {index}: {source} | score={round(float(item.get('score') or 0), 3)}]\n{text}"
         if used_chars + len(block) > max_context_chars:
             remaining = max_context_chars - used_chars

@@ -83,6 +83,10 @@ RAG_TOP_K = _env_int("RAG_TOP_K", TOP_K)
 RAG_MIN_SCORE = _env_float("RAG_MIN_SCORE", 0.25)
 RAG_MAX_CONTEXT_CHARS = _env_int("RAG_MAX_CONTEXT_CHARS", 2200)
 RAG_MAX_CHARS_PER_DOC = _env_int("RAG_MAX_CHARS_PER_DOC", 850)
+# Anti over-retrieval (B5): tras recuperar, solo se ensambla la fuente del mejor match y
+# otras fuentes cuyo mejor score esté dentro de este margen → no mezcla temas (p. ej. pago
+# vs paradas autorizadas vs proceso documental).
+RAG_SOURCE_FOCUS_MARGIN = _env_float("RAG_SOURCE_FOCUS_MARGIN", 0.08)
 
 INDEX_EXTENSIONS = _env_list(
     "INDEX_EXTENSIONS",
