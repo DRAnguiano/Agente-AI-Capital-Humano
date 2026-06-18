@@ -882,6 +882,38 @@ def _next_action_for_stage(stage: str, contract: dict[str, Any]) -> str | None:
     return None
 
 
+# B10 — decisión operativa unificada. La verdad del turno es lo que se REGISTRÓ
+# (`facts_written`), no el intent tópico (que puede venir mal clasificado para una
+# respuesta corta tipo "5"). Estos helpers alinean nota/labels/acción con lo registrado.
+_CORE_PROFILE_FACT_KEYS: dict[str, str] = {
+    "candidate.city":          "El candidato registró su ciudad.",
+    "candidate.age":           "El candidato registró su edad.",
+    "experience.vehicle_type": "El candidato registró su tipo de unidad (tracto full o sencillo).",
+    "experience.years":        "El candidato registró sus años de experiencia.",
+    "license.category":        "El candidato registró su licencia.",
+    "medical.apto_status":     "El candidato registró su apto médico.",
+}
+
+
+def _core_fact_written(facts_written: list[str] | None) -> bool:
+    return any(k in _CORE_PROFILE_FACT_KEYS for k in (facts_written or []))
+
+
+def _registered_fact_summary(facts_written: list[str] | None) -> str | None:
+    """Resumen de memoria basado en el dato núcleo registrado este turno (en orden)."""
+    for key in facts_written or []:
+        if key in _CORE_PROFILE_FACT_KEYS:
+            return _CORE_PROFILE_FACT_KEYS[key]
+    return None
+
+
+def _should_record_topical_interest(intent: str, facts_written: list[str] | None) -> bool:
+    """Una pregunta tópica (pago/documentos) NO se registra como interés cuando el turno ya
+    registró un dato núcleo del perfil: el mensaje fue una respuesta al funnel, no una
+    pregunta. Evita que nota/labels digan "preguntó por documentos" tras un "5" (B10)."""
+    return not _core_fact_written(facts_written)
+
+
 def _memory_summary_for_stage(stage: str, message: str, contract: dict[str, Any]) -> str | None:
     intent = str(contract.get("intent") or "unknown")
     if stage == "apto_pending_update":
@@ -1005,7 +1037,7 @@ def _store_lead_memory_updates(
         )
         facts_written.append("documents.submission_status")
 
-    if intent == "payment_compensation":
+    if intent == "payment_compensation" and _should_record_topical_interest(intent, facts_written):
         upsert_lead_fact(
             lead_key=lead_key,
             fact_group="interest",
@@ -1017,7 +1049,7 @@ def _store_lead_memory_updates(
         )
         facts_written.append("interest.payment")
 
-    if intent == "requirements_documents":
+    if intent == "requirements_documents" and _should_record_topical_interest(intent, facts_written):
         upsert_lead_fact(
             lead_key=lead_key,
             fact_group="interest",
@@ -1052,7 +1084,10 @@ def _store_lead_memory_updates(
         lead_key=lead_key,
         funnel_stage=stage_to,
         next_best_action=_next_action_for_stage(stage_to, contract),
-        memory_summary=_memory_summary_for_stage(stage_to, message, contract),
+        memory_summary=(
+            _registered_fact_summary(facts_written)
+            or _memory_summary_for_stage(stage_to, message, contract)
+        ),
         facts_summary={"last_intent": intent, "last_route": route, "last_stage": stage_to},
         risk_level=str(contract.get("risk_level") or "low"),
         requires_human=bool(contract.get("requires_human")),

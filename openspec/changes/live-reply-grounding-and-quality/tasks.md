@@ -113,10 +113,15 @@
       `sensitive_paid_guard` sin pedir datos; 3 de salario → NO disparan el guard.
 
 ## B10. Decisión operativa unificada (P1)
-- [ ] B10.1 Respuesta visible, nota interna y labels derivan de la misma decisión por turno
-      (Postgres/lead_memory): perfil, intención, horario, llamada, humano, bloqueo.
-- [ ] B10.2 Test: último mensaje "5" con campo pendiente experiencia → la nota NO dice
-      "preguntó por documentos"; acción/bloqueo/labels consistentes con "registró experiencia".
+- [x] B10.1 La verdad del turno es lo REGISTRADO (`facts_written`), no el intent tópico (que
+      puede venir mal clasificado en respuestas cortas). En `_store_lead_memory_updates`:
+      (a) `_should_record_topical_interest` no escribe `interest.payment/requirements_documents`
+      cuando el turno registró un dato núcleo del perfil; (b) el `memory_summary` prefiere
+      `_registered_fact_summary(facts_written)` ("registró su experiencia/ciudad/…") sobre el
+      resumen por intent. Así nota, labels y acción no se contradicen con lo registrado.
+- [x] B10.2 Tests en `tests/test_unified_decision.py`: "5" → resumen de experiencia (no
+      documentos); interés tópico no se registra si hubo dato núcleo; la nota no muestra
+      "Cartas/documentos: Preguntó" cuando se registró experiencia. 6 verdes.
 
 ## B11. Labels oficiales / no labels fantasma (P2)
 - [x] B11.1 Solo emiten labels del catálogo. `_filter_official_labels` (chatwoot_note_sync)
