@@ -56,7 +56,11 @@
   sola pregunta; "tengo 20 años manejando full" → "20 años de experiencia" una vez, sin dup.
 
 ## B7. Cierre de perfil / handoff de llamada (P2)
-- [ ] B7.1 Siguiente paso claro al completar perfil o documentos declarados.
+- [x] B7.1 Siguiente paso claro en ambas ramas: al completar perfil →
+      `current_turn._profile_complete_closing` (subir licencia/apto/cartas + contacto en horario
+      o agenda; testeado en `test_current_turn_ack.py`, B7.3); al declarar documentos enviados →
+      `DOCUMENT_ACK_REPLY` ("lo dejo registrado para que nuestro equipo lo valide y le indique el
+      siguiente paso"), vía `_apply_profile_guards` (intent `document_submission_ack`). Sin agenda real.
 - [x] B7.2 Helper compartido `is_business_hours()` — horario **8:00–17:30 L–V**, zona canónica
       `America/Mexico_City`. NO confundir con `followup/ventana.py` (08:30–20:30 L–S, envío async).
       Evidencia: `app/knowledge/business_hours.py` + `current_turn._profile_complete_closing`
