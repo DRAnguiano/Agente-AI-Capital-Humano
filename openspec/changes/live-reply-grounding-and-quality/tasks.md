@@ -70,11 +70,22 @@
       reply visible, label `llamada_pendiente`, facts `scheduling.*` y nota privada correctos.
 
 ## B8. Manejo de correcciones explícitas (P0, mayor)
-- [ ] B8.1 Reconocer corrección explícita y sobrescribir sin repetir el valor anterior.
-- [ ] B8.2 Cross-reference / jalar adelante tasks de `multi-intent-migration` (6.3, 7.2, 7.4,
-      9.3.3, 9.3.11) sin duplicar la lógica.
-- [ ] B8.3 Test: "en realidad es sencillo" tras "full" → sencillo, sin escuelita; "10 años"
-      tras escuelita → no escuelita.
+- [x] B8.1 Corrección reformula la respuesta: el valor nuevo se extrae y **sobrescribe** el
+      lead/estatus (`upsert_lead_fact` ON CONFLICT DO UPDATE SET fact_value=EXCLUDED) y, al
+      confirmar un objetivo claro (full/sencillo), se **limpia la escuelita previa**
+      (`_apply_business_rule_overrides`, rama `deterministic_clear_escuelita_on_target`). Sin
+      hostigar: el slot corregido queda lleno → `next_question_from_missing_facts` no
+      re-pregunta la unidad, avanza. Evidencia: `tests/test_live_corrections.py`.
+- [x] B8.2 NO duplica la lógica LLM de corrección de `multi-intent-migration` (6.3/7.2/7.4/
+      9.3.3/9.3.11 → `fact_corrections.py`, shadow). El camino vivo reusa `normalize_vehicle`
+      (misma resolución de dominio del extractor) y reacciona a que ESTE turno confirme
+      full/sencillo, sin detectar el "acto" de corregir por frase. La distinción de dominio ya
+      existe: rabón/torton/reparto → `considerar_escuelita_transmontes` (Capital Humano);
+      sin experiencia → `cecati_sugerido` (CECATI Gómez Palacio), redactada en `persona_config.py`.
+- [x] B8.3 Tests en `tests/test_live_corrections.py`: "en realidad es sencillo"/"manejo full"
+      → vehicle_type corregido; objetivo válido NO emite escuelita; turno de experiencia tras
+      escuelita no la re-emite; **escuelita previa se limpia** al confirmar objetivo; unidad
+      corregida no se re-pregunta. 9 casos verdes + 24 de regresión en `test_live_business_rules.py`.
 
 ## B9. Datos sensibles / pagos / trámites con costo (P1)
 - [x] B9.1 Guard determinista `_PAID_SENSITIVE_RE` en `knowledge_orchestrator`: ante

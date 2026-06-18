@@ -16,6 +16,7 @@ from app.db import get_conversation_state, log_event, make_conversation_key, sav
 from app.indexer import call_llm
 from app.knowledge.context_builder import build_generation_prompt, estimate_llm_cost, retrieve_preferred_context
 from app.knowledge.domain_catalog import NON_TARGET, VEHICLE_TERMS
+from app.knowledge.normalize_domain_values import normalize_vehicle
 from app.knowledge.neo4j_client import resolve_message
 from app.knowledge.text_normalizer import normalize_text
 from app.lead_memory.repository import (
@@ -529,6 +530,23 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> di
         updated["business_signals"] = signals
         updated["reason"] = "deterministic_non_target_escuelita"
         return updated
+
+    # B8 — corrección explícita a un objetivo claro (full/sencillo) limpia una escuelita
+    # PREVIA. El overwrite del vehicle_type ya lo hace el upsert; aquí evitamos que el label
+    # escuelita de un turno anterior quede pegado cuando el candidato corrige a un objetivo.
+    # No detecta el "acto" de corregir por frase: solo reacciona a que ESTE turno confirma
+    # full/sencillo (misma resolución que usa el extractor), sin duplicar la lógica LLM de
+    # fact_corrections (shadow/multi-intent).
+    veh = normalize_vehicle(message)
+    if veh and veh.value:  # full | sencillo confirmados este turno
+        signals = list(contract.get("business_signals") or [])
+        if "considerar_escuelita_transmontes" in signals:
+            updated = dict(contract)
+            updated["business_signals"] = [
+                s for s in signals if s != "considerar_escuelita_transmontes"
+            ]
+            updated["reason"] = "deterministic_clear_escuelita_on_target"
+            return updated
 
     # B9 — costo al candidato / datos bancarios → respuesta controlada segura, sin pedir
     # datos sensibles ni perfilar. No es handoff: el bot aclara y sigue disponible.
