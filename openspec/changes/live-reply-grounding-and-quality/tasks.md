@@ -56,12 +56,13 @@
       ahora indica que queda registrado para que el equipo pueda contactar dentro del
       horario de atencion, sin prometer agenda real. Evidencia:
       `tests/test_current_turn_ack.py::test_profile_complete_closing_in_hours_mentions_team_contact`.
-- [ ] B7.4 Estado/label de lead para llamada: `llamada_pendiente` ya existe en el catalogo
-      oficial; falta emitirla desde la decision determinista cuando el perfil esta listo
-      o requiere agente y el candidato pide/acepta llamada. Registrar ademas
-      `scheduling.call_requested=true`, `scheduling.call_status=pending` y
-      `scheduling.call_window_text` con el texto del candidato ("manana a las 4", etc.).
-      No prometer agenda real: "lo dejo registrado para que el equipo te contacte en horario".
+- [x] B7.4 `llamada_pendiente` se emite desde decisión determinista: `calculate_candidate_labels`
+      la añade solo si `perfil_listo` o `requiere_agente` están activos y
+      `scheduling.call_requested` es true; antes de perfil/handoff → `seguimiento`. El extractor
+      (`profile_extractor`, `_CALL_REQUEST_RE`/`_CALL_NEG_RE`) registra `scheduling.call_requested=true`,
+      `scheduling.call_status=pending` y `scheduling.call_window_text` (best-effort, día/hora del
+      candidato). No promete agenda (el cierre/persona ya usan "lo dejo registrado…", B7.3).
+      Evidencia: `tests/test_call_scheduling.py` (15 casos). La validez del horario es B7.5.
 - [ ] B7.5 Validacion de horario solicitado: normalizar/validar contra `is_business_hours`
       (8:00-17:30 L-V, `America/Mexico_City`) cuando el candidato indique una hora clara.
       Guardar `scheduling.call_window_valid=true|false|unknown` y reflejarlo en nota privada

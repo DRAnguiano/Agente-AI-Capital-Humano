@@ -316,6 +316,18 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.discard("falta_apto")
         labels.discard("documentos")
 
+    # B7.4 — llamada pendiente: solo desde decisión determinista cuando perfil_listo o
+    # requiere_agente están activos y el candidato pidió llamada (scheduling.call_requested).
+    # Antes de perfil listo / handoff → seguimiento (no llamada_pendiente). Sin agenda real.
+    call_requested = str(facts.get("scheduling.call_requested") or "").strip().lower() in {
+        "true", "sí", "si", "1", "yes"
+    }
+    if call_requested:
+        if {"perfil_listo", "requiere_agente"} & labels:
+            labels.add("llamada_pendiente")
+        else:
+            labels.add("seguimiento")
+
     # Labels terminales detienen el flujo automático: bot_activo no coexiste.
     if labels & TERMINAL_LABELS:
         labels.discard("bot_activo")

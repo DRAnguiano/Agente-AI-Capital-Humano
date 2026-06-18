@@ -215,6 +215,38 @@ def detect_laredo_ambiguity(message: str) -> bool:
     return any(marker in text for marker in _LAREDO_RESIDENCE_MARKERS)
 
 
+# ── Call scheduling (B7.4) ────────────────────────────────────────────────────
+# Detección determinista de que el candidato pide/acepta una llamada. Patrones sobre
+# texto ya normalizado (minúsculas, sin acentos, sin puntuación). La emisión del label
+# `llamada_pendiente` la decide `calculate_candidate_labels` (gate perfil_listo / agente);
+# aquí solo se registran los facts `scheduling.*`. NO se promete agenda real.
+_CALL_REQUEST_RE = re.compile(
+    r"\b(?:"
+    r"me\s+llam\w+|llamen\w*|llamem\w*|"            # me llamen, llámenme
+    r"me\s+pueden\s+llamar|pueden\s+llamarme|puede\s+llamarme|"
+    r"me\s+marc\w+|marquen\w*|marquem\w*|"          # me marcan, márquenme
+    r"(?:prefiero|mejor|quiero|quisiera|me\s+gustaria|me\s+gusta|agend\w+)\s+(?:que\s+me\s+llamen|(?:una\s+)?llamada)|"
+    r"una\s+llamada|por\s+(?:telefono|llamada)|hablamos\s+por\s+telefono"
+    r")\b"
+)
+# Negación: si el candidato rechaza la llamada, NO se registra solicitud.
+_CALL_NEG_RE = re.compile(r"\bno\s+(?:quiero\s+(?:la\s+|una\s+)?llamada|me\s+llamen|llamada)\b")
+# Ventana solicitada (best-effort): día/hora declarados por el candidato.
+_CALL_WINDOW_RE = re.compile(
+    r"\b("
+    r"(?:hoy|manana|pasado manana)(?:\s+(?:por|en)\s+la\s+(?:manana|tarde|noche))?(?:\s+a\s+las?\s+\d{1,2}(?:\s*(?:am|pm|hrs|horas))?)?"
+    r"|el\s+(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?:\s+a\s+las?\s+\d{1,2}(?:\s*(?:am|pm|hrs|horas))?)?"
+    r"|a\s+las?\s+\d{1,2}(?:\s*(?:am|pm|hrs|horas))?"
+    r"|(?:por|en)\s+la\s+(?:manana|tarde|noche)"
+    r")\b"
+)
+
+
+def _extract_call_window(text: str) -> str | None:
+    m = _CALL_WINDOW_RE.search(text)
+    return m.group(1).strip() if m else None
+
+
 def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[str, Any]]:
     """Extract conservative profile facts from short recruiting messages.
 
@@ -419,6 +451,14 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         age_m = re.search(r"\b(?:tengo|cuento con)\s+(\d{1,2})\s*(?:ano|anos|anio|anios)\b", text)
     if age_m and 18 <= int(age_m.group(1)) <= 75:
         upsert("candidate", "age", age_m.group(1), 0.88)
+
+    # ── Solicitud de llamada (B7.4) ───────────────────────────────────────────
+    if _CALL_REQUEST_RE.search(text) and not _CALL_NEG_RE.search(text):
+        upsert("scheduling", "call_requested", "true", 0.85)
+        upsert("scheduling", "call_status", "pending", 0.85)
+        window = _extract_call_window(text)
+        if window:
+            upsert("scheduling", "call_window_text", window, 0.80)
 
     return facts
 
