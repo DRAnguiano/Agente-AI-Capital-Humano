@@ -45,6 +45,19 @@ TERMINAL_LABELS: frozenset[str] = frozenset({
     "reingreso_verificar",
 })
 
+# Aliases fantasma → label oficial. La vista SQL `v_rh_work_queue.suggested_chatwoot_labels`
+# y otras fuentes emiten nombres fuera del catálogo; se mapean al equivalente oficial en el
+# único chokepoint (`_filter_official_labels`) para no llegar crudos a Chatwoot (B11.1/B11.2).
+# `requiere_humano`→`requiere_agente` y `falta_cartas`→`documentos` los manda el spec
+# (chatwoot-label-taxonomy); el resto preserva la señal con el nombre oficial.
+LABEL_ALIASES: dict[str, str] = {
+    "requiere_humano":      "requiere_agente",
+    "falta_cartas":         "documentos",
+    "ubicacion_extranjero": "foraneo",
+    "validar_ch":           "requiere_revision_ch",
+    "posible_abandono":     "seguimiento",
+}
+
 # Display humano de labels en la nota privada
 _LABEL_DISPLAY: dict[str, str] = {
     "cecati_sugerido":                  "CECATI sugerido",
@@ -146,7 +159,9 @@ def _normalize_labels(labels) -> list[str]:
 
 
 def _filter_official_labels(labels) -> list[str]:
-    return [lbl for lbl in _normalize_labels(labels) if lbl in OFFICIAL_LABELS]
+    # Mapea aliases fantasma → oficial, luego conserva solo labels del catálogo.
+    mapped = {LABEL_ALIASES.get(lbl, lbl) for lbl in _normalize_labels(labels)}
+    return sorted(lbl for lbl in mapped if lbl in OFFICIAL_LABELS)
 
 
 def _facts_map(rows: list[dict[str, Any]]) -> dict[str, str]:

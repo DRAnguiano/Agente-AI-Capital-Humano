@@ -105,6 +105,17 @@
       "preguntó por documentos"; acción/bloqueo/labels consistentes con "registró experiencia".
 
 ## B11. Labels oficiales / no labels fantasma (P2)
-- [ ] B11.1 Emitir solo labels del catálogo de `chatwoot-label-taxonomy`; `falta_cartas` → `documentos`.
-- [ ] B11.2 Alinear labels calculados ↔ sincronizados ↔ catálogo oficial.
-- [ ] B11.3 Test: cálculo que proponga `falta_cartas` (u otra fuera de catálogo) no se emite.
+- [x] B11.1 Solo emiten labels del catálogo. `_filter_official_labels` (chatwoot_note_sync)
+      ahora mapea aliases fantasma → oficial (`LABEL_ALIASES`) y descarta lo desconocido;
+      `falta_cartas`→`documentos`, `requiere_humano`→`requiere_agente` (mandados por el spec).
+- [x] B11.2 Chokepoint único: `_normalize_chatwoot_labels` (app.py, path SQL primario usado
+      por app.py y tasks_chatwoot) delega en `_filter_official_labels` → los 3 paths
+      (calculado / fallback / sincronizado SQL) quedan alineados al catálogo. Saneaba labels
+      fantasma reales de `v_rh_work_queue.suggested_chatwoot_labels` (`requiere_humano`,
+      `ubicacion_extranjero`→`foraneo`, `validar_ch`→`requiere_revision_ch`,
+      `posible_abandono`→`seguimiento`) que antes llegaban crudas a Chatwoot.
+      > Nota: la vista SQL aún define esos nombres en origen; el chokepoint Python los sanea
+      > (comportamiento vivo correcto). Renombrarlos en la vista es migración aparte (deploy psql).
+- [x] B11.3 Tests en `tests/test_candidate_labels.py`: `test_filter_maps_ghost_alias_to_official`,
+      `test_sql_primary_path_maps_ghost_alias`, `test_sql_primary_path_drops_unknown_label`,
+      `test_sql_primary_path_parses_pg_array_with_ghost` (+ allowlist existente). 90 verdes.

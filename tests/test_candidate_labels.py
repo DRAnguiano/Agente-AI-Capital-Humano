@@ -465,6 +465,57 @@ class TestBotActivoTerminales:
         assert "bot_activo" in result
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# B11.1/B11.2 — mapeo de aliases fantasma → oficial en el chokepoint único.
+# La vista SQL `v_rh_work_queue.suggested_chatwoot_labels` emite nombres que NO
+# están en el catálogo (requiere_humano, ubicacion_extranjero, validar_ch,
+# posible_abandono); deben mapearse al label oficial equivalente, no llegar crudos
+# a Chatwoot. `falta_cartas` → `documentos` (spec chatwoot-label-taxonomy).
+# ══════════════════════════════════════════════════════════════════════════════
+
+ALIAS_CASES = [
+    ("requiere_humano", "requiere_agente"),     # spec.md:51-52
+    ("falta_cartas", "documentos"),             # spec live-reply :35
+    ("ubicacion_extranjero", "foraneo"),
+    ("validar_ch", "requiere_revision_ch"),
+    ("posible_abandono", "seguimiento"),
+]
+
+
+@pytest.mark.parametrize("ghost,official", ALIAS_CASES)
+def test_filter_maps_ghost_alias_to_official(ghost, official):
+    result = _filter_official_labels(["bot_activo", ghost])
+    assert ghost not in result
+    assert official in result
+
+
+def _normalize_sql_labels(labels):
+    # path primario: vista SQL → _normalize_chatwoot_labels → Chatwoot (import perezoso).
+    from app.app import _normalize_chatwoot_labels
+    return _normalize_chatwoot_labels(labels)
+
+
+@pytest.mark.parametrize("ghost,official", ALIAS_CASES)
+def test_sql_primary_path_maps_ghost_alias(ghost, official):
+    result = _normalize_sql_labels(["bot_activo", ghost])
+    assert ghost not in result
+    assert official in result
+
+
+def test_sql_primary_path_drops_unknown_label():
+    result = _normalize_sql_labels(["bot_activo", "label_totalmente_inventada"])
+    assert "label_totalmente_inventada" not in result
+    assert set(result) <= OFFICIAL_LABELS
+
+
+def test_sql_primary_path_parses_pg_array_with_ghost():
+    # PostgreSQL devuelve "{a,b}"; un fantasma adentro debe normalizarse igual.
+    result = _normalize_sql_labels("{bot_activo,requiere_humano}")
+    assert "requiere_humano" not in result
+    assert "requiere_agente" in result
+    assert set(result) <= OFFICIAL_LABELS
+
+
 def test_perfil_listo_no_depende_de_disponible_acudir():
     """disponible_acudir no debe completar perfil_listo."""
     facts_sin_disponible = {

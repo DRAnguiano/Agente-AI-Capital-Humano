@@ -551,7 +551,10 @@ def _normalize_chatwoot_labels(labels) -> list[str]:
         if value:
             clean.append(value)
 
-    return sorted(set(clean))
+    # Chokepoint único: mapea aliases fantasma → oficial y descarta lo que no esté en
+    # el catálogo, igual que el path Python. Antes esta función NO filtraba y dejaba
+    # pasar labels de la vista SQL (requiere_humano, ubicacion_extranjero, …) a Chatwoot.
+    return _filter_official_labels(clean)
 
 
 def _fallback_chatwoot_labels(result: dict) -> list[str]:
