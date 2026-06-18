@@ -47,12 +47,27 @@
 
 ## B7. Cierre de perfil / handoff de llamada (P2)
 - [ ] B7.1 Siguiente paso claro al completar perfil o documentos declarados.
-- [ ] B7.2 Helper compartido `is_business_hours()` — horario **8:00–17:30 L–V**, zona canónica
+- [x] B7.2 Helper compartido `is_business_hours()` — horario **8:00–17:30 L–V**, zona canónica
       `America/Mexico_City`. NO confundir con `followup/ventana.py` (08:30–20:30 L–S, envío async).
-- [ ] B7.3 Corregir la rama **en-horario** del cierre (hoy no dice "el equipo puede contactar").
-- [ ] B7.4 Estado/label de lead para llamada; `llamada_pendiente` solo tras añadirlo al catálogo.
+      Evidencia: `app/knowledge/business_hours.py` + `current_turn._profile_complete_closing`
+      usa el helper; `docker compose --profile test run --rm api-test sh -lc 'PYTHONPATH=/app pytest tests/test_business_hours.py'`
+      → 5 passed.
+- [x] B7.3 Corregir la rama **en-horario** del cierre: `_profile_complete_closing()`
+      ahora indica que queda registrado para que el equipo pueda contactar dentro del
+      horario de atencion, sin prometer agenda real. Evidencia:
+      `tests/test_current_turn_ack.py::test_profile_complete_closing_in_hours_mentions_team_contact`.
+- [ ] B7.4 Estado/label de lead para llamada: `llamada_pendiente` ya existe en el catalogo
+      oficial; falta emitirla desde la decision determinista cuando el perfil esta listo
+      o requiere agente y el candidato pide/acepta llamada. Registrar ademas
+      `scheduling.call_requested=true`, `scheduling.call_status=pending` y
+      `scheduling.call_window_text` con el texto del candidato ("manana a las 4", etc.).
       No prometer agenda real: "lo dejo registrado para que el equipo te contacte en horario".
-- [ ] B7.5 Test: solicitud de llamada en/fuera de horario → mensaje y estado correctos.
+- [ ] B7.5 Validacion de horario solicitado: normalizar/validar contra `is_business_hours`
+      (8:00-17:30 L-V, `America/Mexico_City`) cuando el candidato indique una hora clara.
+      Guardar `scheduling.call_window_valid=true|false|unknown` y reflejarlo en nota privada
+      de Chatwoot como "dentro/fuera/no interpretable del horario de atencion".
+- [ ] B7.6 Test: solicitud de llamada en horario/fuera de horario/horario ambiguo ->
+      reply visible, label `llamada_pendiente`, facts `scheduling.*` y nota privada correctos.
 
 ## B8. Manejo de correcciones explícitas (P0, mayor)
 - [ ] B8.1 Reconocer corrección explícita y sobrescribir sin repetir el valor anterior.

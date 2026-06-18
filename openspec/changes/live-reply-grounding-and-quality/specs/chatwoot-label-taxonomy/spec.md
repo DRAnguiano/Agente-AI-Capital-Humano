@@ -4,19 +4,23 @@
 
 El sistema SHALL, cuando el perfil esté completo (`perfil_listo`) y el candidato pida una
 llamada dentro del horario de oficina (8:00–17:30, `America/Mexico_City`, lunes a viernes),
-poder derivar `perfil_listo` junto con `seguimiento` y, cuando aplique, `urgente`. Fuera del
-horario, el sistema SHALL derivar `perfil_listo` con `seguimiento`. El sistema SHALL NOT
-emitir un label de llamada que aún no exista en el catálogo oficial: `llamada_pendiente`
-SHALL añadirse primero al catálogo de `chatwoot-label-taxonomy` antes de poder emitirse.
+poder derivar `perfil_listo` junto con `llamada_pendiente` y, cuando aplique,
+`seguimiento`/`urgente`. Fuera del horario, el sistema SHALL registrar la solicitud y
+mantener `llamada_pendiente` si requiere contacto humano, aclarando que el equipo contacta
+en horario de atención. `llamada_pendiente` SHALL emitirse solo desde una decisión
+determinista basada en Postgres/lead_memory; el LLM no decide labels.
 
-> Nota de implementación: doc-only. `perfil_listo`, `seguimiento` y `urgente` ya están en el
-> catálogo oficial; `llamada_pendiente` es FUTURO (`multi-intent-migration` / `call_scheduling`).
-> El sistema SHALL NOT prometer una agenda real mientras no exista sistema de agendación.
+> Nota de implementación: doc-only. `perfil_listo`, `seguimiento`, `urgente` y
+> `llamada_pendiente` ya están en el catálogo oficial. Falta implementar el flujo
+> `call_scheduling`: guardar `scheduling.call_requested`, `scheduling.call_status`,
+> `scheduling.call_window_text` y `scheduling.call_window_valid`, y reflejar la ventana
+> solicitada en la nota privada. El sistema SHALL NOT prometer una agenda real mientras no
+> exista sistema de agendación.
 
 #### Scenario: Perfil listo pide llamada en horario
 - **WHEN** `perfil_listo` y el candidato pide llamada dentro de 8:00–17:30 (`America/Mexico_City`, lunes a viernes)
-- **THEN** el sistema puede derivar `perfil_listo` + `seguimiento` (y `urgente` si aplica)
-- **AND** no emite `llamada_pendiente` mientras no esté en el catálogo oficial
+- **THEN** el sistema puede derivar `perfil_listo` + `llamada_pendiente` (y `seguimiento`/`urgente` si aplica)
+- **AND** registra la ventana solicitada por el candidato cuando exista evidencia textual
 
 #### Scenario: Perfil listo fuera de horario
 - **WHEN** `perfil_listo` y el candidato pide llamada fuera del horario de oficina

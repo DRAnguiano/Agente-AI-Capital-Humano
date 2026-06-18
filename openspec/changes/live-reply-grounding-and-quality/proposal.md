@@ -46,7 +46,9 @@ bloques pequeños.
 - **Decisión operativa unificada**: respuesta visible, nota interna y labels derivan de la misma
   decisión por turno (perfil, intención, horario, llamada, humano, bloqueo) sin contradecirse.
 - **Labels oficiales**: solo se emiten labels del catálogo de `chatwoot-label-taxonomy`; nada de
-  labels fantasma (p. ej. `falta_cartas` → usar `documentos`). `llamada_pendiente` es FUTURO.
+  labels fantasma (p. ej. `falta_cartas` → usar `documentos`). `llamada_pendiente` ya existe
+  en el catálogo; falta el flujo determinista `call_scheduling` para emitirla y guardar
+  `scheduling.call_window_*`.
 
 Cambio **doc-only**: define el contrato esperado; la adaptación del flujo vivo se hace en
 bloques posteriores (ver `tasks.md`).

@@ -40,11 +40,13 @@ changeset es un contrato del camino vivo, separado del rebuild canónico.
 5. **Ack determinista sin duplicación**: un solo prefijo de confirmación y de-dup de facts.
 6. **Correcciones**: contrato conversacional aquí; la mecánica de detección/persistencia se
    reusa de `multi-intent-migration` (6.3, 7.2, 7.4, 9.3.x), sin duplicar.
-7. **Perfil listo / llamada** (corregido en B0.1): horario **8:00–17:30, lunes a viernes**,
-   zona canónica **`America/Mexico_City`** (fuente: `current_turn._profile_complete_closing`,
-   `data/00`, `persona_config`). La ventana de `followup/ventana.py` (08:30–20:30, lunes–sábado)
-   es para **envío async de seguimientos** y NO es el horario de oficina. No prometer agenda
-   real inexistente; `llamada_pendiente` es FUTURO y debe entrar antes al catálogo de labels.
+7. **Perfil listo / llamada** (corregido en B0.1/B7.2): horario **8:00–17:30, lunes a viernes**,
+   zona canónica **`America/Mexico_City`** (fuente: `app/knowledge/business_hours.py` y
+   `current_turn._profile_complete_closing`). La ventana de `followup/ventana.py`
+   (08:30–20:30, lunes–sábado) es para **envío async de seguimientos** y NO es el horario
+   de oficina. No prometer agenda real inexistente; `llamada_pendiente` ya existe en el
+   catálogo de labels, pero falta `call_scheduling` determinista para emitirla y registrar
+   `scheduling.call_window_*`.
 8. **Datos sensibles** (B0.1): el bot no solicita pagos/depósitos/cuentas/CURP-NSS completos ni
    comprobantes fuera de flujo autorizado; trámites con costo → handoff / canal autorizado.
 9. **Decisión operativa unificada** (B0.1): respuesta visible, nota interna y labels derivan de
@@ -55,15 +57,18 @@ changeset es un contrato del camino vivo, separado del rebuild canónico.
 
 ## Hallazgo de horario (diagnóstico)
 
-- Decisión de horario en vivo: existe solo en `current_turn._profile_complete_closing`
-  (`America/Mexico_City`, L–V 8:00–17:30), con la rama **en-horario incompleta** (no dice
-  "el equipo puede contactar"). No hay `is_business_hours()` compartido.
+- Decisión de horario en vivo: `app/knowledge/business_hours.py` centraliza
+  `is_business_hours()` (`America/Mexico_City`, L–V 8:00–17:30) y
+  `current_turn._profile_complete_closing` ya lo usa. La rama **en-horario** sigue
+  incompleta (no dice "el equipo puede contactar").
 - Dos TZ en el repo: `America/Mexico_City` (closing/horario de oficina) vs `America/Monterrey`
   (`followup/ventana.py` + celery, envío async). Decisión (`core-consistency-fixes`, #15): la
   zona canónica del **horario de oficina/llamada** es `America/Mexico_City` (ya usada por el
   código del check). `ventana.py`/celery permanecen en `America/Monterrey` (dominio distinto,
   ventana 08:30–20:30 L–S; además funcionalmente equivalentes en offset).
-- `perfil_listo` real y usado; `llamada_pendiente` documentado como FUTURO (no en catálogo);
+- `perfil_listo` real y usado; `llamada_pendiente` existe en el catálogo oficial, pero su
+  emisión queda pendiente del flujo `call_scheduling` (`scheduling.call_requested`,
+  `scheduling.call_status`, `scheduling.call_window_text`, `scheduling.call_window_valid`);
   `seguimiento_urgente` no existe (no inventarlo).
 
 ## Fuera de alcance

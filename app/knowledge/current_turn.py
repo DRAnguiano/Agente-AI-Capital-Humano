@@ -2,29 +2,24 @@ import datetime
 import re
 from typing import Any
 
+from app.knowledge.business_hours import is_business_hours
 from app.knowledge.text_normalizer import normalize_text
-
-try:
-    from zoneinfo import ZoneInfo as _ZoneInfo
-    _TZ_CENTRO = _ZoneInfo("America/Mexico_City")
-except Exception:
-    _TZ_CENTRO = None
 
 
 def _profile_complete_closing() -> str:
     """Closing message shown when all profile fields have been collected."""
-    now = datetime.datetime.now(tz=_TZ_CENTRO) if _TZ_CENTRO else datetime.datetime.now()
-    en_horario = (
-        now.weekday() < 5
-        and datetime.time(8, 0) <= now.time() <= datetime.time(17, 30)
-    )
+    en_horario = is_business_hours()
     msg = (
         "¡Gracias por completar tu información! Para avanzar en tu proceso, "
         "te pedimos que vayas subiendo tus documentos: licencia federal, apto médico y cartas laborales. "
         "Una vez que los verifiquemos y todo esté en orden, nos comunicaremos contigo "
         "siempre que sigas interesado."
     )
-    if not en_horario:
+    if en_horario:
+        msg += (
+            " Lo dejo registrado para que nuestro equipo pueda contactarte dentro del horario de atención."
+        )
+    else:
         msg += (
             " Nuestro horario de atención es de lunes a viernes de 08:00 a 17:30 hrs (centro de México). "
             "Si gustas, dinos un horario en ese rango para agendarte una llamada, "

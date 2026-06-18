@@ -90,11 +90,12 @@ agendación: SHALL usar "lo dejo registrado para que el equipo te contacte en ho
 atención" y SHALL NOT afirmar "ya quedó agendada tu llamada".
 
 > Nota de implementación: doc-only. El horario operativo (8:00–17:30) vive hoy en
-> `current_turn._profile_complete_closing` y en `data/00`/`persona_config`. La ventana de
+> `current_turn._profile_complete_closing` y en `app/knowledge/business_hours.py`. La ventana de
 > `followup/ventana.py` (08:30–20:30, lunes–sábado) es para el **envío async de seguimientos**
-> y NO debe confundirse con el horario de oficina. El label `llamada_pendiente` y la agenda
-> real son FUTURO en `multi-intent-migration` (`call_scheduling`) y deben añadirse al catálogo
-> de `chatwoot-label-taxonomy` antes de emitirse.
+> y NO debe confundirse con el horario de oficina. El label `llamada_pendiente` ya existe en
+> el catálogo oficial; lo pendiente es emitirlo desde una decisión determinista y registrar
+> `scheduling.call_requested`, `scheduling.call_status`, `scheduling.call_window_text` y
+> `scheduling.call_window_valid`. El sistema NO debe afirmar que la llamada ya quedó agendada.
 
 #### Scenario: Solicitud de llamada en horario de oficina
 - **WHEN** el perfil está completo y el candidato pide una llamada dentro de 8:00–17:30 (`America/Mexico_City`, lunes a viernes)

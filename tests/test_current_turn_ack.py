@@ -6,6 +6,7 @@ reply visible no duplica "Perfecto".
 """
 from __future__ import annotations
 
+import app.knowledge.current_turn as CT
 from app.knowledge.current_turn import (
     _join_ack_and_question,
     _strip_leading_perfecto,
@@ -89,3 +90,21 @@ def test_ack_experience_years_not_duplicated_as_age():
 def test_ack_experience_full_mentioned_once():
     reply = build_current_turn_ack("tengo 20 años manejando full")
     assert reply.count("tracto full") == 1
+
+
+# ---------------------------------------------------------------------------
+# B7.3 — cierre de perfil en horario: siguiente contacto claro, sin prometer agenda.
+# ---------------------------------------------------------------------------
+
+def test_profile_complete_closing_in_hours_mentions_team_contact(monkeypatch):
+    monkeypatch.setattr(CT, "is_business_hours", lambda: True)
+    reply = CT._profile_complete_closing()
+    assert "nuestro equipo pueda contactarte dentro del horario de atención" in reply
+    assert "ya quedó agendada" not in reply.lower()
+
+
+def test_profile_complete_closing_out_of_hours_keeps_office_hours(monkeypatch):
+    monkeypatch.setattr(CT, "is_business_hours", lambda: False)
+    reply = CT._profile_complete_closing()
+    assert "lunes a viernes de 08:00 a 17:30 hrs" in reply
+    assert "nuestro equipo pueda contactarte dentro del horario de atención" not in reply
