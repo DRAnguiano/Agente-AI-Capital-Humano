@@ -53,3 +53,10 @@ Referencia: `multi-intent-migration` tareas 10c.3, 10c.4, 10c.6, 10c.7 (parcialm
 - [ ] Auditoría de nota (`note_version`, `facts_snapshot` → tarea 10c.9).
 - [ ] Resumen determinístico de facts para reemplazar `memory_summary` → versión futura.
 - [ ] Lógica horaria / `llamada_pendiente` → planner/handoff.
+
+## Cierre para portafolio (2026-06-18)
+
+Contrato de la Nota IA implementado. Las 4 tasks abiertas son **diferidas a otros changes /
+versiones futuras** (objetivo_full_sencillo, auditoría de nota 10c.9, resumen determinístico de
+facts, lógica horaria/llamada — esta última ya cubierta en live-reply B7.4/B7.5). Fuera del
+alcance de este change. Archivado por portafolio.

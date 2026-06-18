@@ -82,3 +82,10 @@
 - [ ] C7.2 0 casos con fact inventado (evidence vacío en output final).
 - [ ] C7.3 Revisión humana de todos los REVIEW_MAPPING y CONTRACT_GAP antes de activar.
 - [ ] C7.4 Change separado para wiring productivo (no en este change).
+
+## Cierre para portafolio (2026-06-18)
+
+Clasificador shadow/offline y su contrato implementados (no productivo). C6.3/C6.4 y C7.1–C7.3
+son **baselines/aceptación con Groq + revisión humana** previos a una activación que ya no aplica
+(bot caído / pivot a Meta); C7.4 es un **change separado**. Tasks NO EJECUTADAS / fuera de alcance.
+Archivado por portafolio.

@@ -44,3 +44,10 @@
 - [ ] QA-5.2 Correr `--limit 50` muestra completa → registrar baseline en `reports/`.
 - [ ] QA-5.3 Correr los 224 casos completos → baseline final para `business-route-shadow-classifier`.
 - [ ] QA-5.4 Verificar: ninguna frase prohibida global en historicos (PASS frases = 224/224).
+
+## Cierre para portafolio (2026-06-18)
+
+Contrato y harness implementados. Las tasks QA-5.1–5.4 son **corridas de baseline con Groq**
+y quedan **NO EJECUTADAS / fuera de alcance**: el presupuesto Groq se deprioritizó y el bot
+está caído (pivot a Meta). Baseline congelado a 10 casos (8b) como referencia. Archivado por
+valor de portafolio.
