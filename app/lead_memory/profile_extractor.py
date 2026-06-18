@@ -16,6 +16,7 @@ from typing import Any
 
 from app.knowledge.text_normalizer import normalize_text
 from app.knowledge.normalize_domain_values import normalize_vehicle
+from app.knowledge.business_hours import classify_call_window
 
 
 _NUMBER_WORDS = {
@@ -452,13 +453,15 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     if age_m and 18 <= int(age_m.group(1)) <= 75:
         upsert("candidate", "age", age_m.group(1), 0.88)
 
-    # ── Solicitud de llamada (B7.4) ───────────────────────────────────────────
+    # ── Solicitud de llamada (B7.4) + validación de ventana (B7.5) ────────────
     if _CALL_REQUEST_RE.search(text) and not _CALL_NEG_RE.search(text):
         upsert("scheduling", "call_requested", "true", 0.85)
         upsert("scheduling", "call_status", "pending", 0.85)
         window = _extract_call_window(text)
         if window:
             upsert("scheduling", "call_window_text", window, 0.80)
+        # Validez vs horario de oficina (8:00–17:30 L–V): true | false | unknown.
+        upsert("scheduling", "call_window_valid", classify_call_window(text), 0.80)
 
     return facts
 

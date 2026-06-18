@@ -13,7 +13,12 @@ from __future__ import annotations
 import pytest
 
 import app.lead_memory.profile_extractor as PE
-from app.chatwoot_note_sync import OFFICIAL_LABELS, calculate_candidate_labels
+from app.chatwoot_note_sync import (
+    OFFICIAL_LABELS,
+    calculate_candidate_labels,
+    render_candidate_note,
+)
+from app.knowledge.business_hours import classify_call_window
 
 
 # ── extractor: detección de solicitud de llamada ──────────────────────────────
@@ -96,3 +101,103 @@ def test_sin_solicitud_no_llamada_pendiente():
 
 def test_llamada_pendiente_es_label_oficial():
     assert "llamada_pendiente" in OFFICIAL_LABELS
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# B7.5 — validación de la ventana solicitada vs horario de oficina (8:00–17:30 L–V).
+# Función pura, sin reloj: clasifica el texto del candidato como dentro/fuera/no
+# interpretable. Conservadora ante ambigüedad real (hora sin meridiano, día sin hora).
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("window", [
+    "a las 10",
+    "a las 3 de la tarde",   # 15h
+    "a las 5 pm",            # 17h (dentro de 17:30)
+    "el lunes a las 9",
+    "por la manana",
+    "a las 16 hrs",
+])
+def test_window_in_hours(window):
+    assert classify_call_window(window) == "true"
+
+
+@pytest.mark.parametrize("window", [
+    "a las 7 de la noche",   # 19h
+    "a las 6 pm",            # 18h
+    "el sabado a las 10",    # fin de semana
+    "el domingo",
+    "por la noche",
+    "a las 6 am",            # 6h
+])
+def test_window_out_of_hours(window):
+    assert classify_call_window(window) == "false"
+
+
+@pytest.mark.parametrize("window", [
+    "a las 4",               # hora sin meridiano (1-7) ambigua
+    "manana a las 4",        # mañana(día) + hora ambigua
+    "el lunes",              # día hábil sin hora
+    "por la tarde",          # tarde sin hora exacta (cruza 17:30)
+    "cuando puedan",         # sin info
+])
+def test_window_unknown(window):
+    assert classify_call_window(window) == "unknown"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# B7.6 — integración: extractor fija scheduling.call_window_valid y la nota privada
+# refleja dentro/fuera/no interpretable del horario de atención.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_extractor_sets_call_window_valid_true():
+    facts = PE.extract_profile_facts_as_dict("me pueden llamar mañana a las 3 de la tarde")
+    assert facts.get("scheduling.call_requested") == "true"
+    assert facts.get("scheduling.call_window_valid") == "true"
+
+
+def test_extractor_sets_call_window_valid_false():
+    facts = PE.extract_profile_facts_as_dict("me pueden llamar a las 7 de la noche")
+    assert facts.get("scheduling.call_window_valid") == "false"
+
+
+def test_extractor_call_window_valid_unknown_sin_ventana():
+    facts = PE.extract_profile_facts_as_dict("me pueden llamar?")
+    assert facts.get("scheduling.call_requested") == "true"
+    assert facts.get("scheduling.call_window_valid") == "unknown"
+
+
+def _note_with_scheduling(valid: str, window: str = "manana a las 3 de la tarde") -> str:
+    ctx = {
+        "lead": {},
+        "facts": {
+            "scheduling.call_requested": "true",
+            "scheduling.call_window_text": window,
+            "scheduling.call_window_valid": valid,
+        },
+        "last_message": {},
+        "conversation": {},
+    }
+    return render_candidate_note(ctx, ["bot_activo"])
+
+
+def test_note_shows_call_window_dentro():
+    note = _note_with_scheduling("true")
+    assert "📞" in note
+    assert "dentro del horario" in note.lower()
+    assert "agendada" not in note.lower()  # no promete agenda real
+
+
+def test_note_shows_call_window_fuera():
+    note = _note_with_scheduling("false")
+    assert "fuera del horario" in note.lower()
+
+
+def test_note_shows_call_window_no_interpretable():
+    note = _note_with_scheduling("unknown")
+    assert "no interpretable" in note.lower()
+
+
+def test_note_no_call_section_without_request():
+    ctx = {"lead": {}, "facts": {}, "last_message": {}, "conversation": {}}
+    note = render_candidate_note(ctx, ["bot_activo"])
+    assert "📞" not in note

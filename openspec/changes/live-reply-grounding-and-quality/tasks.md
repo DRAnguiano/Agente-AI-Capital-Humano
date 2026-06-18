@@ -63,12 +63,15 @@
       `scheduling.call_status=pending` y `scheduling.call_window_text` (best-effort, día/hora del
       candidato). No promete agenda (el cierre/persona ya usan "lo dejo registrado…", B7.3).
       Evidencia: `tests/test_call_scheduling.py` (15 casos). La validez del horario es B7.5.
-- [ ] B7.5 Validacion de horario solicitado: normalizar/validar contra `is_business_hours`
-      (8:00-17:30 L-V, `America/Mexico_City`) cuando el candidato indique una hora clara.
-      Guardar `scheduling.call_window_valid=true|false|unknown` y reflejarlo en nota privada
-      de Chatwoot como "dentro/fuera/no interpretable del horario de atencion".
-- [ ] B7.6 Test: solicitud de llamada en horario/fuera de horario/horario ambiguo ->
-      reply visible, label `llamada_pendiente`, facts `scheduling.*` y nota privada correctos.
+- [x] B7.5 `business_hours.classify_call_window(text)` (pura, reusa OPEN/CLOSE, sin reloj)
+      clasifica la ventana del candidato como `true|false|unknown` vs 8:00–17:30 L–V,
+      `America/Mexico_City`. Conservadora: hora 1–7 sin meridiano y día hábil sin hora →
+      `unknown`; fin de semana / noche → `false`. El extractor persiste
+      `scheduling.call_window_valid`; la nota privada (`render_candidate_note`, sección 📞)
+      muestra "dentro/fuera/no interpretable del horario de atención" sin prometer agenda.
+- [x] B7.6 Tests en `tests/test_call_scheduling.py`: ventanas dentro/fuera/ambigua
+      (`classify_call_window`), extractor fija `call_window_valid`, y la nota refleja
+      dentro/fuera/no interpretable + sin "agendada". 39 casos verdes en el archivo.
 
 ## B8. Manejo de correcciones explícitas (P0, mayor)
 - [x] B8.1 Corrección reformula la respuesta: el valor nuevo se extrae y **sobrescribe** el

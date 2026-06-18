@@ -419,6 +419,30 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
 
     requires_human = "Sí" if lead.get("requires_human") else "No"
 
+    # 📞 Llamada (B7.4/B7.5): solo si el candidato la solicitó. Refleja la ventana pedida y
+    # su validez vs horario de atención, sin prometer agenda real.
+    call_requested = str(facts.get("scheduling.call_requested") or "").strip().lower() in {
+        "true", "sí", "si", "1", "yes"
+    }
+    llamada_block = ""
+    if call_requested:
+        window_text = _fact(facts, "scheduling.call_window_text", default="")
+        valid = str(facts.get("scheduling.call_window_valid") or "unknown").strip().lower()
+        valid_display = {
+            "true": "dentro del horario de atención",
+            "false": "fuera del horario de atención",
+        }.get(valid, "no interpretable del horario de atención")
+        ventana_line = (
+            f"Ventana solicitada: {window_text}\n"
+            if window_text and window_text != PENDING_TEXT else ""
+        )
+        llamada_block = (
+            "📞 Llamada\n"
+            "Solicitó llamada: Sí (registrada, sin agenda automática)\n"
+            f"{ventana_line}"
+            f"Horario: {valid_display}\n\n"
+        )
+
     return (
         "🤖 Nota IA: Seguimiento de candidato\n\n"
         f"Último mensaje: \"{message}\"\n\n"
@@ -436,7 +460,8 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         f"Cartas/documentos: {documents_status}\n"
         f"Ciudad: {city}\n"
         f"Edad: {age}\n\n"
-        + pendientes_block +
+        + pendientes_block
+        + llamada_block +
         "📍 Embudo\n"
         f"Etapa: {_stage(stage_value)}\n"
         f"Bloqueo actual: {blocker}\n"
