@@ -48,7 +48,7 @@
 
 - [x] 3.1 `openspec validate live-business-rule-enforcement --strict` → valid.
 - [x] 3.2 Suite completa vía `api-test` (598 passed); `git diff --check` limpio.
-- [ ] 3.3 Sin commit/push hasta autorización.
+- [x] 3.3 Código ya en main (árbol limpio); commit/push autorizado al cierre para portafolio (2026-06-18).
 
 > Pendiente de consumo (fuera de este change): `detect_laredo_ambiguity` está disponible
 > pero la EMISIÓN de la pregunta de desambiguación de Laredo en el flujo de respuesta

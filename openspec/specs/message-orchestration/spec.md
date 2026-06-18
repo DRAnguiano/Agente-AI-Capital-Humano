@@ -260,3 +260,165 @@ conversación en un bloqueo permanente sin ninguna vía de liberación.
 #### Scenario: No hay bloqueo permanente
 - **WHEN** una conversación entra en `HUMAN_REVIEW_REQUIRED`
 - **THEN** existe al menos una vía explícita (acción humana/operativa) para liberarla
+
+### Requirement: Edad temprana con descarte desde 50 años
+
+El funnel vivo SHALL preguntar la edad inmediatamente después de la ciudad. La
+edad SHALL ser menor a 50 años; con 50 años o más, el sistema SHALL responder
+el guion de descarte cortés aprobado y NO SHALL continuar el perfilamiento.
+
+#### Scenario: 50 o más se descarta
+- **WHEN** el candidato responde "tengo 52 años"
+- **THEN** el bot responde el guion de descarte y no emite más preguntas del funnel
+
+#### Scenario: Frontera exacta
+- **WHEN** el candidato responde "tengo 50"
+- **THEN** aplica el descarte (la regla es estrictamente menor a 50)
+
+#### Scenario: Menor de 50 continúa
+- **WHEN** el candidato responde "tengo 49 años"
+- **THEN** el funnel continúa con la siguiente pregunta (tipo de unidad)
+
+### Requirement: Preguntas de vencimiento en lugar de vigencia
+
+El funnel SHALL preguntar "¿Cuándo vence su licencia?" y "¿Cuándo vence su apto
+médico?" (no "¿está vigente?"), en turnos SEPARADOS: una pregunta de vigencia
+por turno, nunca dos documentos en la misma pregunta. Un "sí" del candidato
+NO SHALL validar más de un documento. Si el candidato afirma vigencia sin dar
+fecha, el sistema SHALL repreguntar "¿En cuánto tiempo se le vence?" referida
+al documento en cuestión.
+
+#### Scenario: Vigente sin fecha provoca repregunta
+- **WHEN** el bot preguntó cuándo vence la licencia y el candidato responde "sí, está vigente"
+- **THEN** el bot repregunta "¿En cuánto tiempo se le vence su licencia?"
+
+#### Scenario: Un sí no valida dos documentos
+- **WHEN** el candidato responde "sí" a una pregunta que mencionara licencia y apto a la vez
+- **THEN** el sistema no marca vigente ninguno de los dos sin su fecha/confirmación individual
+  (el paso doble queda eliminado: la pregunta de apto llega en el turno siguiente)
+
+### Requirement: Guion fijo de trámite para vencimiento corto
+
+El sistema SHALL preguntar "¿Ya tiene el papel donde lo tramitó?" cuando la
+licencia o el apto vence en menos de 3 meses o está vencido. Regla de negocio
+(2026-06-12): con la renovación YA en proceso (papel de trámite), el documento
+puede considerarse apto y el proceso continúa con `aclaracion_pendiente` para
+validación de Capital Humano; SIN trámite en proceso, el documento NO es válido
+y el sistema SHALL responder el guion fijo "Por el momento no podemos seguir
+con su solicitud; en cuanto tenga el papel de trámite, continuamos", sin
+desviarse ante la insistencia del candidato. La regla aplica igual a licencia
+y a apto médico, cada uno evaluado por separado.
+
+#### Scenario: Vence pronto sin trámite
+- **WHEN** el apto vence en 18 días y el candidato dice que no ha tramitado la renovación
+- **THEN** el bot responde el guion fijo y no avanza el funnel
+
+#### Scenario: Vence pronto con trámite
+- **WHEN** el candidato confirma que tiene el papel del trámite
+- **THEN** el funnel continúa y se marca `aclaracion_pendiente`
+
+#### Scenario: Insistencia no rompe el guion
+- **WHEN** el candidato insiste en continuar sin documentos vigentes ni trámite
+- **THEN** el bot repite el guion fijo sin ofrecer alternativas
+
+### Requirement: Puente suave tras responder dudas
+
+Cuando el candidato hace preguntas a media precalificación, el sistema SHALL
+responder la duda completa y retomar el funnel con un puente suave ("Cuando
+guste continuamos con su registro — me decía, ¿...?"), con máximo una pregunta
+de funnel por turno.
+
+#### Scenario: Duda de pago no interrumpe con brusquedad
+- **WHEN** el candidato pregunta cuánto pagan en medio del perfilamiento
+- **THEN** la respuesta resuelve la duda y retoma la pregunta pendiente con puente suave
+
+### Requirement: El camino vivo aplica handoff ante vacante B1 / Estados Unidos
+
+El camino vivo (`knowledge_orchestrator.handle_message`) SHALL marcar `requires_human` y
+rutear a revisión humana cuando el candidato menciona una vacante B1, Estados Unidos,
+cruce a EUA o ruta americana, mediante un guard determinista que NO depende del seed de
+Neo4j. El bot SHALL NOT continuar perfilando como vacante estándar ni emitir juicio
+("no es problema", aprobar o descartar). La regla aplica aunque Neo4j esté en fallback.
+
+#### Scenario: Mención de vacante B1 → handoff vivo
+- **WHEN** el candidato indica interés en una vacante B1 o para Estados Unidos
+- **THEN** el contrato vivo resuelve `requires_human=true`
+- **AND** el sistema no añade pregunta de funnel de perfilamiento estándar en ese turno
+
+#### Scenario: Mención de cruce / ruta americana → handoff vivo
+- **WHEN** el candidato menciona cruce a EUA, visa o ruta americana
+- **THEN** el contrato vivo resuelve `requires_human=true`
+- **AND** la respuesta canaliza a un reclutador humano sin emitir juicio de elegibilidad
+
+#### Scenario: Handoff B1 sobrevive a Neo4j en fallback
+- **WHEN** Neo4j no resuelve (fallback) y el candidato menciona vacante B1
+- **THEN** el guard determinista igual marca `requires_human=true`
+
+### Requirement: El camino vivo aplica handoff ante reingreso
+
+El camino vivo SHALL marcar `requires_human` cuando el candidato indica haber trabajado
+previamente con la empresa, mediante un guard determinista. El bot SHALL NOT aprobar ni
+rechazar el reingreso automáticamente; solo registra y canaliza, pidiendo nombre completo
+y motivo de salida. La señal de reingreso es distinta de "ya conseguí otro trabajo"
+(dropoff), que no es reingreso.
+
+#### Scenario: Candidato indica que ya trabajó en la empresa → handoff vivo
+- **WHEN** el candidato indica que trabajó antes con la empresa o que quiere volver
+- **THEN** el contrato vivo resuelve `requires_human=true`
+- **AND** la respuesta no aprueba ni descarta el reingreso
+
+#### Scenario: "Ya conseguí otro trabajo" no es reingreso
+- **WHEN** el candidato dice que ya consiguió otro empleo (señal de abandono)
+- **THEN** el contrato vivo NO lo trata como reingreso
+
+### Requirement: El camino vivo marca experiencia no objetivo como escuelita
+
+El camino vivo SHALL identificar torton, rabón, reparto local/interurbano y similares como
+experiencia no-objetivo para la vacante principal. SHALL NOT confirmarlos como `full` ni
+como `sencillo`. La experiencia no-objetivo SHALL canalizarse a valoración de Capital
+Humano (señal de escuelita), no tomarse como experiencia directa en full/sencillo.
+
+#### Scenario: Experiencia en torton → no confirma vehicle_type
+- **WHEN** el candidato declara experiencia en torton/rabón/reparto
+- **THEN** el sistema NO persiste `experience.vehicle_type` como `full` ni `sencillo`
+- **AND** marca la experiencia como no-objetivo (escuelita / valoración humana)
+
+### Requirement: El sistema no emite "caduca"/"caducidad" en la respuesta
+
+El sistema SHALL usar `vence`/`vigencia`/`vencimiento` para referirse al vencimiento de
+documentos médicos o de licencia, en cualquier modo de respuesta del camino vivo
+(plantilla, RAG o LLM amistoso). SHALL NOT emitir `caduca` ni `caducidad` en la respuesta
+al candidato.
+
+#### Scenario: Respuesta sobre vigencia usa "vence", no "caduca"
+- **WHEN** el sistema genera una respuesta sobre el vencimiento de licencia o apto médico
+- **THEN** la respuesta usa `vence`, `vencimiento` o `vigencia`
+- **AND** la respuesta no contiene `caduca` ni `caducidad`
+
+### Requirement: Saludo oficial obligatorio en primer contacto
+
+El sistema SHALL responder con el saludo oficial de Mundo (`GREETING_REPLY`) en
+el primer contacto de una conversación (sin mensaje previo del asistente) cuando
+el mensaje entrante es un saludo o una entrada de campaña/interés (p. ej. el
+mensaje default de la publicación de Facebook "Me interesa la vacante de
+operador de quinta rueda"). El current-turn guard NO SHALL aplicar su ack
+("Perfecto, lo dejo registrado...") en ese turno.
+
+#### Scenario: Entrada de campaña de Facebook
+- **WHEN** el primer mensaje de la conversación es "Me interesa la vacante de operador de quinta rueda"
+- **THEN** la respuesta es el saludo oficial de Mundo
+- **AND** no contiene "lo dejo registrado"
+
+#### Scenario: Primer mensaje con pregunta no usa el saludo forzado
+- **WHEN** el primer mensaje es "me interesa la vacante, cuanto pagan?"
+- **THEN** la entrada NO se trata como apertura de campaña (es pregunta) y sigue el flujo normal de respuesta
+
+### Requirement: El interés en la vacante no es señal de perfil
+
+El sistema NO SHALL tratar `candidate.vacancy_accepted` como señal de perfil del
+current-turn guard: un mensaje cuyo único fact es el interés en la vacante no
+dispara el ack de registro.
+
+#### Scenario: Interés puro no dispara el guard
+- **WHEN** el mensaje solo expresa interés ("me interesa la vacante de operador")
+- **THEN** `has_current_turn_profile_signal` es falso y el guard no reemplaza la respuesta

@@ -52,4 +52,5 @@
   `test_helper_detecta_entrada_fb`); pregunta de rutas → sin `candidate.city`
   (`test_pregunta_de_rutas_no_fija_ciudad`); "soy de Laredo ahí de donde..." → ciudad acotada.
   Falta solo la confirmación en el **stack vivo** (demo) — acción del operador.
-- [ ] G3.4 Commit aislado — pendiente de autorización (regla: no commit/push sin visto bueno).
+- [x] G3.4 Código ya en main (árbol limpio); commit autorizado al cierre para portafolio
+  (2026-06-18). La confirmación en stack vivo (G3.3) queda N/A: bot caído / pivot a Meta.

@@ -44,4 +44,5 @@
   `test_age_50_or_more_discards_without_more_questions`, `test_age_under_50_continues`,
   `test_vigente_without_expiration_reprompts_time`, `test_short_expiry_triggers_fixed_renewal_branch`.
   Falta solo la confirmación en el **stack vivo** (demo Chatwoot/worker) — acción del operador.
-- [ ] V3.4 Commit aislado — pendiente de autorización (regla: no commit/push sin visto bueno).
+- [x] V3.4 Código ya en main (árbol limpio); commit autorizado al cierre para portafolio
+  (2026-06-18). La confirmación en stack vivo (V3.3) queda N/A: bot caído / pivot a Meta.
