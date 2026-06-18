@@ -322,3 +322,22 @@ Casos reales de regresión (fixtures `/classify`):
   NO esperada (stickers, audios, imágenes fuera de flujo). Resuelve el conflicto
   "pedimos fotos pero G4 las rebota".
 - [ ] FUTURO **media v2** — captions explícitos y/o capa OCR/document-understanding validada (solo entonces la media podría producir facts). NO ahora.
+
+## Cierre para portafolio — CUTOVER SUPERADO (2026-06-18)
+
+La **pipeline multi-intent (shadow)** quedó construida y testeada (78 tasks hechas): clasificación
+multi-intent, enriquecimiento, turn planner, fact_corrections, media guard. Lo que falta (49 tasks)
+es el **cutover a producción** (§12) y su andamiaje: el label planner canónico (§10a, que
+**duplica** el camino vivo determinista ya funcionando — calculate_candidate_labels + guards de
+B2/B3/B8/B10/B11), infra SQL para el bot (§10b/§11), trabajo ya cubierto en otros changes (§10c
+nota → chatwoot-ai-note-contract; 11.3 preferred_sources → rag-corpus; call_scheduling → live-reply
+B7.4/5) y FUTURO (§14, Langfuse, media v2).
+
+**El cutover queda SUPERADO por la decisión de migrar producción a la API de Meta** (el bot de
+este repo se deprecó). Por eso este change se archiva como "shadow construida, cutover no
+realizado".
+
+> Specs delta **NO sincronizados a main** a propósito: describen el rebuild canónico/cutover que
+> no se realizó; sincronizarlos afirmaría requirements que el sistema no cumple. Los contratos del
+> camino vivo real ya viven en main vía los 9 changes archivados (message-orchestration,
+> chatwoot-sync, chatwoot-ai-note, profile-extraction, etc.).
