@@ -131,13 +131,13 @@
   retrieval a `01_pago_prestaciones.md` y el pago del corredor vivía solo en
   `04_bases_rutas.md`. Pago del corredor cross-listado en `01` con respuesta
   sugerida propia (2026-06-12; requiere reindex).
-- [ ] BUG LATENTE filtros RAG: el seed `neo4j_seed_hr_rules.cypher` define
-  `InternalSource` con ids `routes_policy`/`payment_policy`/etc., pero el filtro
-  de Chroma (`_source_where`) espera el nombre de archivo (`04_bases_rutas.md`).
-  Hoy funciona solo porque el grafo vivo conserva nodos legacy con ids de
-  archivo y `collect(DISTINCT s.id)` junta ambos. Alinear los ids del seed a
-  los nombres de archivo reales (y limpiar los nodos `*_policy` huérfanos), o
-  los filtros quedarán vacíos en un grafo reconstruido desde el seed.
+- [x] BUG LATENTE filtros RAG (RESUELTO 2026-06-18): cada `InternalSource` rag_document del
+  seed ahora declara `filename` = `data/*.md` real (`payment_policy`→`01_pago_prestaciones.md`,
+  etc.) y `neo4j_client` devuelve `collect(DISTINCT coalesce(s.filename, s.id))` →
+  `preferred_sources` casa con el `source` (= filename) que filtra `_source_where`. Ya no
+  depende de nodos legacy del grafo vivo; un grafo reconstruido desde el seed mantiene los
+  filtros RAG. Test estático `tests/test_rag_source_alignment.py` (3, seed↔data, sin DB/Chroma).
+  Se conserva el `id` de política para las referencias internas (ReplyTemplate/Topic).
 - [ ] Grounding ante contexto vacío en preguntas de ruta: "Laredo es una ciudad
   importante en el norte de México" pasó el guard de grounding (smoke 10:06).
   Conectar con el change `live-reply-grounding-and-quality`.
@@ -160,3 +160,13 @@
   en el grafo).
 - [ ] Contenido nuevo de rutas/tabuladores (vuelta diaria Torreón–Nuevo Laredo,
   tabulador sur/bocar) — pendiente de información oficial de negocio.
+
+## Cierre para portafolio (2026-06-18)
+
+Corpus, copy, seed limpio y reindex implementados (461 passed en su día; 710 passed hoy). El
+**bug latente de filtros RAG** (ids InternalSource ≠ filename) quedó **resuelto** con test
+estático. Las 10 tasks abiertas restantes son: deploy/live (K3.7 re-seed+reindex+smoke — moot por
+bot caído / pivot a Meta), **diferidas a changes separados** (pregunta-como-respuesta, fallback
+horario, media-guard, gate perfil_listo, vigencia <3m, edad funnel/RFC), **stale** (rastreo
+quinta_rueda — causa raíz ya en K2.8) o **bloqueadas en info de negocio** (tabuladores nuevos).
+Fuera de alcance. Archivado por portafolio.

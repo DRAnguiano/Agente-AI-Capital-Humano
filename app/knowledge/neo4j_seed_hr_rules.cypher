@@ -87,15 +87,18 @@ UNWIND [
 ] AS row
 MERGE (topic:Topic {id: row.id});
 
+// `filename` = nombre de archivo real en data/ (el `source` que Chroma indexa). Los
+// preferred_sources se devuelven como filename para casar con `_source_where`; el `id` de
+// política se conserva para las referencias internas (ReplyTemplate/Topic).
 UNWIND [
-  {id:'payment_policy', kind:'rag_document'},
-  {id:'requirements_policy', kind:'rag_document'},
-  {id:'routes_policy', kind:'rag_document'},
-  {id:'safety_policy', kind:'rag_document'},
-  {id:'documents_policy', kind:'rag_document'}
+  {id:'payment_policy', kind:'rag_document', filename:'01_pago_prestaciones.md'},
+  {id:'requirements_policy', kind:'rag_document', filename:'02_documentos_requisitos.md'},
+  {id:'routes_policy', kind:'rag_document', filename:'04_bases_rutas.md'},
+  {id:'safety_policy', kind:'rag_document', filename:'03_seguridad_antidoping.md'},
+  {id:'documents_policy', kind:'rag_document', filename:'02_documentos_requisitos.md'}
 ] AS row
 MERGE (source:InternalSource {id: row.id})
-SET source.kind = row.kind;
+SET source.kind = row.kind, source.filename = row.filename;
 
 MATCH (topic:Topic {id:'payment'}), (source:InternalSource {id:'payment_policy'})
 MERGE (topic)-[:PREFERS_SOURCE]->(source);

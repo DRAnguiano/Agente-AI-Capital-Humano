@@ -101,7 +101,7 @@ class Neo4jKnowledgeClient:
           i.id AS intent,
           coalesce(i.risk_level, 'low') AS risk_level,
           r.id AS route,
-          collect(DISTINCT s.id) AS preferred_sources,
+          collect(DISTINCT coalesce(s.filename, s.id)) AS preferred_sources,
           CASE WHEN reply IS NULL THEN null ELSE {id: reply.id, text: reply.text} END AS reply_template,
           collect(DISTINCT CASE WHEN p IS NULL THEN null ELSE {
             id: p.id,
