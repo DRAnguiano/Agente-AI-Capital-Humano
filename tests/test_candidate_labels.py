@@ -215,6 +215,41 @@ def test_regression_local_no_foraneo():
     assert "validar_traslado" not in result
 
 
+# ── 10a.5 — local/foráneo como señal core (catálogo de ciudades) ──────────────
+# El agente requiere local/foráneo junto a perfil_listo para continuar la
+# contratación; `local_laguna` debe emitirse, no quedar diferido.
+
+def test_ciudad_local_emite_local_laguna():
+    result = calculate_candidate_labels(_ctx({"candidate.city": "Torreón"}))
+    assert "local_laguna" in result
+
+
+def test_ciudad_foranea_no_emite_local_laguna():
+    result = calculate_candidate_labels(_ctx({"candidate.city": "Monterrey"}))
+    assert "local_laguna" not in result
+
+
+def test_local_y_foraneo_son_mutuamente_excluyentes():
+    for city in ("Torreón", "Gómez Palacio", "Lerdo", "Monterrey", "CDMX", "Saltillo"):
+        result = calculate_candidate_labels(_ctx({"candidate.city": city}))
+        assert not ({"local_laguna", "foraneo"} <= set(result)), city
+
+
+def test_local_laguna_con_sufijo_de_estado():
+    # "Gómez Palacio, Durango" / "Torreón Coahuila" siguen siendo locales (catálogo
+    # por contención, normalizado sin acentos).
+    for city in ("Gómez Palacio, Durango", "torreon coahuila", "Cd. Lerdo"):
+        result = calculate_candidate_labels(_ctx({"candidate.city": city}))
+        assert "local_laguna" in result, city
+        assert "foraneo" not in result, city
+
+
+def test_sin_ciudad_no_emite_ubicacion():
+    result = calculate_candidate_labels(_ctx({}))
+    assert "local_laguna" not in result
+    assert "foraneo" not in result
+
+
 def test_regression_perfil_listo():
     result = calculate_candidate_labels(_ctx(FULL_FACTS))
     assert "perfil_listo" in result

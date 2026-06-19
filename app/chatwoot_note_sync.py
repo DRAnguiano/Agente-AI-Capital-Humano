@@ -5,6 +5,8 @@ import httpx
 
 from .db import get_conn
 from .knowledge.business_route_schema import VALID_VEHICLE_TYPES
+from .knowledge.current_turn import LOCAL_LAGUNA
+from .knowledge.text_normalizer import normalize_text
 
 PENDING_TEXT = "Pendiente"
 
@@ -305,9 +307,16 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     if facts.get("candidate.availability_status") == "en_ruta_o_no_disponible_ahora":
         labels.add("seguimiento")
 
-    city = (facts.get("candidate.city") or "").lower()
-    if city and not any(local in city for local in ["torreón", "torreon", "gómez palacio", "gomez palacio", "lerdo", "matamoros"]):
-        labels.update({"foraneo", "validar_traslado"})
+    # Ubicación core (10a.5): local_laguna / foraneo, mutuamente excluyentes. Usa el
+    # catálogo canónico de la Laguna (single source: current_turn.LOCAL_LAGUNA) y lo
+    # normaliza (sin acentos) con contención, para tolerar sufijos de estado
+    # ("Gómez Palacio, Durango") y variantes ("Cd. Lerdo").
+    city_norm = normalize_text(facts.get("candidate.city") or "")
+    if city_norm:
+        if any(local in city_norm for local in LOCAL_LAGUNA):
+            labels.add("local_laguna")
+        else:
+            labels.update({"foraneo", "validar_traslado"})
 
     accepted = facts.get("candidate.vacancy_accepted") in {"sí", "si", "yes", "true"}
     if vehicle_confirmed and has_license and has_medical and accepted:
