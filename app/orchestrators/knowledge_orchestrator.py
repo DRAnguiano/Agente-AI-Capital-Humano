@@ -225,6 +225,66 @@ def _time_reply() -> str:
     return f"En Torreón son las {time_text}; es la misma zona horaria del centro de México."
 
 
+def _looks_like_question(message: str) -> bool:
+    """Gate barato para `_resolve_embedded_question`: ¿el mensaje trae señal de
+    pregunta? Evita invocar el clasificador (costo) en respuestas puras. Los temas
+    RAG-contestables coinciden con BUSINESS_QUESTION_TERMS (pago, rutas, documentos,
+    licencia, apto, antidoping…)."""
+    if "?" in message or "¿" in message:
+        return True
+    return _message_has_any(message, BUSINESS_QUESTION_TERMS)
+
+
+def _resolve_embedded_question(
+    message: str,
+    contract: dict[str, Any],
+    lead_memory: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """answer_primary_question (multi-intent al path vivo).
+
+    Cuando el mensaje es compuesto (respuesta de perfil + pregunta) y la ruta
+    principal NO es ya RAG, resuelve la pregunta embebida con fundamento para que
+    el path vivo la responda en vez de solo avanzar el funnel. Hereda el
+    fail-closed de `_generate_rag_answer`: para intents que exigen fuente
+    autorizada (pago) sin contexto, deriva a Capital Humano en vez de inventar.
+
+    Devuelve {"answer", "derive_to_human", "intent"} o None si no aplica.
+    Nunca propaga errores: ante fallo, devuelve None y el path vivo sigue intacto.
+    """
+    if contract.get("requires_rag") or contract.get("requires_human"):
+        return None
+    if not _looks_like_question(message):
+        return None
+    try:
+        from app.knowledge.intent_classifier import classify_message
+        from app.knowledge.intent_enricher import enrich_classification
+        from app.knowledge.intent_orchestrator import _generate_rag_answer
+
+        last_q: str | None = None
+        for row in reversed((lead_memory or {}).get("messages") or []):
+            if isinstance(row, dict) and row.get("role") != "user" and row.get("message"):
+                last_q = str(row["message"])
+                break
+
+        classification = classify_message(message, last_bot_question=last_q)
+        enriched = enrich_classification(classification)
+        questions = [q for q in (enriched.get("questions") or []) if q.get("requires_rag")]
+        if not questions:
+            return None
+        q = questions[0]
+        answer_text, derive = _generate_rag_answer(q, message)
+        if not answer_text:
+            return None
+        return {
+            "answer": answer_text.strip(),
+            "derive_to_human": bool(derive),
+            "intent": q.get("intent"),
+        }
+    except Exception as exc:  # nunca romper el path vivo por esta mejora
+        log.warning("[ANSWER_PRIMARY_QUESTION] omitido por error: %s", exc)
+        return None
+
+
 def _looks_like_farewell(message: str) -> bool:
     text = normalize_text(message)
     if not text:
@@ -1457,6 +1517,15 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     contract = _apply_deterministic_overrides(message, contract)
     contract = _apply_business_rule_overrides(message, contract)
 
+    # answer_primary_question (multi-intent al path vivo): si el mensaje es compuesto
+    # (perfil + pregunta) y la ruta principal no es RAG, resolvemos la pregunta
+    # embebida. Si exige fuente autorizada y no la hay (pago), el fail-closed marca
+    # requires_human ANTES de calcular flags/stage para que escale a HUMAN_REVIEW.
+    embedded_question = _resolve_embedded_question(message, contract, lead_memory_before)
+    if embedded_question and embedded_question["derive_to_human"]:
+        contract["requires_human"] = True
+        contract.setdefault("reason", "embedded_question_no_authorized_source")
+
     flags = _route_flags(str(contract.get("route") or "fallback"), str(contract.get("risk_level") or "low"))
     contract.update({**flags, "requires_rag": bool(contract.get("requires_rag")) and flags["requires_rag"]})
 
@@ -1489,10 +1558,20 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         reply = _controlled_reply_from_contract(contract)
 
+    # answer_primary_question: antepone la respuesta a la pregunta embebida. En el
+    # caso fail-closed (derive_to_human) la respuesta es el handoff y SUSTITUYE al
+    # reply normal (no encimar funnel sobre una derivación).
+    embedded_derived = bool(embedded_question and embedded_question["derive_to_human"])
+    if embedded_question:
+        if embedded_derived:
+            reply = embedded_question["answer"]
+        else:
+            reply = f'{embedded_question["answer"]}\n\n{reply}'
+
     # Append one funnel profiling question after RAG, friendly, or profile ack.
     # Capture which canonical field(s) the nudge asked about (passive metadata).
     asked_field_keys: list[str] = []
-    if rag_result is not None or friendly_result is not None or profile_ack_used:
+    if (rag_result is not None or friendly_result is not None or profile_ack_used) and not embedded_derived:
         nudge, asked_field_keys = _build_funnel_nudge(message, contract, lead_memory_before)
         if nudge:
             reply = f"{reply}\n\n{nudge}"
