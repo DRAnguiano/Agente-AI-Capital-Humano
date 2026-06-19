@@ -27,6 +27,10 @@ y `local_laguna`: el shadow/contrato va por delante del path vivo determinista.
   productivo pendiente (business-route C7.4), sin reescribir el clasificador.
 - Consolida tasks vigentes y dispersas de tres changes archivados (multi-intent 10a.1–10a.8,
   business-route C7.4, chatwoot-ai-note objetivo_full_sencillo) en un contrato vivo.
+- **Corrige el silencio en canalización** (hallazgo prueba prod 2026-06-19): hoy
+  `app/tasks_chatwoot.py` suprime TODA respuesta pública cuando `requires_human`, dejando al
+  candidato en visto. El candidato SHALL recibir un **acuse específico por motivo** (reingreso,
+  B1, escuelita, cecati…) antes de que el humano tome el caso.
 
 No se toca el path del bot vivo más allá de la extracción/persistencia de facts y la función
 de labels. Determinista, sin LLM en la decisión de labels. RED-first.
@@ -45,7 +49,9 @@ de labels. Determinista, sin LLM en la decisión de labels. RED-first.
   por label faltante (trigger + exclusividad) donde hoy solo está la tabla descriptiva —
   en particular `aclaracion_pendiente` (unidad ambigua) y la fuente-fact de
   `cecati_sugerido` / `considerar_escuelita_transmontes` / `considerar_operador_b1` /
-  `reingreso_verificar`.
+  `reingreso_verificar`; más el cierre de funnel + canalización del candidato no-apto.
+- `message-orchestration`: la canalización a Capital Humano entrega un acuse específico por
+  motivo al candidato (no silencio); deja de suprimirse la respuesta pública en handoff.
 
 ## Impact
 

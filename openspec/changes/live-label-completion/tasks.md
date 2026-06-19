@@ -23,15 +23,22 @@
 - [ ] 2.9 RED+impl (D6): `cecati_sugerido`/`considerar_escuelita_transmontes` detienen el funnel (no encimar pregunta de perfil) y marcan canalización a Capital Humano — `app/orchestrators/knowledge_orchestrator.py` (funnel nudge / `_NO_FUNNEL_SIGNALS`). Verificar que la respuesta informativa se conserva
 - [ ] 2.8 Verificar que solo se emiten labels del catálogo oficial (sin deprecadas `cecati`/`escuelita`) — extender el guard existente si hace falta
 
-## 3. Wiring del contexto del worker
+## 3. Canalización con acuse (no silencio)
 
-- [ ] 3.1 Confirmar/ajustar que `app/tasks_chatwoot.py` pasa los nuevos facts a `calculate_candidate_labels` (sin cambio de firma)
-- [ ] 3.2 Corregir DEUDA copy `app/persona_config.py` "más de 6 meses de vigencia" → ">3 meses" (alinear con regla vigente)
+- [ ] 3a.1 RED: en handoff el worker SÍ envía acuse público (hoy `tasks_chatwoot.py` ~L509 lo suprime por `requires_human`)
+- [ ] 3a.2 Dejar de suprimir la respuesta pública en handoff; enviar el acuse del orquestador — `app/tasks_chatwoot.py`
+- [ ] 3a.3 RED+impl: acuses específicos por motivo en `_SIGNAL_REPLIES`/equivalente — añadir B1 (otra vía) y escuelita (generación disponible); reingreso/cecati/out_of_scope/complaint ya existen
+- [ ] 3a.4 Verificar que el stage pasa a HUMAN_REVIEW_REQUIRED y que no se encima pregunta de funnel tras el acuse
 
-## 4. Verificación y cierre
+## 4. Wiring del contexto del worker
 
-- [ ] 4.1 Suite completa Groq-free en `api-test` verde (sin regresión en `test_candidate_labels`/`test_call_scheduling`)
-- [ ] 4.2 Rebuild `hr-rag-api` + recreate `api`/`worker`; pruebas end-to-end por webhook: caso objetivo, caso no-objetivo (escuelita), caso B1, caso reingreso, caso unidad ambigua → verificar labels emitidas
-- [ ] 4.3 `openspec validate live-label-completion --strict` + `openspec validate --specs --strict`
-- [ ] 4.4 Sincronizar deltas a specs principales y archivar el change
-- [ ] 4.5 Cerrar el drift de bookkeeping: marcar como superadas las tasks vigentes consolidadas (multi-intent 10a.1–10a.8, business-route C7.4, chatwoot-ai-note objetivo_full_sencillo)
+- [ ] 4.1 Confirmar/ajustar que `app/tasks_chatwoot.py` pasa los nuevos facts a `calculate_candidate_labels` (sin cambio de firma)
+- [ ] 4.2 Corregir DEUDA copy `app/persona_config.py` "más de 6 meses de vigencia" → ">3 meses" (alinear con regla vigente)
+
+## 5. Verificación y cierre
+
+- [ ] 5.1 Suite completa Groq-free en `api-test` verde (sin regresión en `test_candidate_labels`/`test_call_scheduling`)
+- [ ] 5.2 Rebuild `hr-rag-api` + recreate `api`/`worker`; pruebas end-to-end por webhook: caso objetivo, caso no-objetivo (escuelita), caso B1, caso reingreso, caso unidad ambigua → verificar labels emitidas Y acuse al candidato
+- [ ] 5.3 `openspec validate live-label-completion --strict` + `openspec validate --specs --strict`
+- [ ] 5.4 Sincronizar deltas a specs principales y archivar el change
+- [ ] 5.5 Cerrar el drift de bookkeeping: marcar como superadas las tasks vigentes consolidadas (multi-intent 10a.1–10a.8, business-route C7.4, chatwoot-ai-note objetivo_full_sencillo)
