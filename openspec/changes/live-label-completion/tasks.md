@@ -20,6 +20,7 @@
 - [ ] 2.5 RED+impl: `reingreso_verificar` desde `candidate.reingreso` → terminal: remueve `bot_activo` + `requires_human`
 - [ ] 2.6 RED+impl: `falta_ciudad` sin `candidate.city`; `falta_experiencia` sin ninguna señal de experiencia (unidad/años/no-objetivo/ausencia); se retiran al completarse
 - [ ] 2.7 Tests de interacción con `perfil_listo` (objetivo+listo OK; no-objetivo / aclaración / reingreso NO permiten `perfil_listo`)
+- [ ] 2.9 RED+impl (D6): `cecati_sugerido`/`considerar_escuelita_transmontes` detienen el funnel (no encimar pregunta de perfil) y marcan canalización a Capital Humano — `app/orchestrators/knowledge_orchestrator.py` (funnel nudge / `_NO_FUNNEL_SIGNALS`). Verificar que la respuesta informativa se conserva
 - [ ] 2.8 Verificar que solo se emiten labels del catálogo oficial (sin deprecadas `cecati`/`escuelita`) — extender el guard existente si hace falta
 
 ## 3. Wiring del contexto del worker

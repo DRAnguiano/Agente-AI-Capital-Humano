@@ -47,3 +47,35 @@ candidato confirme `full` o `sencillo`.
 #### Scenario: Aclaración resuelta al confirmar unidad
 - **WHEN** el candidato confirma `experience.vehicle_type` como `full` o `sencillo`
 - **THEN** no se emite `aclaracion_pendiente`
+
+### Requirement: Candidato no-apto cierra el perfilamiento y canaliza
+
+El sistema SHALL detener el perfilamiento automático y marcar canalización a Capital Humano
+cuando clasifica al candidato como **no-apto para las vacantes publicadas** (operador
+full/sencillo): el bot SHALL NOT encimar nuevas preguntas del funnel. La respuesta informativa
+que corresponda sí se entrega, sin encimar pregunta de perfil.
+
+"No-apto" no se limita a una causa; comprende al menos:
+- sin experiencia en carretera → `cecati_sugerido` (orientación al CECATI; puede reaplicar
+  tras su curso);
+- experiencia **no-objetivo** (rabón, torton, vehículos de carga de ese tipo) →
+  `considerar_escuelita_transmontes` (escuelita interna): el candidato **sí tiene experiencia**,
+  no en full/sencillo; se redirige a Capital Humano para revisar si hay **generación
+  disponible**;
+- conducta grosera / riesgo, o vacante distinta a las publicadas (servicios u otra) → fuera de
+  alcance, canaliza a humano (ya cubierto por las señales `complaint`/`out_of_scope`).
+
+#### Scenario: Sin experiencia no continúa el funnel
+- **WHEN** se emite `cecati_sugerido`
+- **THEN** el sistema no agrega una pregunta de funnel a la respuesta
+- **AND** marca canalización a Capital Humano
+
+#### Scenario: Experiencia no-objetivo redirige a escuelita sin perfilar
+- **WHEN** se emite `considerar_escuelita_transmontes`
+- **THEN** el sistema no agrega una pregunta de funnel a la respuesta
+- **AND** marca canalización a Capital Humano para revisar generación disponible
+
+#### Scenario: Fuera de alcance / conducta no-apta no continúa el funnel
+- **WHEN** la clasificación del candidato es no-apta por vacante distinta o conducta grosera
+- **THEN** el sistema no agrega una pregunta de funnel a la respuesta
+- **AND** marca canalización a Capital Humano

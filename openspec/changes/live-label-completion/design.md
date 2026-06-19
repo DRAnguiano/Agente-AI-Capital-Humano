@@ -57,6 +57,19 @@ ausencia declarada) → `falta_experiencia`. Se retiran al completarse, como las
 `facts` a la función; basta con que los nuevos `fact_key` se persistan en `rh_lead_facts_v2` y se
 carguen en ese dict. Sin cambios de firma.
 
+**D6 — No-apto cierra el funnel, como categoría general (hallazgo de prueba prod 2026-06-19).**
+Cualquier clasificación de **no-apto** detiene el perfilamiento: el orquestador SHALL NOT
+encimar pregunta de funnel y SHALL marcar canalización a Capital Humano. No-apto incluye sin
+experiencia (`cecati_sugerido`), experiencia no-objetivo rabón/torton (`considerar_escuelita_transmontes`,
+escuelita interna → Capital Humano revisa generación disponible), conducta grosera/riesgo, y
+vacante fuera de alcance (servicios u otra). Implementación: `out_of_scope`/`complaint` ya están
+en `_NO_FUNNEL_SIGNALS`; este change **añade cecati/escuelita** a ese conjunto en
+`knowledge_orchestrator`. La respuesta informativa (CECATI / escuelita) se mantiene; lo que se
+elimina es la pregunta de funnel encimada. *Alternativa descartada:* seguir perfilando y solo
+etiquetar — rechazada: perfilar a un no-apto es ruido para el reclutador y mala experiencia para
+el candidato (caso observado: "no tengo experiencia, quiero aprender" → respuesta CECATI correcta
+pero seguida de "¿desde qué ciudad?").
+
 ## Risks / Trade-offs
 
 - [Detección determinista con menor recall que el LLM] → Mitigación: catálogos/keywords
