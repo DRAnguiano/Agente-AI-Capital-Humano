@@ -122,6 +122,10 @@ def _is_vigente(value: Any) -> bool:
     return str(value or "").strip().lower() in {"vigente", "sí", "si", "yes", "true"}
 
 
+def _is_truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"sí", "si", "yes", "true", "1", "sÃ­"}
+
+
 def _age_disqualified(facts: dict[str, Any]) -> bool:
     try:
         return int(str(facts.get("candidate.age") or "").strip()) >= 50
@@ -283,12 +287,38 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     # Unidad confirmada solo si es exactamente full/sencillo; jerga ambigua
     # ("quinta rueda", "tráiler"…) no confirma — la aclara el pipeline de comprensión.
     vehicle_confirmed = facts.get("experience.vehicle_type") in VALID_VEHICLE_TYPES
+    has_non_target_experience = bool(facts.get("experience.non_target_vehicle_type"))
+    has_no_road_experience = str(facts.get("experience.road_experience") or "").strip().lower() in {
+        "none", "no", "sin_experiencia", "sin experiencia"
+    }
+    has_pending_vehicle_type = bool(facts.get("experience.vehicle_type_pending"))
+    has_b1_us_intent = _is_truthy(facts.get("experience.b1_us_intent"))
+    has_reingreso = _is_truthy(facts.get("candidate.reingreso"))
     has_experience = (
-        bool(facts.get("experience.vehicle_type"))
+        vehicle_confirmed
         or bool(facts.get("experience.years"))
+        or has_non_target_experience
+        or has_no_road_experience
     )
     has_letters    = facts.get("documents.labor_letters_status") in {"available", "sí", "si"} or \
                      facts.get("documents.labor_letters") in {"available", "sí", "si"}
+
+    # Tricotomía mutuamente excluyente: objetivo > no-objetivo > sin experiencia.
+    if vehicle_confirmed:
+        labels.add("objetivo_full_sencillo")
+    elif has_non_target_experience:
+        labels.update({"considerar_escuelita_transmontes", "requiere_agente", "requiere_revision_ch"})
+    elif has_no_road_experience:
+        labels.update({"cecati_sugerido", "requiere_agente", "requiere_revision_ch"})
+
+    if has_pending_vehicle_type and not vehicle_confirmed:
+        labels.add("aclaracion_pendiente")
+
+    if has_b1_us_intent:
+        labels.update({"considerar_operador_b1", "requiere_agente", "requiere_revision_ch"})
+
+    if has_reingreso:
+        labels.update({"reingreso_verificar", "requiere_agente", "requiere_revision_ch"})
 
     if not has_license:
         labels.add("falta_licencia")
@@ -296,6 +326,10 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.add("falta_apto")
     if not vehicle_confirmed:
         labels.add("falta_unidad")
+    if not facts.get("candidate.city"):
+        labels.add("falta_ciudad")
+    if not has_experience:
+        labels.add("falta_experiencia")
     if not has_letters and (has_license or has_experience):
         labels.add("documentos")
 
@@ -319,10 +353,18 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
             labels.update({"foraneo", "validar_traslado"})
 
     accepted = facts.get("candidate.vacancy_accepted") in {"sí", "si", "yes", "true"}
-    if vehicle_confirmed and has_license and has_medical and accepted:
+    if (
+        vehicle_confirmed
+        and has_license
+        and has_medical
+        and accepted
+        and not (has_non_target_experience or has_no_road_experience or has_reingreso)
+    ):
         labels.update({"perfil_listo", "requiere_revision_ch"})
         labels.discard("falta_licencia")
         labels.discard("falta_apto")
+        labels.discard("falta_unidad")
+        labels.discard("falta_experiencia")
         labels.discard("documentos")
 
     # B7.4 — llamada pendiente: solo desde decisión determinista cuando perfil_listo o
@@ -342,6 +384,59 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.discard("bot_activo")
 
     return _filter_official_labels(labels)
+
+
+def _render_escuelita_note(lead: dict[str, Any], message: str, facts: dict[str, str], license_category: str) -> str:
+    """Nota administrativa de la rama escuelita (experiencia no objetivo).
+
+    Lenguaje para Capital Humano: sin Embudo/Canal/Riesgo/Requiere humano. Muestra el
+    mínimo (experiencia no objetivo + licencia B/E). Con licencia B/E → valorar/canalizar;
+    sin ella → pedir confirmación de B/E (compuerta de elegibilidad).
+    """
+    non_target = _fact(facts, "experience.non_target_vehicle_type", default="")
+    exp_line = (
+        f"Maneja {non_target}" if non_target and non_target != PENDING_TEXT
+        else "Experiencia no objetivo (no full/sencillo)"
+    )
+    has_be = str(license_category or "").strip().upper() in {"B", "E"}
+
+    sabemos = [
+        f"Experiencia: {exp_line}",
+        "Unidad objetivo: No ha manejado full o sencillo",
+    ]
+    if has_be:
+        sabemos.append(f"Licencia: {license_category} (apta para escuelita)")
+
+    falta_block = ""
+    if not has_be:
+        falta_block = (
+            "⚠️ Falta confirmar\n"
+            "Licencia: Confirmar si cuenta con licencia federal B o E vigente\n\n"
+        )
+
+    next_action = (
+        "Valorar Escuelita Transmontes y revisar generación disponible."
+        if has_be
+        else "Confirmar licencia B o E. Si no cuenta con licencia B o E vigente, no aplica para esta ruta."
+    )
+
+    return (
+        "🤖 Nota IA: Seguimiento de candidato escuelita\n\n"
+        f"Último mensaje: \"{message}\"\n\n"
+        "👤 Contacto\n"
+        f"Nombre: {_text(lead.get('display_name'))}\n"
+        f"Teléfono: {_text(lead.get('phone'))}\n\n"
+        "📌 Estado del candidato\n"
+        "Operador a considerar para Escuelita Transmontes\n\n"
+        "✅ Lo que ya sabemos\n"
+        + "\n".join(sabemos) + "\n\n"
+        + falta_block +
+        "👥 Para Capital Humano\n"
+        "Valorar si aplica para Escuelita Transmontes (revisar generación disponible).\n"
+        "Requiere Agente: Sí\n\n"
+        "⏭️ Siguiente acción\n"
+        f"{next_action}"
+    )
 
 
 def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_last_message: str | None = None, channel_label: str | None = None) -> str:
@@ -372,6 +467,12 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         experience_display = PENDING_TEXT
     medical_status = _human_fact(medical_status_raw)
     documents_status = _human_fact(documents_status_raw)
+
+    # ── Nota administrativa por escenario (funnel-and-note-redesign) ──────────
+    # Migración incremental: la rama escuelita usa el formato administrativo; el resto
+    # del cuerpo sigue en el formato técnico hasta migrarse escenario por escenario.
+    if "considerar_escuelita_transmontes" in (labels or []):
+        return _render_escuelita_note(lead, message, facts, license_category)
 
     next_action = _text(lead.get("next_best_action"), "Continuar flujo automático según etapa actual.")
     stage_value = lead.get("funnel_stage")
