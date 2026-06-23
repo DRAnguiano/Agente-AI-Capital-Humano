@@ -464,8 +464,16 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         # Validez vs horario de oficina (8:00–17:30 L–V): true | false | unknown.
         upsert("scheduling", "call_window_valid", classify_call_window(text), 0.80)
 
+    # Solo escribir vehicle_type_pending/non_target cuando hay evidencia de
+    # experiencia personal — no por mera mención del vehículo como tipo de vacante.
+    _experience_context = bool(re.search(
+        r"\b(?:manejo|manej[oéa]\w*|trabajo\s+(?:en|con)|trabaj[oéó]\w*|opero|"
+        r"he\s+manejado|soy\s+operador|tengo\s+experiencia|años?\s+(?:de\s+)?(?:manejo|experiencia)|"
+        r"experiencia\s+(?:en|con|manejando)|dedicado?\s+(?:al|a\s+la))\b",
+        text,
+    ))
     veh = normalize_vehicle(message)
-    if veh and veh.status == NEEDS_CLARIFICATION and veh.domain:
+    if veh and veh.status == NEEDS_CLARIFICATION and veh.domain and _experience_context:
         upsert("experience", "vehicle_type_pending", veh.domain, 0.86)
     if veh and veh.status == NON_TARGET and veh.domain:
         upsert("experience", "non_target_vehicle_type", veh.domain, 0.88)
