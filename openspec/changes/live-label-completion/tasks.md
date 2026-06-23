@@ -37,8 +37,8 @@
 
 ## 5. Verificación y cierre
 
-- [ ] 5.1 Suite completa Groq-free en `api-test` verde (sin regresión en `test_candidate_labels`/`test_call_scheduling`)
+- [x] 5.1 Suite completa Groq-free en `api-test` verde (sin regresión en `test_candidate_labels`/`test_call_scheduling`)
 - [ ] 5.2 Rebuild `hr-rag-api` + recreate `api`/`worker`; pruebas end-to-end por webhook: caso objetivo, caso no-objetivo (escuelita), caso B1, caso reingreso, caso unidad ambigua → verificar labels emitidas Y acuse al candidato
-- [ ] 5.3 `openspec validate live-label-completion --strict` + `openspec validate --specs --strict`
+- [x] 5.3 `openspec validate live-label-completion --strict` + `openspec validate --specs --strict`
 - [ ] 5.4 Sincronizar deltas a specs principales y archivar el change
 - [ ] 5.5 Cerrar el drift de bookkeeping: marcar como superadas las tasks vigentes consolidadas (multi-intent 10a.1–10a.8, business-route C7.4, chatwoot-ai-note objetivo_full_sencillo)
