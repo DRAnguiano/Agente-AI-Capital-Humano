@@ -16,7 +16,6 @@ from typing import Any
 
 from app.knowledge.text_normalizer import normalize_text
 from app.knowledge.contextual_answer_classifier import classify_short_answer
-from app.knowledge.disambiguate_numeric_units import disambiguate
 
 # Allowlist v1: solo campos con resolver corto confiable.
 # (license.status / medical.apto_status / candidate.city / license.type quedan fuera.)
@@ -25,11 +24,6 @@ ROUTE1_ALLOWED: frozenset[str] = frozenset({
     "experience.vehicle_type",
     "documents.proof",
 })
-
-# Campo canónico -> contexto esperado por disambiguate_numeric_units.
-_FIELD_TO_NUMERIC_CONTEXT: dict[str, str] = {
-    "experience.years": "experience_years",
-}
 
 # Negación conservadora (alineada con current_turn._neg_hints). v1: negación -> no_persist.
 _NEG_HINTS: frozenset[str] = frozenset({
@@ -68,21 +62,19 @@ def resolve_route1(text: str, asked_field_keys: list[str] | None) -> dict[str, A
     if _has_negation(text):
         return _no_persist("negation", expected_field)
 
-    # Cantidad numérica (X/U/F) → desambiguación por contexto.
+    # Cantidad numérica para experience.years: extraer primer dígito del texto.
+    # Desambiguación contextual real ya la maneja current_turn.py vía LLM;
+    # aquí solo necesitamos el valor para el shadow log.
     if expected_field == "experience.years":
-        res = disambiguate(text, _FIELD_TO_NUMERIC_CONTEXT[expected_field])
-        status = res.get("status")
-        if status == "confirmed":
-            return {"status": "confirmed", "field": "experience.years",
-                    "value": res.get("value"), "reason": "ok"}
-        if status == "no_number":
+        tokens = normalize_text(text or "").split()
+        num = next((t for t in tokens if t.isdigit()), None)
+        if num is None:
             return _no_persist("no_number", expected_field)
-        # Unidad subanual/contradictoria o cantidad sin contexto claro: route1
-        # expone siempre needs_clarification (disambiguate puede distinguir el
-        # sub-motivo internamente; aquí no se filtra).
-        if status == "needs_clarification":
+        subannual = {"mes", "meses", "semana", "semanas", "dia", "dias"}
+        if set(tokens) & subannual:
             return _no_persist("needs_clarification", expected_field)
-        return _no_persist("ambiguous", expected_field)
+        return {"status": "confirmed", "field": "experience.years",
+                "value": int(num), "reason": "ok"}
 
     # Respuesta corta / elíptica (unidad o sí-no) → clasificador contextual.
     res = classify_short_answer(text, expected_field)

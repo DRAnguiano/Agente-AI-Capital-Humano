@@ -939,9 +939,10 @@ def _stage_for_contract(contract: dict[str, Any], message: str) -> str:
     text = normalize_text(message)
 
     try:
+        from app.settings import AGE_DISQUALIFICATION_LIMIT
         from app.lead_memory.profile_extractor import extract_profile_facts_as_dict
         age = int(str(extract_profile_facts_as_dict(message).get("candidate.age") or "").strip())
-        if age >= 50:
+        if age >= AGE_DISQUALIFICATION_LIMIT:
             return "closed"
     except Exception:
         pass
@@ -1231,10 +1232,12 @@ def _build_profile_ack_reply(message: str) -> str | None:
 
     by_key = {f"{f['fact_group']}.{f['fact_key']}": f["fact_value"] for f in raw}
     try:
-        if int(str(by_key.get("candidate.age") or "").strip()) >= 50:
-            from app.knowledge.current_turn import AGE_DISQUALIFICATION_REPLY
-            return AGE_DISQUALIFICATION_REPLY
-    except ValueError:
+        from app.settings import AGE_DISQUALIFICATION_LIMIT
+        from app.knowledge.current_turn import age_disqualification_reply, _to_int
+        age_val = int(str(by_key.get("candidate.age") or "").strip())
+        if age_val >= AGE_DISQUALIFICATION_LIMIT:
+            return age_disqualification_reply(age_val)
+    except (ValueError, ImportError):
         pass
 
     parts: list[str] = []
@@ -1470,10 +1473,11 @@ def _build_funnel_nudge(
         log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
 
     try:
+        from app.settings import AGE_DISQUALIFICATION_LIMIT
         age = int(str(active_facts.get("candidate.age") or "").strip())
-        if age >= 50:
+        if age >= AGE_DISQUALIFICATION_LIMIT:
             return None, []
-    except ValueError:
+    except (ValueError, ImportError):
         pass
 
     for step in _FUNNEL_STEPS:

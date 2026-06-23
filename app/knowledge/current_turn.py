@@ -29,6 +29,34 @@ Ejemplos:
 - "vigente" → {"expiration_text": null}
 - "sí" → {"expiration_text": null}"""
 
+_AGE_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de preguntar la EDAD del candidato.
+Extrae la edad en años enteros de la respuesta. Rango plausible de adulto: 18–70.
+Convierte palabras a números: "treinta" → 30, "cuarenta y dos" → 42.
+Si no hay edad clara o es ambiguo, devuelve null.
+Responde SOLO JSON: {"age": <entero 18-70> | null}
+Ejemplos:
+- "35" → {"age": 35}
+- "treinta y cinco años" → {"age": 35}
+- "como unos 40" → {"age": 40}
+- "tengo 28" → {"age": 28}
+- "52" → {"age": 52}
+- "no sé" → {"age": null}
+- "25 años de experiencia" → {"age": null}"""
+
+_EXPERIENCE_YEARS_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de preguntar los AÑOS DE EXPERIENCIA del candidato como operador.
+Extrae los años de experiencia de la respuesta. Normaliza a formato "N años".
+Convierte palabras a números: "diez" → "10 años", "año y medio" → "1 año", "una década" → "10 años".
+Si no hay dato numérico claro, devuelve null.
+Responde SOLO JSON: {"years": "<N años>" | null}
+Ejemplos:
+- "10" → {"years": "10 años"}
+- "diez" → {"years": "10 años"}
+- "como 15 años" → {"years": "15 años"}
+- "25 años manejando" → {"years": "25 años"}
+- "10 y medio" → {"years": "10 años"}
+- "desde 2010" → {"years": null}
+- "poco tiempo" → {"years": null}"""
+
 
 def _profile_complete_closing() -> str:
     """Closing message shown when all profile fields have been collected."""
@@ -54,11 +82,7 @@ def _profile_complete_closing() -> str:
 
 LOCAL_LAGUNA = ["torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"]
 
-AGE_LIMIT_EXCLUSIVE = 50
-AGE_DISQUALIFICATION_REPLY = (
-    "Gracias por su interés. Por el momento el perfil de esta vacante considera "
-    "operadores menores de 50 años, por lo que no podemos continuar con su solicitud."
-)
+from app.settings import AGE_DISQUALIFICATION_LIMIT as AGE_LIMIT_EXCLUSIVE
 RENEWAL_PROOF_QUESTION = (
     "Su {documento} vence en menos de 3 meses. ¿Ya tiene el papel o comprobante "
     "de renovación?"
@@ -97,6 +121,19 @@ def _to_int(value: Any) -> int | None:
 def is_age_disqualified(facts: dict[str, Any]) -> bool:
     age = _to_int(facts.get("candidate.age"))
     return age is not None and age >= AGE_LIMIT_EXCLUSIVE
+
+
+def age_disqualification_reply(age: int | None = None) -> str:
+    from app.indexer import call_groq_with_system
+    from app.persona_config import SYSTEM_PROMPT
+    context = (
+        f"El candidato indicó que tiene {age} años. " if age else ""
+    )
+    prompt = (
+        f"{context}Aplica la regla de descalificación por edad del perfil de operador. "
+        "Genera únicamente el mensaje de respuesta al candidato."
+    )
+    return call_groq_with_system(SYSTEM_PROMPT, prompt, temperature=0.1, max_tokens=120)
 
 
 def _number_token_to_int(token: str) -> int | None:
@@ -282,15 +319,23 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
 
         if "candidate.age" not in facts:
             if re.search(r"\bcuantos anos\b", _last_question) and "experiencia" not in _last_question:
-                m = re.fullmatch(r"(\d{1,2})(?:\s*(?:anos|años))?", text)
-                if m and 18 <= int(m.group(1)) <= 75:
-                    facts["candidate.age"] = m.group(1)
+                try:
+                    raw = call_groq_json(text, _AGE_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+                    val = json.loads(raw).get("age")
+                    if val is not None:
+                        facts["candidate.age"] = str(int(val))
+                except Exception:
+                    pass
 
         if "experience.years" not in facts:
             if re.search(r"\bcuantos anos\b", _last_question) and "experiencia" in _last_question:
-                m = re.fullmatch(r"(\d{1,2})(?:\s*(?:anos|años))?", text)
-                if m:
-                    facts["experience.years"] = f"{m.group(1)} años"
+                try:
+                    raw = call_groq_json(text, _EXPERIENCE_YEARS_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+                    val = json.loads(raw).get("years")
+                    if val:
+                        facts["experience.years"] = str(val)
+                except Exception:
+                    pass
 
         exp_text = _contextual_expiration_text(text)
         if exp_text:
@@ -386,7 +431,7 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if not facts.get("candidate.age"):
         return "Gracias. ¿Cuántos años tiene?"
     if is_age_disqualified(facts):
-        return AGE_DISQUALIFICATION_REPLY
+        return age_disqualification_reply(_to_int(facts.get("candidate.age")))
     if not facts.get("experience.vehicle_type"):
         return (
             "¿Su experiencia es en tracto full o en sencillo? "
@@ -447,7 +492,7 @@ def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | N
     facts = {**(merged_facts or {}), **current}
 
     if is_age_disqualified(facts):
-        return AGE_DISQUALIFICATION_REPLY
+        return age_disqualification_reply(_to_int(facts.get("candidate.age")))
 
     detected = []
     if current.get("candidate.city"):

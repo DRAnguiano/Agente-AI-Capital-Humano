@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from app.knowledge.current_turn import (
-    AGE_DISQUALIFICATION_REPLY,
     build_current_turn_ack,
+    is_age_disqualified,
     next_question_from_missing_facts,
 )
 from app.knowledge.guard_asked_field import asked_field_keys_for_guard
@@ -64,16 +64,29 @@ def test_funnel_order_city_then_age_then_unit_then_license_then_apto_then_years_
     assert "cartas" in q.lower() or "imss" in q.lower()
 
 
-def test_age_50_or_more_discards_without_more_questions():
-    assert next_question_from_missing_facts({
+def test_age_at_limit_is_disqualified():
+    # Límite: AGE_DISQUALIFICATION_LIMIT = 57 (settings.py); 57+ = no apto.
+    assert is_age_disqualified({"candidate.age": "57"})
+    assert is_age_disqualified({"candidate.age": "60"})
+    assert not is_age_disqualified({"candidate.age": "56"})
+    assert not is_age_disqualified({"candidate.age": "49"})
+
+
+def test_age_disqualified_reply_is_non_empty():
+    # El mensaje lo genera el LLM (persona_config); solo verificamos que no sea vacío
+    # y que no contenga una pregunta de funnel.
+    reply = next_question_from_missing_facts({
         "candidate.city": "Torreon",
-        "candidate.age": "50",
-    }) == AGE_DISQUALIFICATION_REPLY
-    assert build_current_turn_ack("tengo 52 años") == AGE_DISQUALIFICATION_REPLY
+        "candidate.age": "57",
+    })
+    assert reply  # no vacío
+    # No debe continuar con pregunta de funnel (tipo de unidad, licencia, etc.)
+    assert "tracto full" not in reply.lower()
+    assert "licencia" not in reply.lower() or "años" not in reply.lower()
 
 
-def test_age_under_50_continues():
-    q = next_question_from_missing_facts({"candidate.city": "Torreon", "candidate.age": "49"})
+def test_age_under_limit_continues():
+    q = next_question_from_missing_facts({"candidate.city": "Torreon", "candidate.age": "56"})
     assert "tracto full" in q.lower()
 
 

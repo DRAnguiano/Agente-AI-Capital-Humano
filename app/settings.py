@@ -67,6 +67,11 @@ COHERE_MAX_TOKENS = _env_int("COHERE_MAX_TOKENS", GROQ_MAX_TOKENS)
 # Generación
 TEMPERATURE = _env_float("TEMPERATURE", 0.1)
 
+# Edad máxima (exclusive) para operar. Candidatos con edad >= este valor
+# no aplican al perfil de operador. Configurable vía env para no redeployar
+# si cambia la política de RH.
+AGE_DISQUALIFICATION_LIMIT = _env_int("AGE_DISQUALIFICATION_LIMIT", 57)
+
 
 # =========================
 # RAG / Chroma

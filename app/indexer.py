@@ -829,6 +829,37 @@ def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0
         return f'{{"error": "{type(exc).__name__}"}}'
 
 
+def call_groq_with_system(system: str, user: str, *, temperature: float | None = None, max_tokens: int = 300) -> str:
+    """Groq conversational call con system prompt arbitrario (no JSON mode).
+
+    Distinta de call_llm: acepta system prompt externo en lugar de _llm_system_message().
+    Usada para respuestas generadas por el LLM siguiendo reglas de persona_config sin
+    pasar por el pipeline RAG completo (ej. descalificación por edad).
+    """
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
+    try:
+        t = temperature if temperature is not None else TEMPERATURE
+        timeout_secs = float(os.getenv("GROQ_TIMEOUT_SECONDS", "8"))
+        timeout = httpx.Timeout(timeout_secs, connect=5.0)
+        with httpx.Client(timeout=timeout) as http_client:
+            client = Groq(api_key=api_key, http_client=http_client)
+            completion = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=t,
+                max_tokens=max_tokens,
+            )
+        return completion.choices[0].message.content or ""
+    except Exception as exc:
+        print(f"[groq_with_system] Error: {type(exc).__name__}: {exc}", flush=True)
+        return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
+
+
 def call_llm(prompt: str) -> str:
     provider = os.environ.get("LLM_PROVIDER", LLM_PROVIDER).strip().lower()
 
