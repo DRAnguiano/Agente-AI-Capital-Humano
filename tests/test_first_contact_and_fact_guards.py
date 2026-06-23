@@ -173,7 +173,7 @@ class TestTypoCanonicalizacion:
         assert facts.get("experience.vehicle_type") == "sencillo"
 
     def test_sensillo_typo_confirma_unidad(self):
-        # "sensillo" es alias documentado en catálogo (no en normalize_text).
+        # "sensillo" es alias documentado en catálogo (normalize_vehicle, sin LLM).
         facts = extract_profile_facts_as_dict("manejo sensillo")
         assert facts.get("experience.vehicle_type") == "sencillo"
 
@@ -213,6 +213,7 @@ JERGOSO = "soy d gomez palasio, que rutas ay y dan voleto pa ir a torreon"
 
 
 class TestPreguntaEmbebida:
+    @pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — has_embedded_business_question usa LLM T=0")
     def test_detecta_pregunta_sin_signos(self):
         assert CT.has_embedded_business_question(JERGOSO) is True
 
@@ -223,6 +224,7 @@ class TestPreguntaEmbebida:
     def test_respuesta_pura_de_perfil_sigue_al_guard(self):
         assert CT.should_prioritize_current_turn("soy de torreon, licencia tipo e") is True
 
+    @pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — has_embedded_business_question usa LLM T=0")
     def test_dan_boleto_tambien_es_pregunta(self):
         assert CT.has_embedded_business_question("dan boleto para el traslado") is True
 
@@ -337,11 +339,13 @@ class TestAniosElipticos:
 
 
 class TestPreguntaDeCartas:
+    @pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — has_embedded_business_question usa LLM T=0")
     def test_cuantas_necesita_es_pregunta(self):
         assert CT.has_embedded_business_question(
             "Nada más tengo 1 si le sirve o cuantas nececita?"
         ) is True
 
+    @pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — has_embedded_business_question usa LLM T=0")
     def test_cuantas_cartas_piden(self):
         assert CT.has_embedded_business_question("cuantas cartas piden") is True
 

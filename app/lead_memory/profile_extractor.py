@@ -50,6 +50,8 @@ Del mensaje, extrae la duración de experiencia conduciendo vehículos de carga.
 Responde SOLO JSON: {"years": <entero> | "<N meses>" | null}
 Ejemplos:
 - "llevo 10 años manejando full" → {"years": 10}
+- "tengo 20 años manejando full" → {"years": 20}
+- "tengo 5 años de experiencia en tracto" → {"years": 5}
 - "tengo como 8 meses de experiencia en carretera" → {"years": "8 meses"}
 - "soy operador desde hace 5 años" → {"years": 5}
 - "me interesa la vacante de operador" → {"years": null}
@@ -131,14 +133,34 @@ def _find_expiration_text(text: str, message: str = "") -> str | None:
         return None
 
 
-def _has_renewal_proof(text: str) -> str | None:
-    if not any(term in text for term in ("papel", "comprobante", "pago", "cita", "tramite", "tramit")):
+_RENEWAL_PROOF_HINTS = ("papel", "comprobante", "pago", "cita", "tramite", "tramit")
+
+_RENEWAL_PROOF_SYSTEM = """Eres un extractor de datos de reclutamiento.
+Determina si el candidato indica que TIENE o NO TIENE comprobante de trámite de renovación de licencia o apto.
+- "si": el candidato dice que tiene papel, comprobante, cita de trámite o ya pagó
+- "no": el candidato dice que no tiene comprobante, no ha tramitado, o todavía no
+- null: no hay mención de comprobante de trámite
+Responde SOLO JSON: {"renewal_proof": "si" | "no" | null}
+Ejemplos:
+- "ya tengo el papel del trámite" → {"renewal_proof": "si"}
+- "ya pagué la cita" → {"renewal_proof": "si"}
+- "tengo el comprobante" → {"renewal_proof": "si"}
+- "todavía no tengo el comprobante" → {"renewal_proof": "no"}
+- "no he tramitado nada" → {"renewal_proof": "no"}
+- "sin comprobante todavía" → {"renewal_proof": "no"}
+- "mi licencia vence en 3 meses" → {"renewal_proof": null}"""
+
+
+def _has_renewal_proof(message: str, text: str) -> str | None:
+    if not any(term in text for term in _RENEWAL_PROOF_HINTS):
         return None
-    if re.search(r"\b(?:no|todavia no|aun no|sin)\b", text):
-        return "no"
-    if re.search(r"\b(?:si|sí|ya|tengo|cuento)\b", text):
-        return "sí"
-    return None
+    try:
+        from app.indexer import call_groq_json
+        raw = call_groq_json(message, _RENEWAL_PROOF_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+        val = json.loads(raw).get("renewal_proof")
+        return str(val) if val else None
+    except Exception:
+        return None
 
 
 def _expiry_text_is_short_unknown(expiration_text: str) -> bool:
@@ -261,21 +283,25 @@ def detect_laredo_ambiguity(message: str) -> bool:
 
 
 # ── Call scheduling (B7.4) ────────────────────────────────────────────────────
-# Detección determinista de que el candidato pide/acepta una llamada. Patrones sobre
-# texto ya normalizado (minúsculas, sin acentos, sin puntuación). La emisión del label
+# Detección de solicitud de llamada via LLM T=0. La emisión del label
 # `llamada_pendiente` la decide `calculate_candidate_labels` (gate perfil_listo / agente);
 # aquí solo se registran los facts `scheduling.*`. NO se promete agenda real.
-_CALL_REQUEST_RE = re.compile(
-    r"\b(?:"
-    r"me\s+llam\w+|llamen\w*|llamem\w*|"            # me llamen, llámenme
-    r"me\s+pueden\s+llamar|pueden\s+llamarme|puede\s+llamarme|"
-    r"me\s+marc\w+|marquen\w*|marquem\w*|"          # me marcan, márquenme
-    r"(?:prefiero|mejor|quiero|quisiera|me\s+gustaria|me\s+gusta|agend\w+)\s+(?:que\s+me\s+llamen|(?:una\s+)?llamada)|"
-    r"una\s+llamada|por\s+(?:telefono|llamada)|hablamos\s+por\s+telefono"
-    r")\b"
-)
-# Negación: si el candidato rechaza la llamada, NO se registra solicitud.
-_CALL_NEG_RE = re.compile(r"\bno\s+(?:quiero\s+(?:la\s+|una\s+)?llamada|me\s+llamen|llamada)\b")
+_CALL_INTENT_HINTS = ("llam", "marc", "llamada", "telefono", "tel ", "cel ", "hablamos",
+                      "contacten", "agend")
+
+_CALL_INTENT_SYSTEM = """Eres un extractor de datos de reclutamiento.
+Determina si el candidato pide que le llamen por teléfono.
+- call_requested true: el candidato pide/acepta una llamada ("me pueden llamar", "quiero una llamada", "agéndenme", "hablamos por teléfono")
+- call_requested false: el candidato no pide llamada, o la rechaza explícitamente ("no me llamen", "por favor no llamadas")
+Responde SOLO JSON: {"call_requested": true | false}
+Ejemplos:
+- "me pueden llamar mañana" → {"call_requested": true}
+- "quiero que me llamen" → {"call_requested": true}
+- "agéndenme una llamada" → {"call_requested": true}
+- "hablamos por teléfono mejor" → {"call_requested": true}
+- "no me llamen por favor" → {"call_requested": false}
+- "tengo 10 años manejando full" → {"call_requested": false}
+- "soy de Torreón" → {"call_requested": false}"""
 
 
 def _extract_call_window(message: str) -> str | None:
@@ -406,7 +432,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("medical", "apto_expiration_text", exp_text, 0.88)
         upsert("document", "apto_status", "vigente", 0.88)
 
-    proof = _has_renewal_proof(text)
+    proof = _has_renewal_proof(message, text)
     if proof:
         upsert("documents", "renewal_proof", proof, 0.80)
 
@@ -484,7 +510,15 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("candidate", "age", age_m.group(1), 0.88)
 
     # ── Solicitud de llamada (B7.4) + validación de ventana (B7.5) ────────────
-    if _CALL_REQUEST_RE.search(text) and not _CALL_NEG_RE.search(text):
+    _call_requested = False
+    if any(h in text for h in _CALL_INTENT_HINTS):
+        try:
+            from app.indexer import call_groq_json
+            raw = call_groq_json(message, _CALL_INTENT_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            _call_requested = bool(json.loads(raw).get("call_requested"))
+        except Exception:
+            pass
+    if _call_requested:
         upsert("scheduling", "call_requested", "true", 0.85)
         upsert("scheduling", "call_status", "pending", 0.85)
         window = _extract_call_window(message)

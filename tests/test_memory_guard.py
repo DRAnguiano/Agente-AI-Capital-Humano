@@ -5,16 +5,22 @@ forbidden_questions desde memoria previa y los tres casos de reclamo de memoria
 (reaffirm / process_as_fact / conflict), más la integración en plan_and_respond
 (no repreguntar campos ya respondidos).
 
-Deterministas: sin Groq, sin Chroma, sin DB. plan_and_respond solo se ejercita
-en rutas que NO llaman al LLM (answers + funnel), nunca con questions RAG.
+_is_memory_claim usa LLM T=0 (Groq, fail-safe→False); tests que ejercitan frases
+de reclamo reales requieren GROQ_API_KEY y se marcan skipif.
 """
 from __future__ import annotations
+
+import os
+
+import pytest
 
 from app.knowledge.memory_guard import (
     apply_memory_guard,
     derive_forbidden_questions,
 )
 import app.knowledge.intent_orchestrator as IO
+
+_NO_GROQ = not os.getenv("GROQ_API_KEY")
 
 
 def _answer(field: str, value: str, confidence: float = 0.95) -> dict:
@@ -59,6 +65,7 @@ FUNNEL_CITY_Q = "¿Desde qué ciudad o estado nos escribe?"
 
 # ── Reclamo de memoria: los tres casos (Scenario: Reclamo de memoria) ─────────
 
+@pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — _is_memory_claim usa LLM T=0")
 def test_memory_claim_reaffirm_when_prior_matches():
     enriched = _enriched([_answer("experience.vehicle_type", "full")])
     known = {"experience.vehicle_type": "full"}
@@ -70,12 +77,14 @@ def test_memory_claim_reaffirm_when_prior_matches():
     assert "experience.vehicle_type" in mg["forbidden_questions"]
 
 
+@pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — _is_memory_claim usa LLM T=0")
 def test_memory_claim_process_as_fact_when_no_prior():
     enriched = _enriched([_answer("experience.vehicle_type", "full")])
     mg = apply_memory_guard(enriched, "ya te había dicho que full", known_facts={})
     assert mg["memory_claim"]["resolution"] == "process_as_fact"
 
 
+@pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — _is_memory_claim usa LLM T=0")
 def test_memory_claim_conflict_when_prior_differs():
     enriched = _enriched([_answer("experience.vehicle_type", "full")])
     known = {"experience.vehicle_type": "sencillo"}

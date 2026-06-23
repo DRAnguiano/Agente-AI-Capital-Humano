@@ -57,6 +57,20 @@ Ejemplos:
 - "desde 2010" → {"years": null}
 - "poco tiempo" → {"years": null}"""
 
+_YA_RECLAMO_SYSTEM = """Eres un clasificador de datos de reclutamiento.
+Determina si el mensaje del candidato es un RECLAMO de que ya dio esa información antes (no una confirmación).
+- true: el candidato afirma haber dado el dato previamente ("ya le había dicho", "ya se lo dije", "ya lo mandé antes")
+- false: el candidato confirma o aporta un dato nuevo ("ya tengo cartas", "ya está vigente", "ya lo conseguí")
+Responde SOLO JSON: {"is_complaint": true | false}
+Ejemplos:
+- "ya le había dicho que 10 años" → {"is_complaint": true}
+- "ya te lo dije" → {"is_complaint": true}
+- "ya se los mandé" → {"is_complaint": true}
+- "ya tengo cartas" → {"is_complaint": false}
+- "ya está vigente" → {"is_complaint": false}
+- "ya lo conseguí" → {"is_complaint": false}
+- "ya me lo dijeron" → {"is_complaint": false}"""
+
 
 def _profile_complete_closing() -> str:
     """Closing message shown when all profile fields have been collected."""
@@ -254,7 +268,13 @@ def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str
     )
     # "ya" de RECLAMO no es confirmación: "ya le habia dicho que 10 años"
     # re-confirmaba apto vigente (smoke 2026-06-12 16:16).
-    _ya_reclamo = bool(re.match(r"^ya\s+(?:le|te|les|lo|la|se|los|las)\b", t))
+    _ya_reclamo = False
+    if t.startswith("ya "):
+        try:
+            raw = call_groq_json(norm_message, _YA_RECLAMO_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            _ya_reclamo = bool(json.loads(raw).get("is_complaint"))
+        except Exception:
+            pass
     # Confirmaciones suaves/ambiguas: solo válidas si no hay negación en el mensaje.
     soft_yes = not _ya_reclamo and (
         t in {"ok", "okay", "oka", "va", "sale", "dale", "ya"}
@@ -361,9 +381,9 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
 # Facebook). El interés NO es un dato de perfil: detona la apertura, no el ack.
 CAMPAIGN_INTEREST_TERMS = (
     "me interesa la vacante",
-    "me interesa la vancate",  # typo documentado gremio
-    "me interesa la bacante",  # typo documentado gremio
-    "me interesa la bakante",  # typo documentado gremio
+    "me interesa la vancate",
+    "me interesa la bacante",
+    "me interesa la bakante",
     "me interesa el puesto",
     "me interesa el trabajo",
     "me interesa la chamba",
@@ -400,25 +420,48 @@ def has_current_turn_profile_signal(message: str | None, last_bot_message: str |
     )
 
 
-# Pregunta de negocio EMBEBIDA sin "?" ni inicio interrogativo (jerga real:
-# "soy d gomez palasio, que rutas ay y dan voleto pa ir a torreon"). Si está
-# presente, el orquestador debe responder la duda — el guard no secuestra el
-# turno; los facts se persisten igual en la extracción del orquestador.
-_EMBEDDED_QUESTION_RE = re.compile(
-    r"\b(?:que|cuanto|cuanta|cuantos|cuantas|cuando|como|cual|cuales|donde|a donde|"
-    r"pa donde|pa onde|hay|ay|dan|necesitan?|nececitan?|ocupan?|piden?|sirve)\b"
-    r"[^.]{0,60}?"
-    r"\b(?:rutas?|corridas?|vueltas?|tramos?|pagan?|pago|sueldo|salario|boletos?|"
-    r"prestaciones|vacantes?|tiran|descansos?|bonos?|requisitos?|cartas?|documentos?)\b"
-    # ...o el orden inverso: "cartas... ¿cuantas necesita?"
-    r"|\b(?:cartas?|documentos?)\b[^.]{0,60}?\b(?:cuantas?|cuantos?|necesitan?|nececitan?|ocupan?|sirven?)\b"
-    # ...o cantidad con referente implícito: "¿cuantas necesita?" (cartas del contexto)
-    r"|\bcuant[oa]s?\s+(?:se\s+)?(?:necesit\w*|nececit\w*|ocup\w*|pid\w*)\b"
+# Pregunta de negocio EMBEBIDA sin "?" ni inicio interrogativo.
+# Guardia de contexto (sobre texto normalizado) para activar el clasificador LLM.
+_EMBEDDED_Q_HINTS = (
+    "rutas", "corridas", "vueltas", "tramos", "pagan", "pago", "sueldo", "salario",
+    "boletos", "prestaciones", "vacantes", "descansos", "bonos", "requisitos",
+    "cuantas cartas", "cuantos documentos",
 )
+_EMBEDDED_Q_SIGNAL = (
+    "que", "cuanto", "cuantos", "cuantas", "hay", "ay", "dan",
+    "necesitan", "nececitan", "nececita", "piden",
+)
+
+_EMBEDDED_QUESTION_SYSTEM = """Eres un clasificador de datos de reclutamiento.
+Determina si el mensaje del candidato contiene una PREGUNTA sobre condiciones laborales
+(rutas, pago, sueldo, prestaciones, requisitos, boletos, descansos, horarios, cartas) aunque no tenga signo "?".
+- true: el mensaje incluye una pregunta explícita o implícita sobre condiciones del trabajo
+- false: el mensaje es solo una declaración de perfil o saludo, sin pregunta de negocio
+Responde SOLO JSON: {"has_business_question": true | false}
+Ejemplos:
+- "soy de gomez palacio que rutas hay" → {"has_business_question": true}
+- "tengo licencia E que rutas manejan" → {"has_business_question": true}
+- "cuanto pagan" → {"has_business_question": true}
+- "cuantas cartas necesitan" → {"has_business_question": true}
+- "dan boleto para ir a trabajar" → {"has_business_question": true}
+- "soy de gomez palacio, tengo licencia E" → {"has_business_question": false}
+- "tengo 10 años manejando full" → {"has_business_question": false}
+- "hola buenos días" → {"has_business_question": false}"""
 
 
 def has_embedded_business_question(message: str | None) -> bool:
-    return bool(_EMBEDDED_QUESTION_RE.search(normalize_text(message or "")))
+    """True si el mensaje contiene una pregunta de negocio embebida (sin "?")."""
+    t = normalize_text(message or "")
+    # Solo invocar LLM si hay al menos una palabra de señal + un tema laboral
+    has_signal = any(s in t for s in _EMBEDDED_Q_SIGNAL)
+    has_topic = any(h in t for h in _EMBEDDED_Q_HINTS)
+    if not (has_signal or has_topic):
+        return False
+    try:
+        raw = call_groq_json(message or "", _EMBEDDED_QUESTION_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+        return bool(json.loads(raw).get("has_business_question"))
+    except Exception:
+        return False
 
 
 def should_prioritize_current_turn(message: str | None, last_bot_message: str | None = None) -> bool:

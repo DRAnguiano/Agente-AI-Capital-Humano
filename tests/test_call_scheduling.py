@@ -1,4 +1,4 @@
-"""B7.4 — call scheduling determinista (sin agenda real, sin Groq/DB).
+"""B7.4 — call scheduling via LLM T=0 (requiere GROQ_API_KEY, sin agenda real).
 
 Contrato (live-reply, chatwoot-label-taxonomy + message-orchestration):
   - El extractor registra `scheduling.call_requested=true`, `scheduling.call_status=pending`
@@ -7,10 +7,17 @@ Contrato (live-reply, chatwoot-label-taxonomy + message-orchestration):
     `perfil_listo` o `requiere_agente` están activos y el candidato pidió llamada.
     Antes de perfil listo / handoff → `seguimiento` (no `llamada_pendiente`).
   - La validez del horario (`scheduling.call_window_valid`) es B7.5, fuera de este test.
+
+Los tests de detección de solicitud de llamada requieren GROQ_API_KEY
+(call_requested usa LLM T=0). Los de labels/notas son deterministas.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
+
+_NO_GROQ = not os.getenv("GROQ_API_KEY")
 
 import app.lead_memory.profile_extractor as PE
 from app.chatwoot_note_sync import (
@@ -23,6 +30,7 @@ from app.knowledge.business_hours import classify_call_window
 
 # ── extractor: detección de solicitud de llamada ──────────────────────────────
 
+@pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — call_requested usa LLM T=0")
 @pytest.mark.parametrize("message", [
     "quiero que me llamen",
     "me pueden llamar?",
@@ -36,6 +44,7 @@ def test_call_request_sets_scheduling_facts(message):
     assert facts.get("scheduling.call_status") == "pending"
 
 
+@pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — call_requested usa LLM T=0")
 @pytest.mark.parametrize("message", [
     "no quiero llamada, mejor escríbanme",
     "no me llamen por favor",
@@ -47,6 +56,7 @@ def test_no_call_request_no_scheduling_facts(message):
     assert "scheduling.call_requested" not in facts
 
 
+@pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — call_requested usa LLM T=0")
 def test_call_window_text_captured():
     facts = PE.extract_profile_facts_as_dict("me pueden llamar mañana a las 4")
     assert facts.get("scheduling.call_requested") == "true"

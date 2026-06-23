@@ -535,11 +535,6 @@ _NON_TARGET_RE = re.compile(
         if res.status == NON_TARGET
     ) + r")\b"
 )
-_NO_ROAD_EXPERIENCE_RE = re.compile(
-    r"\b(?:no|nunca)\s+(?:he\s+)?(?:manejad\w*|trabajad\w*)\s+(?:tracto|trailer|camion|carretera)\b"
-    r"|\b(?:no\s+tengo|sin)\s+experiencia(?:\s+en\s+(?:carretera|tracto|trailer|camion))?\b"
-    r"|\b(?:quiero|quisiera|me\s+gustaria)\s+aprender\s+a\s+manejar\b"
-)
 
 # B9 — datos sensibles / costo al candidato. Detecta que al candidato le PIDEN pagar/
 # depositar o le piden datos bancarios (NO el sueldo: "cuánto pagan" es salario y va por
@@ -620,7 +615,14 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> di
         })
         return updated
 
-    if _NO_ROAD_EXPERIENCE_RE.search(text):
+    _no_road_facts: dict[str, Any] = {}
+    if any(h in text for h in ("no tengo", "sin experiencia", "nunca he", "nunca mane", "aprender a manejar", "quiero aprender")):
+        try:
+            from app.lead_memory.profile_extractor import extract_profile_facts_as_dict
+            _no_road_facts = extract_profile_facts_as_dict(message)
+        except Exception:
+            pass
+    if _no_road_facts.get("experience.road_experience") == "none":
         updated = dict(contract)
         signals = list(updated.get("business_signals") or [])
         if "cecati_sugerido" not in signals:
