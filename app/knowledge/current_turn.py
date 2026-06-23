@@ -254,11 +254,23 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
             if k not in facts:
                 facts[k] = v
 
-        # Respuesta elíptica numérica: "10" / "10 años" tras la pregunta de
-        # años de experiencia (smoke 2026-06-12 16:16: "10 años" no se entendió).
+        # Respuesta elíptica numérica: "10" / "10 años" tras pregunta de edad o experiencia.
+        # Usa solo la última frase interrogativa del mensaje del bot para evitar
+        # que el acuse previo ("registro 30 años de experiencia. ¿Cuántos años tiene?")
+        # contamine el contexto de la pregunta real.
+        last_norm = normalize_text(last_bot_message)
+        # Extraer la última pregunta del mensaje del bot (texto del último "?" hacia atrás).
+        _q_parts = re.split(r"[.!]", last_norm)
+        _last_question = normalize_text(_q_parts[-1]) if _q_parts else last_norm
+
+        if "candidate.age" not in facts:
+            if re.search(r"\bcuantos anos\b", _last_question) and "experiencia" not in _last_question:
+                m = re.fullmatch(r"(\d{1,2})(?:\s*(?:anos|años))?", text)
+                if m and 18 <= int(m.group(1)) <= 75:
+                    facts["candidate.age"] = m.group(1)
+
         if "experience.years" not in facts:
-            last_norm = normalize_text(last_bot_message)
-            if "experiencia" in last_norm and re.search(r"\bcuantos anos\b", last_norm):
+            if re.search(r"\bcuantos anos\b", _last_question) and "experiencia" in _last_question:
                 m = re.fullmatch(r"(\d{1,2})(?:\s*(?:anos|años))?", text)
                 if m:
                     facts["experience.years"] = f"{m.group(1)} años"
