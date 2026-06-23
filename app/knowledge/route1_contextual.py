@@ -67,12 +67,14 @@ def resolve_route1(text: str, asked_field_keys: list[str] | None) -> dict[str, A
     # aquí solo necesitamos el valor para el shadow log.
     if expected_field == "experience.years":
         tokens = normalize_text(text or "").split()
+        token_set = set(tokens)
+        subannual = {"mes", "meses", "semana", "semanas", "dia", "dias"}
+        fractional = {"medio", "media"}
+        if token_set & subannual or token_set & fractional:
+            return _no_persist("needs_clarification", expected_field)
         num = next((t for t in tokens if t.isdigit()), None)
         if num is None:
             return _no_persist("no_number", expected_field)
-        subannual = {"mes", "meses", "semana", "semanas", "dia", "dias"}
-        if set(tokens) & subannual:
-            return _no_persist("needs_clarification", expected_field)
         return {"status": "confirmed", "field": "experience.years",
                 "value": int(num), "reason": "ok"}
 

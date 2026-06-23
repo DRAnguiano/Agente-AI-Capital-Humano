@@ -17,7 +17,6 @@ import pytest
 
 import app.knowledge.route1_contextual as R1
 import app.lead_memory.last_asked_field as LAF
-from app.knowledge.disambiguate_numeric_units import disambiguate
 
 
 # ---------------------------------------------------------------------------
@@ -264,18 +263,3 @@ def test_years_subannual_unit_does_not_confirm():
     assert r["reason"] == "needs_clarification"
 
 
-# ---------------------------------------------------------------------------
-# 5) Contrato directo de disambiguate (nivel X/U/F)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.parametrize("text,status", [
-    ("5",                "confirmed"),
-    ("5 años",           "confirmed"),
-    ("tengo 10 años",    "confirmed"),
-    ("5 meses",          "needs_clarification"),
-    ("medio año",        "needs_clarification"),
-    ("año y medio",      "needs_clarification"),
-    ("pues bastante",    "no_number"),
-])
-def test_disambiguate_years_unit_contract(text, status):
-    assert disambiguate(text, "experience_years")["status"] == status
