@@ -288,10 +288,11 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     if m:
         upsert("license", "category", m.group(1).upper(), 0.92)
 
-    # General type letter when preceded by license keyword
-    m = re.search(r"\b(?:licencia\s*)?(?:tipo\s*)?([abe])\b", text)
-    if m and ("licencia" in text or "tipo" in text):
-        upsert("license", "category", m.group(1).upper(), 0.92)
+    # General type letter — requiere "tipo" o "licencia" inmediatamente adyacentes
+    # (sin palabras intermedias) para evitar capturar "a" de "aprender a manejar".
+    m = re.search(r"\b(?:licencia\s+(?:tipo\s*)?|tipo\s*)([abe])\b", text)
+    if m:
+        upsert("license", "category", m.group(1).upper(), 0.90)
 
     # ── License validity ─────────────────────────────────────────────────────
     if any(t in text for t in ("vigente", "vigentes", "en regla", "todo vigente", "toda mi informacion")):
