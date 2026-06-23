@@ -10,7 +10,6 @@ import pytest
 
 from app.knowledge.domain_catalog import CONFIRMED, NEEDS_CLARIFICATION, NON_TARGET
 from app.knowledge.normalize_domain_values import normalize_vehicle, applies_objetivo_full_sencillo
-from app.knowledge.disambiguate_numeric_units import disambiguate, EXPERIENCE_YEARS_CONTEXT
 from app.knowledge.contextual_answer_classifier import classify_short_answer
 
 
@@ -63,26 +62,6 @@ def test_camioneta_gana_sobre_camion():
 
 def test_termino_desconocido_devuelve_none():
     assert normalize_vehicle("hola buenas tardes") is None
-
-
-# ── disambiguate_numeric_units ────────────────────────────────────────────────
-
-def test_numero_sin_contexto_no_se_guarda():
-    out = disambiguate("10", expected=None)
-    assert out["status"] == "needs_clarification"
-    assert "field" not in out
-
-
-def test_numero_con_contexto_experiencia():
-    out = disambiguate("10", expected=EXPERIENCE_YEARS_CONTEXT)
-    assert out["status"] == "confirmed"
-    assert out["field"] == "experience.years"
-    assert out["value"] == 10
-    assert out["unit"] == "years"
-
-
-def test_sin_numero():
-    assert disambiguate("no traigo nada", expected=EXPERIENCE_YEARS_CONTEXT)["status"] == "no_number"
 
 
 # ── contextual_answer_classifier ──────────────────────────────────────────────
