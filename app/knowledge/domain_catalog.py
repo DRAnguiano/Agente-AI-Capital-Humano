@@ -40,6 +40,8 @@ VEHICLE_TERMS: dict[str, VehicleResolution] = {
     "full":         VehicleResolution("full", CONFIRMED, True, False, "full"),
     "fulero":       VehicleResolution("full", CONFIRMED, True, False, "full"),
     "sencillo":     VehicleResolution("sencillo", CONFIRMED, True, False, "sencillo"),
+    "sensillo":     VehicleResolution("sencillo", CONFIRMED, True, False, "sencillo"),
+    "censillo":     VehicleResolution("sencillo", CONFIRMED, True, False, "sencillo"),
     # Compatible pero requiere aclaración full/sencillo (NO es vehicle_type final)
     "quinta rueda": VehicleResolution(None, NEEDS_CLARIFICATION, True, False, "quinta_rueda"),
     "5ta rueda":    VehicleResolution(None, NEEDS_CLARIFICATION, True, False, "quinta_rueda"),

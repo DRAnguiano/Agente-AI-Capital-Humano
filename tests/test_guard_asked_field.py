@@ -26,7 +26,8 @@ def test_age_missing():
 
 
 def test_age_disqualified_returns_empty():
-    assert asked_field_keys_for_guard({**_CITY, "candidate.age": "50"}) == []
+    # AGE_DISQUALIFICATION_LIMIT = 57; 57 >= 57 → descartado
+    assert asked_field_keys_for_guard({**_CITY, "candidate.age": "57"}) == []
 
 
 def test_vehicle_type_missing():

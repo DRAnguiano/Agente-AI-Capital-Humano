@@ -361,6 +361,9 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
 # Facebook). El interés NO es un dato de perfil: detona la apertura, no el ack.
 CAMPAIGN_INTEREST_TERMS = (
     "me interesa la vacante",
+    "me interesa la vancate",  # typo documentado gremio
+    "me interesa la bacante",  # typo documentado gremio
+    "me interesa la bakante",  # typo documentado gremio
     "me interesa el puesto",
     "me interesa el trabajo",
     "me interesa la chamba",

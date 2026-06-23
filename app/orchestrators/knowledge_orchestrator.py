@@ -405,7 +405,12 @@ def _looks_like_greeting(message: str) -> bool:
 # Marcadores de residencia en primera persona: solo con uno presente se acepta
 # geo (city/state) extraído de un mensaje-pregunta. "¿qué rutas maneja para
 # nuevo laredo?" NO fija ciudad; "soy de laredo, ¿a dónde salen?" SÍ.
-_RESIDENCE_MARKERS = ("soy de", "vivo en", "radico en", "resido en", "estoy en", "me encuentro en")
+_RESIDENCE_MARKERS = (
+    "soy de", "soy d ",   # "soy d " = abreviatura sin typo-canon
+    "soi de", "soi d ",
+    "vivo en", "vivo n ",
+    "radico en", "resido en", "estoy en", "me encuentro en",
+)
 
 
 def _drop_geo_facts_from_questions(facts: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:

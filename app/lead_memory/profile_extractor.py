@@ -59,11 +59,13 @@ _EXPERIENCE_CONTEXT_SYSTEM = """Eres un clasificador de datos de reclutamiento.
 Determina si el candidato habla de SU PROPIA experiencia conduciendo vehículos de carga.
 Regla clave: el candidato debe AFIRMAR en primera persona que él conduce o ha conducido.
 - true: "manejo tracto", "soy operador de quinta rueda", "he manejado tráiler", "trabajo manejando", "conduzco full"
-- false: "me interesa la vacante de operador", "¿manejan ruta B1?", "la empresa usa tractos", preguntas o expresiones de interés
+- false: oraciones condicionales con "Si/si..." que no son afirmaciones ("si me dices X te digo Y"), expresiones de interés, preguntas, frases sobre la empresa
 Responde SOLO JSON: {"experience_context": true | false}
 Ejemplos:
 - "soy operador de quinta rueda" → {"experience_context": true}
 - "manejo trailer desde hace años" → {"experience_context": true}
+- "Si me cuentas un chiste de trailero te digo" → {"experience_context": false}
+- "si me explican la ruta les digo si me interesa" → {"experience_context": false}
 - "Me interesa la vacante de operador de quinta rueda" → {"experience_context": false}
 - "me interesa ser operador de tracto" → {"experience_context": false}
 - "¿manejan ruta B1?" → {"experience_context": false}
@@ -83,12 +85,16 @@ Ejemplos:
 
 _CITY_FALLBACK_SYSTEM = """Eres un extractor de datos de reclutamiento.
 Del mensaje, extrae la ciudad donde RESIDE el candidato.
-- Solo si hay marcador de residencia: "soy de", "vivo en", "radico en", "resido en", "estoy en"
+- Marcadores válidos: "soy de", "soy d " (abreviado), "soi de", "vivo en", "radico en", "resido en", "estoy en"
+- Cuando hay marcador, extrae SOLO la ciudad inmediatamente después del marcador (ignora otras ciudades que sean destinos o rutas)
 - Extrae solo el nombre de la ciudad (sin estado ni país), máximo 4 palabras
+- Corrige typos evidentes en nombres de ciudades (ej. "palasio" → "Palacio", "ermosillo" → "Hermosillo")
 - Si hay ambigüedad o no hay marcador explícito de residencia: null
 Responde SOLO JSON: {"city": "<nombre>" | null}
 Ejemplos:
 - "soy de Hermosillo" → {"city": "Hermosillo"}
+- "soy d gomez palasio" → {"city": "Gómez Palacio"}
+- "soy d gomez palasio y quiero ir a torreon" → {"city": "Gómez Palacio"} (no el destino)
 - "radico en Ciudad Obregón" → {"city": "Ciudad Obregón"}
 - "vivo en el norte" → {"city": null}
 - "¿cuánto pagan?" → {"city": null}
@@ -195,26 +201,14 @@ def _extract_city(message: str, text: str) -> dict[str, Any] | None:
     if re.search(r"\bme\s+dic[ei]\s+\w+", text):
         return None
 
-    # Si hay marcador de residencia, los aliases se buscan SOLO después del
-    # marcador y gana el MÁS CERCANO — "soy de gomez palacio ... para ir a
-    # torreon" debe dar Gómez Palacio, no el destino mencionado después.
-    marker = re.search(r"\b(?:resido|radico|vivo|soy)\s+(?:en|de)\s+", text)
-    search_zone = text[marker.end():] if marker else text
-    best: tuple[int, str] | None = None
-    for alias, canonical in KNOWN_CITY_ALIASES:
-        idx = search_zone.find(alias)
-        if idx >= 0 and (best is None or idx < best[0]):
-            best = (idx, canonical)
-    if best:
-        return _fact("candidate", "city", best[1], 0.9)
-
-    # Alias lookup exhausted — LLM fallback for free-form residence declarations.
-    # Check both normalized text and original (lowercased) to catch typos like
-    # "soy d ciudad" that survive without _PHRASE_CANON in normalize_text.
     _residence_markers = ("soy de", "soy d ", "soi de", "soi d ", "vivo en", "vivo n ",
                           "radico en", "resido en", "estoy en")
     _msg_lower = (message or "").lower()
-    if any(m in text for m in _residence_markers) or any(m in _msg_lower for m in _residence_markers):
+    has_marker = any(m in text for m in _residence_markers) or any(m in _msg_lower for m in _residence_markers)
+
+    if has_marker:
+        # Con marcador de residencia: LLM primero — ancla al marcador y maneja typos
+        # (el catálogo encuentra destinos lejanos como "pa ir a torreon" sin ancla).
         try:
             from app.indexer import call_groq_json
             raw = call_groq_json(message, _CITY_FALLBACK_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
@@ -223,6 +217,23 @@ def _extract_city(message: str, text: str) -> dict[str, Any] | None:
                 return _fact("candidate", "city", str(city_val).strip().title(), 0.65)
         except Exception:
             pass
+        # LLM falló → catálogo restringido a la zona post-marcador
+        marker_pos = next(
+            (text.find(m) + len(m) for m in _residence_markers if m in text),
+            next(((_msg_lower.find(m) + len(m)) for m in _residence_markers if m in _msg_lower), None)
+        )
+        search_zone = text[marker_pos:] if marker_pos is not None else text
+    else:
+        search_zone = text
+
+    # Catálogo: primer alias en search_zone
+    best: tuple[int, str] | None = None
+    for alias, canonical in KNOWN_CITY_ALIASES:
+        idx = search_zone.find(alias)
+        if idx >= 0 and (best is None or idx < best[0]):
+            best = (idx, canonical)
+    if best:
+        return _fact("candidate", "city", best[1], 0.9)
     return None
 
 
