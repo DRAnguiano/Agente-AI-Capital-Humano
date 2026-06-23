@@ -1,9 +1,33 @@
 import datetime
+import json
+import os
 import re
 from typing import Any
 
+from app.indexer import call_groq_json
 from app.knowledge.business_hours import is_business_hours
 from app.knowledge.text_normalizer import normalize_text
+
+_EXTRACTOR_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
+
+_EXPIRATION_SYSTEM = """Eres un extractor de datos de reclutamiento.
+Extrae la expresión de tiempo de vencimiento de un documento (licencia o apto médico) del mensaje del candidato.
+Reglas:
+- Si el candidato indica cuánto tiempo falta para que venza, devuélvela normalizada en español
+- Formatos aceptados: "N años", "N meses", "N días", mes/año (ej. "diciembre 2026")
+- Si el documento ya venció, devuelve "vencido"
+- Si el mensaje es solo "sí", "vigente", "está bien" sin dato de tiempo, devuelve null
+- Si no hay información de tiempo suficiente, devuelve null
+Responde SOLO JSON sin texto extra: {"expiration_text": "<expresión>" | null}
+Ejemplos:
+- "Se me vence en 3 años" → {"expiration_text": "3 años"}
+- "6 meses" → {"expiration_text": "6 meses"}
+- "para diciembre" → {"expiration_text": "diciembre"}
+- "al año" → {"expiration_text": "1 año"}
+- "me falta como un año y medio" → {"expiration_text": "18 meses"}
+- "ya vencida" → {"expiration_text": "vencido"}
+- "vigente" → {"expiration_text": null}
+- "sí" → {"expiration_text": null}"""
 
 
 def _profile_complete_closing() -> str:
@@ -136,20 +160,13 @@ def _has_labor_document(facts: dict[str, Any]) -> bool:
 
 
 def _contextual_expiration_text(norm_message: str) -> str | None:
-    m = re.fullmatch(
-        r"(?:como\s+)?(?:en\s+)?"
-        r"(\d{1,2}|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
-        r"\s+(dias?|semanas?|mes(?:es)?|ano|anos|anio|anios)",
-        norm_message.strip(),
-    )
-    if not m:
+    try:
+        raw = call_groq_json(norm_message, _EXPIRATION_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+        data = json.loads(raw)
+        val = data.get("expiration_text")
+        return str(val).strip() if val else None
+    except Exception:
         return None
-    n = _number_token_to_int(m.group(1))
-    if n is None:
-        return None
-    unit = m.group(2)
-    unit_label = "años" if unit in {"ano", "anos", "anio", "anios"} else unit
-    return f"vence en {n} {unit_label}"
 
 # Detect the topic of the last bot question for context-aware "si" interpretation
 _TOPIC_APTO = re.compile(r"\bapto\b", re.IGNORECASE)
