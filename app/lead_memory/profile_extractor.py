@@ -16,6 +16,7 @@ from typing import Any
 
 from app.knowledge.text_normalizer import normalize_text
 from app.knowledge.normalize_domain_values import normalize_vehicle
+from app.knowledge.domain_catalog import NEEDS_CLARIFICATION, NON_TARGET
 from app.knowledge.business_hours import classify_call_window
 
 
@@ -462,6 +463,33 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
             upsert("scheduling", "call_window_text", window, 0.80)
         # Validez vs horario de oficina (8:00–17:30 L–V): true | false | unknown.
         upsert("scheduling", "call_window_valid", classify_call_window(text), 0.80)
+
+    veh = normalize_vehicle(message)
+    if veh and veh.status == NEEDS_CLARIFICATION and veh.domain:
+        upsert("experience", "vehicle_type_pending", veh.domain, 0.86)
+    if veh and veh.status == NON_TARGET and veh.domain:
+        upsert("experience", "non_target_vehicle_type", veh.domain, 0.88)
+
+    has_confirmed_or_non_target_unit = bool(veh and (veh.value or veh.status == NON_TARGET))
+    no_road_experience = (
+        re.search(r"\b(?:no|nunca)\s+(?:he\s+)?(?:manejad\w*|trabajad\w*)\s+(?:tracto|trailer|camion|carretera)\b", text)
+        or re.search(r"\b(?:no\s+tengo|sin)\s+experiencia(?:\s+en\s+(?:carretera|tracto|trailer|camion))?\b", text)
+        or re.search(r"\b(?:quiero|quisiera|me\s+gustaria)\s+aprender\s+a\s+manejar\b", text)
+    )
+    if no_road_experience and not has_confirmed_or_non_target_unit and not _dur_label:
+        upsert("experience", "road_experience", "none", 0.88)
+
+    if re.search(r"\b(b1|b-1|estados unidos|eeuu|ee uu|eua|usa|ruta americana|lado americano|laredo texas|laredo tx|cruce|cruzar)\b", text):
+        upsert("experience", "b1_us_intent", "sí", 0.88)
+
+    if re.search(
+        r"\breingres\w*\b"
+        r"|volver a trabajar"
+        r"|\bya\b.*\btrabaj\w*\b.*\b(ustedes|la empresa|transmontes|aqui|aca)\b"
+        r"|\btrabaj\w*\b.*\b(antes|anteriormente)\b.*\b(ustedes|la empresa|transmontes|aqui|aca)\b",
+        text,
+    ):
+        upsert("candidate", "reingreso", "sí", 0.88)
 
     return facts
 

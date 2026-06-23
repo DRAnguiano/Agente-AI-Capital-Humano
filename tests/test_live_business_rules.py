@@ -86,8 +86,27 @@ def test_non_objective_experience_marks_escuelita_not_vehicle_type(message):
     out = KO._apply_business_rule_overrides(message, _baseline_contract())
     signals = out.get("business_signals") or []
     assert "considerar_escuelita_transmontes" in signals
+    assert out["requires_human"] is True
     # No debe confirmar la unidad objetivo desde experiencia no-objetivo.
     assert out.get("explicit_vehicle_type") not in ("full", "sencillo")
+
+
+def test_cecati_signal_sets_handoff_without_funnel():
+    out = KO._apply_business_rule_overrides("no tengo experiencia, quiero aprender", _baseline_contract())
+    assert "cecati_sugerido" in (out.get("business_signals") or [])
+    assert out["requires_human"] is True
+    assert out["route"] == "human_handoff"
+
+
+@pytest.mark.parametrize("intent,signals", [
+    ("candidate_profile_signal", ["cecati_sugerido"]),
+    ("candidate_profile_signal", ["considerar_escuelita_transmontes"]),
+])
+def test_no_apto_signals_skip_funnel_nudge(intent, signals):
+    contract = {**_baseline_contract(), "intent": intent, "business_signals": signals}
+    nudge, asked = KO._build_funnel_nudge("no tengo experiencia", contract, {"facts": []})
+    assert nudge is None
+    assert asked == []
 
 
 # ---------------------------------------------------------------------------

@@ -506,29 +506,27 @@ def process_chatwoot_debounced_message(
 
         # Handoff humano: el bot deja de responder al candidato, pero la nota
         # privada + labels sí se generan para que el reclutador tome el caso.
-        public_reply_suppressed = bool(result.get("requires_human"))
-        if public_reply_suppressed:
+        public_reply_suppressed = False
+        if result.get("requires_human"):
             print(
-                "[HUMAN_HANDOFF_NO_PUBLIC_REPLY]",
+                "[HUMAN_HANDOFF_PUBLIC_ACK]",
                 json.dumps(
                     {
                         "conversation_id": conversation_id,
                         "channel_user_id": channel_user_id,
-                        "reason": "requires_human",
+                        "reason": result.get("intent") or "requires_human",
                     },
                     ensure_ascii=False,
                 ),
                 flush=True,
             )
-            chatwoot_response = {}
-        else:
-            chatwoot_response = asyncio.run(
-                _send_chatwoot_message(
-                    account_id=account_id,
-                    conversation_id=conversation_id,
-                    content=reply,
-                )
+        chatwoot_response = asyncio.run(
+            _send_chatwoot_message(
+                account_id=account_id,
+                conversation_id=conversation_id,
+                content=reply,
             )
+        )
 
         conversation_key = make_conversation_key("chatwoot", str(channel_user_id))
 

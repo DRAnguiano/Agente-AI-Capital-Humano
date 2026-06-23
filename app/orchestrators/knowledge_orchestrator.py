@@ -530,6 +530,11 @@ _NON_TARGET_RE = re.compile(
         if res.status == NON_TARGET
     ) + r")\b"
 )
+_NO_ROAD_EXPERIENCE_RE = re.compile(
+    r"\b(?:no|nunca)\s+(?:he\s+)?(?:manejad\w*|trabajad\w*)\s+(?:tracto|trailer|camion|carretera)\b"
+    r"|\b(?:no\s+tengo|sin)\s+experiencia(?:\s+en\s+(?:carretera|tracto|trailer|camion))?\b"
+    r"|\b(?:quiero|quisiera|me\s+gustaria)\s+aprender\s+a\s+manejar\b"
+)
 
 # B9 — datos sensibles / costo al candidato. Detecta que al candidato le PIDEN pagar/
 # depositar o le piden datos bancarios (NO el sueldo: "cuánto pagan" es salario y va por
@@ -563,6 +568,10 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> di
             "requires_human": True,
             "requires_rag": False,
             "requires_clarification": False,
+            "reply_template": {
+                "id": "b1_us_handoff",
+                "text": "Gracias por comentarlo. Las vacantes B1 o para Estados Unidos las revisa directamente nuestro equipo de Capital Humano. Lo dejo canalizado para que validen su caso.",
+            },
             "reason": "deterministic_b1_us_handoff",
         })
         return updated
@@ -576,6 +585,10 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> di
             "requires_human": True,
             "requires_rag": False,
             "requires_clarification": False,
+            "reply_template": {
+                "id": "reingreso_handoff",
+                "text": "Gracias por avisarnos. Los reingresos se revisan directamente con Capital Humano; lo dejo canalizado para que validen su historial y le indiquen el siguiente paso.",
+            },
             "reason": "deterministic_reingreso_handoff",
         })
         return updated
@@ -587,8 +600,39 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> di
         signals = list(updated.get("business_signals") or [])
         if "considerar_escuelita_transmontes" not in signals:
             signals.append("considerar_escuelita_transmontes")
-        updated["business_signals"] = signals
-        updated["reason"] = "deterministic_non_target_escuelita"
+        updated.update({
+            "route": "human_handoff",
+            "intent": "considerar_escuelita_transmontes",
+            "requires_human": True,
+            "requires_rag": False,
+            "requires_clarification": False,
+            "business_signals": signals,
+            "reply_template": {
+                "id": "escuelita_handoff",
+                "text": "Gracias por compartir su experiencia. Para torton, rabon o reparto, Capital Humano revisa si hay generacion disponible para escuelita interna. Lo dejo canalizado para que validen su caso.",
+            },
+            "reason": "deterministic_non_target_escuelita",
+        })
+        return updated
+
+    if _NO_ROAD_EXPERIENCE_RE.search(text):
+        updated = dict(contract)
+        signals = list(updated.get("business_signals") or [])
+        if "cecati_sugerido" not in signals:
+            signals.append("cecati_sugerido")
+        updated.update({
+            "route": "human_handoff",
+            "intent": "cecati_sugerido",
+            "requires_human": True,
+            "requires_rag": False,
+            "requires_clarification": False,
+            "business_signals": signals,
+            "reply_template": {
+                "id": "cecati_handoff",
+                "text": "Gracias por su interes. Por ahora las vacantes son para operadores con experiencia en tracto full o sencillo. Si quiere aprender, puede revisar la opcion del CECATI en Gomez Palacio y, al completar su preparacion, volver a contactarnos para continuar.",
+            },
+            "reason": "deterministic_cecati_no_experience",
+        })
         return updated
 
     # B8 — corrección explícita a un objetivo claro (full/sencillo) limpia una escuelita
@@ -1329,6 +1373,11 @@ _NUDGE_SKIP_ROUTES = frozenset({
     "candidate_dropoff_recovery",
 })
 
+_NO_FUNNEL_SIGNALS = frozenset({
+    "cecati_sugerido",
+    "considerar_escuelita_transmontes",
+})
+
 # Mapa funnel(legacy) -> espacio canónico. Solo claves con mapeo canónico
 # confiable. Si una clave del step NO está aquí, el step no se registra
 # (no inventar, no mezclar legacy/canonical, no inferir desde texto).
@@ -1382,6 +1431,8 @@ def _build_funnel_nudge(
     route = str(contract.get("route") or "")
 
     if intent in _NUDGE_SKIP_INTENTS or route in _NUDGE_SKIP_ROUTES:
+        return None, []
+    if _NO_FUNNEL_SIGNALS & set(contract.get("business_signals") or []):
         return None, []
     if contract.get("requires_human"):
         return None, []

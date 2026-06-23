@@ -11,6 +11,7 @@ import pytest
 from app.knowledge.current_turn import build_current_turn_ack, next_question_from_missing_facts
 from app.chatwoot_note_sync import render_candidate_note, calculate_candidate_labels
 from app.followup.templates import _CAMPO_DISPLAY, render_template
+from app.lead_memory.profile_extractor import extract_profile_facts_as_dict
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -71,6 +72,31 @@ def test_ack_quinta_rueda_sin_vehicle_type_no_escuelita():
     """Si el candidato dice quinta rueda sin aclarar full/sencillo, no debe decir escuelita."""
     reply = build_current_turn_ack("soy operador de quinta rueda")
     assert "escuelita" not in reply.lower()
+
+
+def test_extractor_torton_persiste_non_target_sin_vehicle_type():
+    facts = extract_profile_facts_as_dict("maneje torton varios anos")
+    assert facts["experience.non_target_vehicle_type"] == "torton"
+    assert "experience.vehicle_type" not in facts
+
+
+def test_extractor_sin_experiencia_persiste_road_experience_none():
+    facts = extract_profile_facts_as_dict("no tengo experiencia en carretera")
+    assert facts["experience.road_experience"] == "none"
+    assert "experience.vehicle_type" not in facts
+
+
+def test_extractor_trailer_persiste_vehicle_type_pending():
+    facts = extract_profile_facts_as_dict("manejo trailer")
+    assert facts["experience.vehicle_type_pending"] == "trailer"
+    assert "experience.vehicle_type" not in facts
+
+
+def test_extractor_b1_y_reingreso_persisten_facts():
+    b1 = extract_profile_facts_as_dict("busco vacante B1 para Estados Unidos")
+    reingreso = extract_profile_facts_as_dict("ya trabaje con ustedes y quiero volver")
+    assert b1["experience.b1_us_intent"] == "sí"
+    assert reingreso["candidate.reingreso"] == "sí"
 
 
 # ── sencillo como unidad confirmada (ack prefix) ─────────────────────────────

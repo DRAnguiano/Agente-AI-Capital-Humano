@@ -551,6 +551,86 @@ def test_sql_primary_path_parses_pg_array_with_ghost():
     assert set(result) <= OFFICIAL_LABELS
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# live-label-completion — labels derivadas de facts deterministas
+# ═══════════════════════════════════════════════════════════════════════════════
+
+TRICHOTOMY = {
+    "objetivo_full_sencillo",
+    "considerar_escuelita_transmontes",
+    "cecati_sugerido",
+}
+
+
+def test_objetivo_full_sencillo_desde_vehicle_type_confirmado():
+    result = calculate_candidate_labels(_ctx({"experience.vehicle_type": "sencillo"}))
+    assert "objetivo_full_sencillo" in result
+    assert not (TRICHOTOMY - {"objetivo_full_sencillo"} & set(result))
+
+
+def test_non_target_vehicle_emite_escuelita_y_canaliza():
+    result = calculate_candidate_labels(_ctx({"experience.non_target_vehicle_type": "torton"}))
+    assert "considerar_escuelita_transmontes" in result
+    assert "requiere_agente" in result
+    assert "bot_activo" not in result
+    assert not (TRICHOTOMY - {"considerar_escuelita_transmontes"} & set(result))
+
+
+def test_road_experience_none_emite_cecati_y_canaliza():
+    result = calculate_candidate_labels(_ctx({"experience.road_experience": "none"}))
+    assert "cecati_sugerido" in result
+    assert "requiere_agente" in result
+    assert "bot_activo" not in result
+    assert not (TRICHOTOMY - {"cecati_sugerido"} & set(result))
+
+
+def test_vehicle_type_confirmado_gana_sobre_senales_previas():
+    result = calculate_candidate_labels(_ctx({
+        "experience.vehicle_type": "full",
+        "experience.non_target_vehicle_type": "torton",
+        "experience.road_experience": "none",
+        "experience.vehicle_type_pending": "trailer",
+    }))
+    assert "objetivo_full_sencillo" in result
+    assert "considerar_escuelita_transmontes" not in result
+    assert "cecati_sugerido" not in result
+    assert "aclaracion_pendiente" not in result
+
+
+def test_vehicle_type_pending_emite_aclaracion_sin_objetivo():
+    result = calculate_candidate_labels(_ctx({"experience.vehicle_type_pending": "trailer"}))
+    assert "aclaracion_pendiente" in result
+    assert "objetivo_full_sencillo" not in result
+
+
+def test_b1_intent_emite_label_y_requiere_agente():
+    result = calculate_candidate_labels(_ctx({"experience.b1_us_intent": "sí"}))
+    assert "considerar_operador_b1" in result
+    assert "requiere_agente" in result
+    assert "bot_activo" not in result
+
+
+def test_reingreso_emite_terminal_y_requiere_agente():
+    result = calculate_candidate_labels(_ctx({"candidate.reingreso": "sí"}))
+    assert "reingreso_verificar" in result
+    assert "requiere_agente" in result
+    assert "bot_activo" not in result
+
+
+def test_faltantes_ciudad_y_experiencia_base():
+    result = calculate_candidate_labels(_ctx({}))
+    assert "falta_ciudad" in result
+    assert "falta_experiencia" in result
+
+
+def test_non_target_no_permite_perfil_listo():
+    facts = {**FULL_FACTS, "experience.non_target_vehicle_type": "torton"}
+    facts.pop("experience.vehicle_type")
+    result = calculate_candidate_labels(_ctx(facts))
+    assert "perfil_listo" not in result
+    assert "considerar_escuelita_transmontes" in result
+
+
 def test_perfil_listo_no_depende_de_disponible_acudir():
     """disponible_acudir no debe completar perfil_listo."""
     facts_sin_disponible = {
