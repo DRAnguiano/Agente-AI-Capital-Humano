@@ -40,17 +40,21 @@ Ejemplos:
 
 _PROFILE_EXPERIENCE_YEARS_SYSTEM = """Eres un extractor de datos de reclutamiento.
 Del mensaje, extrae la duración de experiencia conduciendo vehículos de carga.
-- Solo si el candidato habla de SU PROPIA experiencia conduciendo
+- REGLA CLAVE: debe existir un número (o palabra numérica) explícito en el mensaje; si no hay número → null
+- Solo si el candidato habla de SU PROPIA experiencia conduciendo, no de interés en un puesto
 - NO confundas con la edad del candidato ("tengo 35 años" sin contexto de manejo → null)
 - Para años: devuelve entero (ej. 10)
 - Para meses: devuelve string con unidad (ej. "8 meses")
 - Convierte palabras: "diez" → 10, "una década" → 10
-- Frases vagas → null
+- Frases vagas, sin número, o de interés/búsqueda de empleo → null
 Responde SOLO JSON: {"years": <entero> | "<N meses>" | null}
 Ejemplos:
 - "llevo 10 años manejando full" → {"years": 10}
 - "tengo como 8 meses de experiencia en carretera" → {"years": "8 meses"}
 - "soy operador desde hace 5 años" → {"years": 5}
+- "me interesa la vacante de operador" → {"years": null}
+- "me interesa ser operador de tracto" → {"years": null}
+- "busco trabajo de operador" → {"years": null}
 - "tengo 35 años" → {"years": null}
 - "muy poca experiencia" → {"years": null}
 - "soy nuevo en esto" → {"years": null}"""
