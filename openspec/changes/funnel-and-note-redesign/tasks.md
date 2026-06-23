@@ -32,9 +32,20 @@
 - [ ] 4.6 RED+impl ramas **CECATI / B1 / reingreso / no-aplica / edad fuera / riesgo / unidad ambigua**
 - [ ] 4.7 RED+impl: `Siguiente acción` dinámica (avanza al siguiente pendiente; núcleo local/foráneo completo → cierre correspondiente)
 
-## 5. Verificación y cierre
+## 5. Pre-handoff condicional (hallazgos prod 2026-06-23)
 
-- [ ] 5.1 Suite Groq-free en `api-test` verde (actualizar tests del formato técnico viejo, no ignorarlos)
-- [ ] 5.2 Rebuild + recreate; verificación 1×1 en producción (chat real) por rama
-- [ ] 5.3 `openspec validate funnel-and-note-redesign --strict` + `openspec validate --specs --strict`
-- [ ] 5.4 Sincronizar deltas a specs principales y archivar el change
+> Antes de canalizar a Capital Humano, el bot verifica el dato mínimo que determina
+> si el candidato es viable en su categoría. Solo entonces envía el acuse de handoff.
+
+- [ ] 5a.1 RED+impl rama **escuelita pre-handoff**: preguntar si tiene licencia B/E vigente o comprobante de cita; si sí → canalizar con esa info; si no → indicar que debe tener licencia vigente para ser considerado y no continuar funnel
+- [ ] 5a.2 RED+impl rama **CECATI pre-handoff**: mismo flujo de licencia que 5a.1 (sin licencia vigente/trámite no aplica aún; con licencia → revisar escuelita disponible)
+- [ ] 5a.3 RED+impl rama **B1 pre-handoff**: preguntar tipo de unidad (full/sencillo) y si tiene licencia y apto vigentes antes de canalizar; nota IA refleja lo recolectado
+- [ ] 5a.4 RED+impl rama **reingreso pre-handoff**: preguntar tipo de vacante (operador u otra); si operador → verificar ciudad + licencia + apto; si otra vacante → canalizar directo sin funnel adicional; nota IA refleja motivo
+- [ ] 5a.5 Verificar que `Siguiente acción` en nota IA para reingreso NO diga "continuar flujo" sino la acción concreta pendiente (verificar historial, confirmar vacante, etc.)
+
+## 6. Verificación y cierre
+
+- [ ] 6.1 Suite Groq-free en `api-test` verde (actualizar tests del formato técnico viejo, no ignorarlos)
+- [ ] 6.2 Rebuild + recreate; verificación 1×1 en producción (chat real) por rama
+- [ ] 6.3 `openspec validate funnel-and-note-redesign --strict` + `openspec validate --specs --strict`
+- [ ] 6.4 Sincronizar deltas a specs principales y archivar el change
