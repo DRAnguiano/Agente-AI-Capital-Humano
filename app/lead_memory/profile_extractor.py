@@ -57,12 +57,15 @@ Ejemplos:
 
 _EXPERIENCE_CONTEXT_SYSTEM = """Eres un clasificador de datos de reclutamiento.
 Determina si el candidato habla de SU PROPIA experiencia conduciendo vehículos de carga.
-- true: "manejo tracto", "soy operador de quinta rueda", "he manejado tráiler", "trabajo manejando"
-- false: "¿manejan ruta B1?", "la empresa usa tractos", preguntas sobre la compañía
+Regla clave: el candidato debe AFIRMAR en primera persona que él conduce o ha conducido.
+- true: "manejo tracto", "soy operador de quinta rueda", "he manejado tráiler", "trabajo manejando", "conduzco full"
+- false: "me interesa la vacante de operador", "¿manejan ruta B1?", "la empresa usa tractos", preguntas o expresiones de interés
 Responde SOLO JSON: {"experience_context": true | false}
 Ejemplos:
 - "soy operador de quinta rueda" → {"experience_context": true}
 - "manejo trailer desde hace años" → {"experience_context": true}
+- "Me interesa la vacante de operador de quinta rueda" → {"experience_context": false}
+- "me interesa ser operador de tracto" → {"experience_context": false}
 - "¿manejan ruta B1?" → {"experience_context": false}
 - "la empresa maneja tractos full" → {"experience_context": false}"""
 
