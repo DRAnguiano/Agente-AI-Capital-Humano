@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from app.knowledge.current_turn import (
     build_current_turn_ack,
     is_age_disqualified,
@@ -8,6 +12,8 @@ from app.knowledge.current_turn import (
 from app.knowledge.guard_asked_field import asked_field_keys_for_guard
 from app.lead_memory.profile_extractor import extract_profile_facts_as_dict as facts
 from app.chatwoot_note_sync import calculate_candidate_labels, render_candidate_note
+
+_NO_GROQ = not os.getenv("GROQ_API_KEY")
 
 
 def _ctx(f):
@@ -90,6 +96,7 @@ def test_age_under_limit_continues():
     assert "tracto full" in q.lower()
 
 
+@pytest.mark.skipif(_NO_GROQ, reason="requiere GROQ_API_KEY — profile_extractor usa LLM T=0")
 def test_expiration_extraction_relative_and_date():
     d = facts("mi licencia vence el 31 de diciembre de 2027")
     assert d["license.expiration_text"] == "31 de diciembre de 2027"

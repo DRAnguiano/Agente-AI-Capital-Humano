@@ -1,5 +1,9 @@
 # Deuda técnica — registro
 
+> Módulos eliminados: `app/knowledge/disambiguate_numeric_units.py` (2026-06-23) — lógica absorbida
+> en `route1_contextual.py` (inline: isdigit + fractional + subannual check) y en `current_turn.py`
+> (LLM T=0 para edad/experiencia elíptica). Change: `llm-first-extraction`.
+
 > Registro vivo de deuda detectada en auditoría. **No** es un backlog de features; son
 > duplicaciones, drift y código legacy que ya existen en el sistema vivo y que deben
 > resolverse con cuidado (algunos requieren un change OpenSpec propio).

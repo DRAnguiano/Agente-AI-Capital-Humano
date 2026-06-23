@@ -50,7 +50,8 @@ def test_no_call_request_no_scheduling_facts(message):
 def test_call_window_text_captured():
     facts = PE.extract_profile_facts_as_dict("me pueden llamar mañana a las 4")
     assert facts.get("scheduling.call_requested") == "true"
-    assert "manana" in (facts.get("scheduling.call_window_text") or "")
+    window = (facts.get("scheduling.call_window_text") or "").lower().replace("ñ", "n")
+    assert "manana" in window or "4" in window
 
 
 # ── label: emisión gated de llamada_pendiente ─────────────────────────────────

@@ -1,16 +1,14 @@
-"""Extractor de facts del candidato por regex (licencia, apto, experiencia,
+"""Extractor de facts del candidato (licencia, apto, experiencia,
 documentos, edad, ciudad).
 
-**Único** extractor regex del proyecto: Neo4j cubre geo/vehículo; aquí NO se
-dispersa lógica equivalente (constraint 2 en ``openspec/project.md``). El RAG
-nunca extrae facts.
-
-Opera sobre texto ya **normalizado** (jerga/typos canonicalizados aguas
-arriba), por lo que los marcadores de residencia y los nombres capturados
-llegan en forma canónica. Puro: no persiste; devuelve dicts de fact.
+Los extractores de texto natural usan LLM T=0 (llm-first-extraction).
+Las capas deterministas (catalog lookups, fact comparison) se mantienen con regex.
+Puro: no persiste; devuelve dicts de fact.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 from typing import Any
 
@@ -19,74 +17,105 @@ from app.knowledge.normalize_domain_values import normalize_vehicle
 from app.knowledge.domain_catalog import NEEDS_CLARIFICATION, NON_TARGET
 from app.knowledge.business_hours import classify_call_window
 
+_EXTRACTOR_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
 
-_NUMBER_WORDS = {
-    "un": 1,
-    "una": 1,
-    "uno": 1,
-    "dos": 2,
-    "tres": 3,
-    "cuatro": 4,
-    "cinco": 5,
-    "seis": 6,
-    "siete": 7,
-    "ocho": 8,
-    "nueve": 9,
-    "diez": 10,
-}
+_PROFILE_EXPIRATION_SYSTEM = """Eres un extractor de datos de reclutamiento.
+Del mensaje, extrae la expresión de vencimiento de un documento (licencia o apto médico).
+Formato de salida:
+- Tiempo relativo → "vence en N años/meses/días" (convierte palabras a números)
+- Fecha exacta → copia exacto: "31 de diciembre de 2027", "12/2025"
+- Mes+año → "diciembre 2026", "enero de 2027"
+- Vencido → "vencido"
+- Sin dato de tiempo: null
+Responde SOLO JSON: {"expiration_text": "<expresión>" | null}
+Ejemplos:
+- "mi licencia vence el 31 de diciembre de 2027" → {"expiration_text": "31 de diciembre de 2027"}
+- "el apto se me vence como en dos meses" → {"expiration_text": "vence en 2 meses"}
+- "se me vence en 3 años" → {"expiration_text": "vence en 3 años"}
+- "vence para diciembre" → {"expiration_text": "diciembre"}
+- "ambas vencen en un año" → {"expiration_text": "vence en 1 año"}
+- "ya están vencidas" → {"expiration_text": "vencido"}
+- "está vigente" → {"expiration_text": null}
+- "hola buenas" → {"expiration_text": null}"""
 
-_MONTHS = (
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "setiembre", "octubre",
-    "noviembre", "diciembre",
-)
+_PROFILE_EXPERIENCE_YEARS_SYSTEM = """Eres un extractor de datos de reclutamiento.
+Del mensaje, extrae la duración de experiencia conduciendo vehículos de carga.
+- Solo si el candidato habla de SU PROPIA experiencia conduciendo
+- NO confundas con la edad del candidato ("tengo 35 años" sin contexto de manejo → null)
+- Para años: devuelve entero (ej. 10)
+- Para meses: devuelve string con unidad (ej. "8 meses")
+- Convierte palabras: "diez" → 10, "una década" → 10
+- Frases vagas → null
+Responde SOLO JSON: {"years": <entero> | "<N meses>" | null}
+Ejemplos:
+- "llevo 10 años manejando full" → {"years": 10}
+- "tengo como 8 meses de experiencia en carretera" → {"years": "8 meses"}
+- "soy operador desde hace 5 años" → {"years": 5}
+- "tengo 35 años" → {"years": null}
+- "muy poca experiencia" → {"years": null}
+- "soy nuevo en esto" → {"years": null}"""
+
+_EXPERIENCE_CONTEXT_SYSTEM = """Eres un clasificador de datos de reclutamiento.
+Determina si el candidato habla de SU PROPIA experiencia conduciendo vehículos de carga.
+- true: "manejo tracto", "soy operador de quinta rueda", "he manejado tráiler", "trabajo manejando"
+- false: "¿manejan ruta B1?", "la empresa usa tractos", preguntas sobre la compañía
+Responde SOLO JSON: {"experience_context": true | false}
+Ejemplos:
+- "soy operador de quinta rueda" → {"experience_context": true}
+- "manejo trailer desde hace años" → {"experience_context": true}
+- "¿manejan ruta B1?" → {"experience_context": false}
+- "la empresa maneja tractos full" → {"experience_context": false}"""
+
+_NO_ROAD_EXP_SYSTEM = """Eres un clasificador de datos de reclutamiento.
+Determina si el candidato declara EXPLÍCITAMENTE no tener experiencia manejando carretera.
+- true: "no tengo experiencia", "nunca he manejado camión", "quiero aprender a manejar", "sin experiencia"
+- false: cualquier otro caso (incluye mensajes sin mención de experiencia, o que sí tienen experiencia)
+Responde SOLO JSON: {"no_road_experience": true | false}
+Ejemplos:
+- "no tengo experiencia en tracto" → {"no_road_experience": true}
+- "nunca he manejado carretera" → {"no_road_experience": true}
+- "quiero aprender a manejar" → {"no_road_experience": true}
+- "tengo 10 años de experiencia" → {"no_road_experience": false}
+- "hola, estoy interesado" → {"no_road_experience": false}"""
+
+_CITY_FALLBACK_SYSTEM = """Eres un extractor de datos de reclutamiento.
+Del mensaje, extrae la ciudad donde RESIDE el candidato.
+- Solo si hay marcador de residencia: "soy de", "vivo en", "radico en", "resido en", "estoy en"
+- Extrae solo el nombre de la ciudad (sin estado ni país), máximo 4 palabras
+- Si hay ambigüedad o no hay marcador explícito de residencia: null
+Responde SOLO JSON: {"city": "<nombre>" | null}
+Ejemplos:
+- "soy de Hermosillo" → {"city": "Hermosillo"}
+- "radico en Ciudad Obregón" → {"city": "Ciudad Obregón"}
+- "vivo en el norte" → {"city": null}
+- "¿cuánto pagan?" → {"city": null}
+- "de por acá" → {"city": null}"""
+
+_CALL_WINDOW_SYSTEM = """Eres un extractor de datos de reclutamiento.
+Del mensaje, extrae CUÁNDO el candidato quiere que le llamen.
+- Expresiones válidas: días (hoy, mañana, lunes...), horas (a las 10, por la mañana...), combinaciones
+- Normaliza a texto corto en español
+- Si no menciona una ventana específica de tiempo: null
+Responde SOLO JSON: {"call_window": "<expresión>" | null}
+Ejemplos:
+- "llámenme mañana por la mañana" → {"call_window": "mañana por la mañana"}
+- "a las 10 am" → {"call_window": "a las 10 am"}
+- "el próximo lunes en la tarde" → {"call_window": "lunes por la tarde"}
+- "cuando puedan" → {"call_window": null}
+- "me pueden llamar por favor" → {"call_window": null}"""
 
 
-def _number_word_to_text(value: str) -> str:
-    value = normalize_text(value)
-    mapped = _NUMBER_WORDS.get(value)
-    return str(mapped) if mapped is not None else value
-
-
-def _find_expiration_text(text: str) -> str | None:
-    rel = re.search(
-        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
-        r"(?:\s+(?:como|aprox(?:imadamente)?))?"
-        r"\s+en\s+(\d{1,2}|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
-        r"\s+(dias?|semanas?|mes(?:es)?|ano|anos|anio|anios)\b",
-        text,
-    )
-    if rel:
-        n = _number_word_to_text(rel.group(1))
-        unit = rel.group(2)
-        unit_label = "años" if unit in {"ano", "anos", "anio", "anios"} else unit
-        return f"vence en {n} {unit_label}"
-
-    numeric_date = re.search(
-        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
-        r"\s+(?:el\s+)?(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
-        text,
-    )
-    if numeric_date:
-        return numeric_date.group(1)
-
-    month_pattern = "|".join(_MONTHS)
-    long_date = re.search(
-        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
-        rf"\s+(?:el\s+)?(\d{{1,2}}\s+de\s+(?:{month_pattern})(?:\s+de\s+\d{{4}})?)\b",
-        text,
-    )
-    if long_date:
-        return long_date.group(1)
-
-    month_year = re.search(
-        r"\b(?:vence|vencen|se\s+(?:me\s+)?vence|vencimiento)\b"
-        rf"\s+(?:en\s+|para\s+)?((?:{month_pattern})(?:\s+de)?\s+\d{{4}})\b",
-        text,
-    )
-    if month_year:
-        return month_year.group(1)
-    return None
+def _find_expiration_text(text: str, message: str = "") -> str | None:
+    _expiry_hints = ("vence", "vencen", "vencimiento", "caduca", "caducidad", "caduco")
+    if not any(h in text for h in _expiry_hints):
+        return None
+    try:
+        from app.indexer import call_groq_json
+        raw = call_groq_json(message or text, _PROFILE_EXPIRATION_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+        val = json.loads(raw).get("expiration_text")
+        return str(val).strip() if val else None
+    except Exception:
+        return None
 
 
 def _has_renewal_proof(text: str) -> str | None:
@@ -176,25 +205,21 @@ def _extract_city(message: str, text: str) -> dict[str, Any] | None:
     if best:
         return _fact("candidate", "city", best[1], 0.9)
 
-    # Sobre texto NORMALIZADO: ahí ya aplicó la canonicalización de jerga/typos
-    # ("soy d gomez palasio" → "soy de gomez palacio"), así que el marcador de
-    # residencia y el nombre capturado llegan en forma canónica.
-    match = re.search(
-        r"\b(?:resido|radico|vivo|soy)\s+(?:en|de)\s+([a-z0-9áéíóúñ .]{3,40})",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if match:
-        # Corta en conectores/interrogativos para no tragarse la frase
-        # ("soy de Laredo ahí de donde a donde me toca ir" → "laredo").
-        raw_city = re.split(
-            r"\b(?:y|con|tengo|licencia|apto|cartas|ahi|ahí|a|donde|dónde|que|qué|para|pero|cual|cuál|como|cómo|cuando|cuándo)\b",
-            match.group(1),
-        )[0].strip(" .,")
-        # Tope defensivo: ninguna ciudad objetivo supera 4 tokens.
-        raw_city = " ".join(raw_city.split()[:4])
-        if raw_city:
-            return _fact("candidate", "city", raw_city.title(), 0.65)
+    # Alias lookup exhausted — LLM fallback for free-form residence declarations.
+    # Check both normalized text and original (lowercased) to catch typos like
+    # "soy d ciudad" that survive without _PHRASE_CANON in normalize_text.
+    _residence_markers = ("soy de", "soy d ", "soi de", "soi d ", "vivo en", "vivo n ",
+                          "radico en", "resido en", "estoy en")
+    _msg_lower = (message or "").lower()
+    if any(m in text for m in _residence_markers) or any(m in _msg_lower for m in _residence_markers):
+        try:
+            from app.indexer import call_groq_json
+            raw = call_groq_json(message, _CITY_FALLBACK_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            city_val = json.loads(raw).get("city")
+            if city_val:
+                return _fact("candidate", "city", str(city_val).strip().title(), 0.65)
+        except Exception:
+            pass
     return None
 
 
@@ -233,20 +258,16 @@ _CALL_REQUEST_RE = re.compile(
 )
 # Negación: si el candidato rechaza la llamada, NO se registra solicitud.
 _CALL_NEG_RE = re.compile(r"\bno\s+(?:quiero\s+(?:la\s+|una\s+)?llamada|me\s+llamen|llamada)\b")
-# Ventana solicitada (best-effort): día/hora declarados por el candidato.
-_CALL_WINDOW_RE = re.compile(
-    r"\b("
-    r"(?:hoy|manana|pasado manana)(?:\s+(?:por|en)\s+la\s+(?:manana|tarde|noche))?(?:\s+a\s+las?\s+\d{1,2}(?:\s*(?:am|pm|hrs|horas))?)?"
-    r"|el\s+(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?:\s+a\s+las?\s+\d{1,2}(?:\s*(?:am|pm|hrs|horas))?)?"
-    r"|a\s+las?\s+\d{1,2}(?:\s*(?:am|pm|hrs|horas))?"
-    r"|(?:por|en)\s+la\s+(?:manana|tarde|noche)"
-    r")\b"
-)
 
 
-def _extract_call_window(text: str) -> str | None:
-    m = _CALL_WINDOW_RE.search(text)
-    return m.group(1).strip() if m else None
+def _extract_call_window(message: str) -> str | None:
+    try:
+        from app.indexer import call_groq_json
+        raw = call_groq_json(message, _CALL_WINDOW_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+        val = json.loads(raw).get("call_window")
+        return str(val).strip() if val else None
+    except Exception:
+        return None
 
 
 def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[str, Any]]:
@@ -303,7 +324,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         if "cartas" in text:
             upsert("documents", "labor_letters_status", "available", 0.80)
 
-    expiration_text = _find_expiration_text(text)
+    expiration_text = _find_expiration_text(text, message)
     if expiration_text and any(t in text for t in ("licencia", "lic", "tipo e", "tipo b")):
         upsert("license", "expiration_text", expiration_text, 0.90)
         if not _expiry_text_is_short_unknown(expiration_text):
@@ -374,29 +395,18 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     # ── Experience ───────────────────────────────────────────────────────────
     DRIVING_TERMS = ("manejando", "manejo", "experiencia", "operador", "full", "quinta", "fulero", "fulera", "tracto")
 
-    years_m = re.search(r"\b(\d{1,2})\s*(?:ano|anos|anio|anios)\s+(?:de\s+)?experiencia\b", text)
-    if not years_m:
-        years_m = re.search(r"\b(\d{1,2})\s*(?:ano|anos|anio|anios)\b", text)
-    if not years_m:
-        years_m = re.search(r"\bcon\s+(\d{1,2})\s*(?:ano|anos|anio|anios)\b", text)
+    _dur_label: str | None = None
+    if any(t in text for t in DRIVING_TERMS):
+        try:
+            from app.indexer import call_groq_json
+            raw = call_groq_json(message, _PROFILE_EXPERIENCE_YEARS_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            val = json.loads(raw).get("years")
+            if val is not None:
+                _dur_label = f"{val} años" if isinstance(val, int) else str(val)
+        except Exception:
+            pass
 
-    months_m = (
-        re.search(r"\b(\d{1,2})\s*meses?\b", text)
-        if not years_m else None
-    )
-
-    # Build duration label with unit so Chatwoot note shows "10 años" not just "10"
-    if years_m:
-        _dur_label = f"{years_m.group(1)} años"
-        _dur_match = years_m
-    elif months_m:
-        _dur_label = f"{months_m.group(1)} meses"
-        _dur_match = months_m
-    else:
-        _dur_label = None
-        _dur_match = None
-
-    if _dur_label and any(t in text for t in DRIVING_TERMS):
+    if _dur_label:
         upsert("experience", "years", _dur_label, 0.85)
 
     # ── Tipo de unidad / experiencia (catálogo de dominio, sin regex de negocio) ──
@@ -459,7 +469,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     if _CALL_REQUEST_RE.search(text) and not _CALL_NEG_RE.search(text):
         upsert("scheduling", "call_requested", "true", 0.85)
         upsert("scheduling", "call_status", "pending", 0.85)
-        window = _extract_call_window(text)
+        window = _extract_call_window(message)
         if window:
             upsert("scheduling", "call_window_text", window, 0.80)
         # Validez vs horario de oficina (8:00–17:30 L–V): true | false | unknown.
@@ -467,24 +477,30 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
 
     # Solo escribir vehicle_type_pending/non_target cuando hay evidencia de
     # experiencia personal — no por mera mención del vehículo como tipo de vacante.
-    _experience_context = bool(re.search(
-        r"\b(?:manejo|manej[oéa]\w*|trabajo\s+(?:en|con)|trabaj[oéó]\w*|opero|"
-        r"he\s+manejado|soy\s+operador|tengo\s+experiencia|años?\s+(?:de\s+)?(?:manejo|experiencia)|"
-        r"experiencia\s+(?:en|con|manejando)|dedicado?\s+(?:al|a\s+la))\b",
-        text,
-    ))
     veh = normalize_vehicle(message)
+    _experience_context = False
+    if veh and veh.status == NEEDS_CLARIFICATION and veh.domain:
+        try:
+            from app.indexer import call_groq_json
+            raw = call_groq_json(message, _EXPERIENCE_CONTEXT_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            _experience_context = bool(json.loads(raw).get("experience_context"))
+        except Exception:
+            pass
     if veh and veh.status == NEEDS_CLARIFICATION and veh.domain and _experience_context:
         upsert("experience", "vehicle_type_pending", veh.domain, 0.86)
     if veh and veh.status == NON_TARGET and veh.domain:
         upsert("experience", "non_target_vehicle_type", veh.domain, 0.88)
 
     has_confirmed_or_non_target_unit = bool(veh and (veh.value or veh.status == NON_TARGET))
-    no_road_experience = (
-        re.search(r"\b(?:no|nunca)\s+(?:he\s+)?(?:manejad\w*|trabajad\w*)\s+(?:tracto|trailer|camion|carretera)\b", text)
-        or re.search(r"\b(?:no\s+tengo|sin)\s+experiencia(?:\s+en\s+(?:carretera|tracto|trailer|camion))?\b", text)
-        or re.search(r"\b(?:quiero|quisiera|me\s+gustaria)\s+aprender\s+a\s+manejar\b", text)
-    )
+    no_road_experience = False
+    _no_road_hints = ("no tengo", "sin experiencia", "nunca he", "nunca mane", "aprender a manejar", "quiero aprender")
+    if any(h in text for h in _no_road_hints):
+        try:
+            from app.indexer import call_groq_json
+            raw = call_groq_json(message, _NO_ROAD_EXP_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            no_road_experience = bool(json.loads(raw).get("no_road_experience"))
+        except Exception:
+            pass
     if no_road_experience and not has_confirmed_or_non_target_unit and not _dur_label:
         upsert("experience", "road_experience", "none", 0.88)
 
