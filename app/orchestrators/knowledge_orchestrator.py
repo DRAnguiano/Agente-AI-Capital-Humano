@@ -1355,11 +1355,19 @@ _FUNNEL_STEPS: list[dict] = [
         ],
     },
     {
-        "keys": {"license.category", "license.expiration_text"},
+        "keys": {"license.category"},
         "variants": [
-            "¿Qué tipo de licencia federal tiene y cuándo vence?",
+            "¿Qué tipo de licencia federal tiene (A, B o E) y cuándo vence?",
             "Para su perfil, ¿su licencia federal es tipo A, B o E, y cuándo vence?",
-            "¿Qué tipo de licencia federal maneja y en cuánto tiempo se le vence?",
+            "¿Qué tipo de licencia federal tiene y cuándo le vence?",
+        ],
+    },
+    {
+        "keys": {"license.expiration_text"},
+        "variants": [
+            "¿En cuánto tiempo se le vence su licencia federal?",
+            "¿Cuándo vence su licencia federal?",
+            "¿Qué vigencia le queda a su licencia federal?",
         ],
     },
     {
