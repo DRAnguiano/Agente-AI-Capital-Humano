@@ -189,6 +189,8 @@ def _renewal_question_for_short_expiry(facts: dict[str, Any]) -> str | None:
         if _expiry_within_three_months(facts.get(exp_key)):
             proof = _renewal_proof_state(facts, proof_key)
             if proof in {"no", "nel", "nop", "ninguno", "sin papel", "sin comprobante"}:
+                # 3.3: marcar cierre suave por vencido-sin-trámite (bot deja de empujar funnel)
+                facts["funnel.status"] = "vencido_sin_tramite"
                 return RENEWAL_PROOF_REQUIRED_REPLY
             if proof not in {"si", "sí", "yes", "true", "tengo", "ya tengo"}:
                 return RENEWAL_PROOF_QUESTION.format(documento=label)
@@ -387,12 +389,43 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
                 if "medical.apto_expiration_text" not in facts and "apto" in last_norm and "vence" in last_norm:
                     facts["medical.apto_expiration_text"] = exp_text
 
+        # 3.1: extracción de nombre cuando last_bot lo pidió
+        _last_norm_name = normalize_text(last_bot_message)
+        _asks_name = "nombre" in _last_norm_name and "?" in last_bot_message
+        if _asks_name and "candidate.name" not in facts:
+            _name_patterns = [
+                re.search(r"\bme\s+llamo\s+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,})?)", raw, re.IGNORECASE),
+                re.search(r"\bsoy\s+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,})?)", raw, re.IGNORECASE),
+                re.search(r"\bmi\s+nombre\s+es\s+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,})?)", raw, re.IGNORECASE),
+            ]
+            for _nm in _name_patterns:
+                if _nm:
+                    facts["candidate.name"] = _nm.group(1).strip().title()
+                    break
+            else:
+                # Respuesta corta sin verbo = nombre directo (ej: "Juan García")
+                _words = raw.strip().split()
+                if 1 <= len(_words) <= 3 and all(w[0].isupper() or w[0].isalpha() for w in _words if w):
+                    facts["candidate.name"] = raw.strip().title()
+
         # BUG-2: "No" bare como respuesta directa a pregunta de cartas/documentos
         _last_norm_docs = normalize_text(last_bot_message)
         _asks_cartas = any(t in _last_norm_docs for t in ("cartas", "membretadas", "documentos laborales", "documento laboral"))
         _bare_negation = text in {"no", "nop", "nel", "nope", "para nada", "tampoco", "negativo", "no tengo", "no cuento"}
         if _asks_cartas and _bare_negation and "documents.proof" not in facts:
             facts["documents.proof"] = "ninguno"
+
+        # BUG-3: "al mismo tiempo / igual / los dos" tras pregunta de apto → heredar vencimiento de licencia
+        _last_norm_apto = normalize_text(last_bot_message)
+        _asks_apto = "apto" in _last_norm_apto and ("vence" in _last_norm_apto or "vigencia" in _last_norm_apto)
+        _same_as_hints = ("igual", "mismo", "los dos", "ambos", "los 2", "tambien", "también",
+                          "al mismo tiempo", "igual que", "igualmente", "los dos vencen")
+        _says_same = any(h in text for h in _same_as_hints)
+        if _asks_apto and _says_same and "medical.apto_expiration_text" not in facts:
+            # Heredar desde licencia si ya está conocida
+            _lic_exp = (merged_facts or {}).get("license.expiration_text") or facts.get("license.expiration_text")
+            if _lic_exp:
+                facts["medical.apto_expiration_text"] = _lic_exp
 
     # Fields only needed by the debounce guard, not persisted to lead_memory.
     if any(t in text for t in ("cuanto pagan", "pago", "sueldo", "compensacion", "kilometro", "km")):
@@ -479,8 +512,10 @@ def should_prioritize_current_turn(message: str | None, last_bot_message: str | 
 
 
 def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
+    if not facts.get("candidate.name"):
+        return "¿Me podría decir su nombre, por favor?"
     if not facts.get("candidate.city"):
-        return "Para continuar, ¿en qué ciudad te encuentras actualmente?"
+        return "Gracias. ¿En qué ciudad se encuentra actualmente?"
     if not facts.get("candidate.age"):
         return "Gracias. ¿Cuántos años tiene?"
     if is_age_disqualified(facts):

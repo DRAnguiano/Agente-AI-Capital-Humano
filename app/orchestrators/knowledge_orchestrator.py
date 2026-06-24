@@ -60,9 +60,8 @@ GREETING_REPLY = (
     "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
     "Con gusto le platico de la vacante de operador de tracto full o sencillo. "
     "Le haré unas preguntas breves para conocer su perfil; si antes tiene dudas "
-    "de pago, rutas o requisitos, pregúnteme con confianza. Al completar sus "
-    "datos podrá subir su documentación y lo canalizamos con un agente de "
-    "reclutamiento. ¿En qué ciudad se encuentra?"
+    "de pago, rutas o requisitos, pregúnteme con confianza. "
+    "¿Me podría decir su nombre, por favor?"
 )
 
 def _greeting_reply(lead_memory: dict[str, Any]) -> str:
@@ -1335,6 +1334,14 @@ def _build_profile_ack_reply(message: str) -> str | None:
 
 _FUNNEL_STEPS: list[dict] = [
     {
+        "keys": {"candidate.name"},
+        "variants": [
+            "¿Me podría decir su nombre, por favor?",
+            "Para continuar, ¿cuál es su nombre?",
+            "¿Cómo se llama usted, por favor?",
+        ],
+    },
+    {
         "keys": {"candidate.city"},
         "variants": [
             "Para su registro, ¿desde qué ciudad o estado nos escribe?",
@@ -1514,6 +1521,10 @@ def _build_funnel_nudge(
     except Exception as exc:
         log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
 
+    # 3.3: vencido sin trámite → no emitir más nudges
+    if active_facts.get("funnel.status") == "vencido_sin_tramite":
+        return None, []
+
     try:
         from app.settings import AGE_DISQUALIFICATION_LIMIT
         age = int(str(active_facts.get("candidate.age") or "").strip())
@@ -1523,6 +1534,43 @@ def _build_funnel_nudge(
         pass
 
     _LOCAL_LAGUNA = {"torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"}
+
+    # Leer último mensaje del bot (necesario para BUG-2 y BUG-3)
+    _last_bot = ""
+    for _m in reversed(lead_memory.get("messages") or []):
+        if isinstance(_m, dict) and _m.get("role") == "assistant":
+            _last_bot = normalize_text(str(_m.get("message") or ""))
+            break
+    _msg_norm = normalize_text(message)
+    _lead_key = (lead_memory.get("lead") or {}).get("lead_key") or ""
+
+    # BUG-2: bare negation ("No") como respuesta a pregunta de cartas → marcar proof=ninguno
+    _bare_neg = _msg_norm in {"no", "nop", "nel", "nope", "para nada", "tampoco", "negativo", "no tengo"}
+    _last_asks_cartas = any(t in _last_bot for t in ("cartas", "membretadas", "documentos laborales", "documento laboral"))
+    if _bare_neg and _last_asks_cartas and "documents.proof" not in active_facts:
+        active_facts["documents.proof"] = "ninguno"
+        try:
+            upsert_lead_fact(lead_key=_lead_key, fact_group="documents", fact_key="proof",
+                             fact_value="ninguno", confidence=0.80, source="bare_negation_context",
+                             source_text=message[:200])
+        except Exception:
+            pass
+
+    # BUG-3: "igual / los dos / al mismo tiempo" tras pregunta de apto → heredar vencimiento de licencia
+    _last_asks_apto = "apto" in _last_bot and ("vence" in _last_bot or "vigencia" in _last_bot)
+    _same_hints = ("igual", "mismo", "los dos", "ambos", "los 2", "tambien", "también",
+                   "al mismo tiempo", "igual que", "igualmente")
+    _says_same = any(h in _msg_norm for h in _same_hints)
+    if _last_asks_apto and _says_same and "medical.apto_expiration_text" not in active_facts:
+        _lic_exp = active_facts.get("license.expiration_text")
+        if _lic_exp:
+            active_facts["medical.apto_expiration_text"] = _lic_exp
+            try:
+                upsert_lead_fact(lead_key=_lead_key, fact_group="medical", fact_key="apto_expiration_text",
+                                 fact_value=_lic_exp, confidence=0.85, source="same_as_license_context",
+                                 source_text=message[:200])
+            except Exception:
+                pass
 
     for step in _FUNNEL_STEPS:
         if not any(k not in active_facts for k in step["keys"]):
@@ -1728,6 +1776,14 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     if (rag_result is not None or friendly_result is not None or profile_ack_used) and not embedded_derived:
         nudge, asked_field_keys = _build_funnel_nudge(message, contract, lead_memory_before, turn_signals=turn_signals)
         if nudge:
+            # 3.2: puente suave si el RAG respondió una duda en el primer turno (sin nombre aún)
+            _facts_before = {
+                f"{r['fact_group']}.{r['fact_key']}": r["fact_value"]
+                for r in (lead_memory_before.get("facts") or []) if r.get("fact_value")
+            }
+            _is_first_rag = rag_result is not None and not _facts_before.get("candidate.name")
+            if _is_first_rag:
+                nudge = f"Si le interesa continuar con la vacante, {nudge[0].lower()}{nudge[1:]}"
             reply = f"{reply}\n\n{nudge}"
         else:
             asked_field_keys = []  # no nudge appended → no field was asked

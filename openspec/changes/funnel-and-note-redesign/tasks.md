@@ -18,19 +18,19 @@
 
 ## 3. Bienvenida y cierre por vigencia
 
-- [ ] 3.1 RED+impl: primera interacción = bienvenida + (resolver duda) + anunciar serie de preguntas (sin pedir documentación) + pedir nombre; solo la primera vez
-- [ ] 3.2 RED+impl: tras resolver duda, puente "si le interesa la vacante, ¿podría…?" (reusar requisito existente de puente suave)
-- [ ] 3.3 RED+impl: vencido sin trámite → mensaje de retomar + `requiere_agente` + bot deja de responder + nota lo refleja; vencido con comprobante → `aclaracion_pendiente` continúa
+- [x] 3.1 RED+impl: primera interacción = bienvenida + (resolver duda) + anunciar serie de preguntas (sin pedir documentación) + pedir nombre; solo la primera vez
+- [x] 3.2 RED+impl: tras resolver duda, puente "si le interesa la vacante, ¿podría…?" (reusar requisito existente de puente suave)
+- [x] 3.3 RED+impl: vencido sin trámite → mensaje de retomar + `requiere_agente` + bot deja de responder + nota lo refleja; vencido con comprobante → `aclaracion_pendiente` continúa
 
 ## 4. Nota administrativa por escenario (render_candidate_note)
 
-- [ ] 4.1 RED+impl: formato administrativo base (Estado del candidato / Lo que ya sabemos / Falta confirmar / Para Capital Humano / Siguiente acción); sin Canal/Embudo/Etapa/Bloqueo/Requiere humano; Riesgo solo si riesgo_alto; Requiere Agente
-- [ ] 4.2 RED+impl rama **escuelita**: cabecera + experiencia no objetivo + licencia B/E mínima; no lista apto/cartas/ciudad
-- [ ] 4.3 RED+impl rama **perfil listo local**: ciudad exacta ZM + documento "cartas o IMSS"
-- [ ] 4.4 RED+impl rama **perfil listo foráneo**: documento "2 cartas membretadas" + traslado
-- [ ] 4.5 RED+impl rama **vencido-en-trámite** y **pendiente por licencia/apto**
-- [ ] 4.6 RED+impl ramas **CECATI / B1 / reingreso / no-aplica / edad fuera / riesgo / unidad ambigua**
-- [ ] 4.7 RED+impl: `Siguiente acción` dinámica (avanza al siguiente pendiente; núcleo local/foráneo completo → cierre correspondiente)
+- [x] 4.1 RED+impl: formato administrativo base (Estado del candidato / Lo que ya sabemos / Falta confirmar / Para Capital Humano / Siguiente acción); sin Canal/Embudo/Etapa/Bloqueo/Requiere humano; Riesgo solo si riesgo_alto; Requiere Agente
+- [x] 4.2 RED+impl rama **escuelita**: cabecera + experiencia no objetivo + licencia B/E mínima; no lista apto/cartas/ciudad
+- [x] 4.3 RED+impl rama **perfil listo local**: ciudad exacta ZM + documento "cartas o IMSS"
+- [x] 4.4 RED+impl rama **perfil listo foráneo**: documento "2 cartas membretadas" + traslado
+- [x] 4.5 RED+impl rama **vencido-en-trámite** y **pendiente por licencia/apto**
+- [x] 4.6 RED+impl ramas **CECATI / B1 / reingreso / no-aplica / edad fuera / riesgo / unidad ambigua**
+- [x] 4.7 RED+impl: `Siguiente acción` dinámica (avanza al siguiente pendiente; núcleo local/foráneo completo → cierre correspondiente)
 
 ## 5. Pre-handoff condicional (hallazgos prod 2026-06-23)
 

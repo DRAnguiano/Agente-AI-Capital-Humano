@@ -439,146 +439,341 @@ def _render_escuelita_note(lead: dict[str, Any], message: str, facts: dict[str, 
     )
 
 
+def _nota_header(scenario: str) -> str:
+    return f"🤖 Nota IA: {scenario}"
+
+
+def _nota_contacto(lead: dict[str, Any]) -> str:
+    return (
+        "👤 Contacto\n"
+        f"Nombre: {_text(lead.get('display_name'))}\n"
+        f"Teléfono: {_text(lead.get('phone'))}"
+    )
+
+
+def _next_action_dinamica(facts: dict[str, str], is_local: bool, labels: list[str]) -> str:
+    """⏭️ Siguiente acción dinámica según el primer campo núcleo pendiente (task 4.7)."""
+    lbl = set(labels or [])
+    if "considerar_escuelita_transmontes" in lbl or "cecati_sugerido" in lbl:
+        return "Verificar disponibilidad de generación en Escuelita Transmontes."
+    if "reingreso" in lbl:
+        return "Verificar historial del candidato y confirmar disponibilidad de vacante."
+    if "b1_us" in lbl or "business_route_us" in str(facts.get("funnel.status", "")):
+        vt = facts.get("experience.vehicle_type", "")
+        return f"Revisar vacante B1/EUA para operador de {vt or 'tracto'}."
+    if not facts.get("candidate.city"):
+        return "Solicitar ciudad de residencia."
+    if not facts.get("candidate.age"):
+        return "Confirmar edad del candidato."
+    if not facts.get("experience.vehicle_type"):
+        return "Confirmar tipo de unidad (tracto full o sencillo)."
+    if not facts.get("license.category"):
+        return "Solicitar tipo y vigencia de licencia federal."
+    if not facts.get("license.expiration_text"):
+        return "Confirmar vigencia de licencia federal."
+    if not facts.get("medical.apto_expiration_text"):
+        return "Confirmar vigencia del apto médico."
+    if not facts.get("experience.years"):
+        return "Confirmar años de experiencia como operador."
+    proof = facts.get("documents.proof", "")
+    if proof not in {"cartas", "semanas_imss", "sí", "si"}:
+        if is_local:
+            return "Solicitar cartas laborales o documento de semanas IMSS."
+        return "Solicitar 2 cartas laborales membretadas."
+    # Núcleo completo
+    if is_local:
+        return "Validar documentos y continuar proceso de contratación."
+    return "Validar traslado, documentos y continuidad del proceso."
+
+
 def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_last_message: str | None = None, channel_label: str | None = None) -> str:
     lead = context.get("lead") or {}
     conversation = context.get("conversation") or {}
     facts = context.get("facts") or {}
     last = context.get("last_message") or {}
+    lbl = list(labels or [])
 
     message = _text(fallback_last_message or last.get("message"), "Sin mensaje reciente")[:500]
 
+    # ── Datos del perfil ──────────────────────────────────────────────────────
+    name = facts.get("candidate.name") or _text(lead.get("display_name"), "")
     vehicle_type_raw = _fact(facts, "experience.vehicle_type", default="")
     years = _fact(facts, "experience.years")
     license_category = _fact(facts, "license.category")
     license_exp_text = _fact(facts, "license.expiration_text", default="")
-    medical_status_raw = _fact(facts, "medical.apto_status", "document.apto_status", "documents.general_status")
     apto_exp_text = _fact(facts, "medical.apto_expiration_text", default="")
-    documents_status_raw = _fact(facts, "documents.submission_status", "documents.labor_letters", "interest.requirements_documents")
+    medical_status_raw = _fact(facts, "medical.apto_status", "document.apto_status", "documents.general_status")
+    proof_raw = _fact(facts, "documents.proof", "documents.labor_letters_status", "documents.labor_letters")
     city = _fact(facts, "candidate.city")
     age = _fact(facts, "candidate.age")
 
+    LOCAL_LAGUNA_NOTE = {"torreon", "gomez palacio", "lerdo", "matamoros"}
+    is_local = str(city).lower().strip() in LOCAL_LAGUNA_NOTE or facts.get("location.is_local_laguna") == "true"
+
     if vehicle_type_raw == "full":
-        experience_display = "Tracto full"
+        vt_display = "Tracto full"
     elif vehicle_type_raw == "sencillo":
-        experience_display = "Sencillo"
+        vt_display = "Sencillo"
     elif vehicle_type_raw:
-        experience_display = _human_fact(vehicle_type_raw)
+        vt_display = _human_fact(vehicle_type_raw)
     else:
-        experience_display = PENDING_TEXT
-    medical_status = _human_fact(medical_status_raw)
-    documents_status = _human_fact(documents_status_raw)
+        vt_display = PENDING_TEXT
 
-    # ── Nota administrativa por escenario (funnel-and-note-redesign) ──────────
-    # Migración incremental: la rama escuelita usa el formato administrativo; el resto
-    # del cuerpo sigue en el formato técnico hasta migrarse escenario por escenario.
-    if "considerar_escuelita_transmontes" in (labels or []):
-        return _render_escuelita_note(lead, message, facts, license_category)
+    age_disq = _age_disqualified(facts)
+    has_vt = bool(vehicle_type_raw)
+    has_lic = license_category not in {PENDING_TEXT, "", None}
+    has_apto = bool(apto_exp_text and apto_exp_text not in {PENDING_TEXT, ""}) or _is_vigente(medical_status_raw)
+    has_years = years not in {PENDING_TEXT, "", None}
+    has_city = city not in {PENDING_TEXT, "", None}
+    has_doc = proof_raw in {"cartas", "semanas_imss", "sí", "si", "available"}
+    tramite_lic = facts.get("license.tramite_comprobante") == "true"
+    tramite_apto = facts.get("medical.tramite_comprobante") == "true"
+    vencido_sin_tramite = facts.get("funnel.status") == "vencido_sin_tramite"
+    nucleo_completo = has_vt and has_lic and has_apto and has_years and has_city and has_doc
 
-    next_action = _text(lead.get("next_best_action"), "Continuar flujo automático según etapa actual.")
-    stage_value = lead.get("funnel_stage")
+    requires_human_bool = bool(lead.get("requires_human"))
+    requiere_agente = "Sí" if requires_human_bool else "No"
+    riesgo_alto = "riesgo_alto" in lbl
 
-    # Protección contra memoria vieja: si el apto está vigente, no pedir actualización.
-    if _is_vigente(medical_status_raw):
-        if "actualice apto" in next_action.lower() or "actualizar apto" in next_action.lower():
-            next_action = "Continuar revisión del perfil; apto médico reportado como vigente."
-        if str(stage_value or "").lower() == "apto_pending_update":
-            stage_value = "profile_hint_collected"
-
-    has_vehicle_type = bool(vehicle_type_raw)
-    has_years        = years != PENDING_TEXT
-    has_experience   = has_vehicle_type or has_years
-    has_license  = license_category != PENDING_TEXT
-    has_medical  = _is_vigente(medical_status_raw)
-    has_documents = documents_status_raw != PENDING_TEXT
-    has_city     = city != PENDING_TEXT
-    age_disqualified = _age_disqualified(facts)
-
-    blocker = "Faltan datos base del perfil"
-    if age_disqualified:
-        blocker = "Edad fuera de perfil"
-        next_action = "Cierre automático: edad fuera de perfil."
-        stage_value = "closed"
-    elif has_vehicle_type and has_license and has_medical and has_documents and has_city:
-        blocker = "Validar documentos con Capital Humano"
-    elif documents_status_raw == "pending_candidate_will_send":
-        blocker = "Esperando envío documental"
-    elif not has_vehicle_type:
-        blocker = "Falta confirmar tipo de unidad (tracto full o sencillo)"
-    elif not has_license:
-        blocker = "Falta validar licencia federal/tipo"
-    elif not has_medical:
-        blocker = "Falta validar apto médico"
-    elif not has_city:
-        blocker = "Falta confirmar ciudad de residencia"
-
-    # ⚠️ condicional: derivada de los mismos has_* del blocker (campos núcleo).
-    # El renderer no reclasifica ni inventa pendientes.
-    pendientes: list[str] = []
-    if not has_vehicle_type:
-        pendientes.append("Tipo de unidad: confirmar tracto full o sencillo")
-    if not has_license:
-        pendientes.append("Licencia: pendiente de validar")
-    if not has_medical:
-        pendientes.append("Apto médico: pendiente de validar")
-    if not has_city:
-        pendientes.append("Ciudad: pendiente de confirmar")
-    pendientes_block = (
-        ("⚠️ Pendientes o conflictos\n" + "\n".join(pendientes) + "\n\n")
-        if pendientes else ""
-    )
-
-    requires_human = "Sí" if lead.get("requires_human") else "No"
-
-    # 📞 Llamada (B7.4/B7.5): solo si el candidato la solicitó. Refleja la ventana pedida y
-    # su validez vs horario de atención, sin prometer agenda real.
-    call_requested = str(facts.get("scheduling.call_requested") or "").strip().lower() in {
-        "true", "sí", "si", "1", "yes"
-    }
+    # 📞 Llamada (mantener si solicitó llamada)
     llamada_block = ""
-    if call_requested:
+    if str(facts.get("scheduling.call_requested") or "").strip().lower() in {"true", "sí", "si", "1", "yes"}:
         window_text = _fact(facts, "scheduling.call_window_text", default="")
         valid = str(facts.get("scheduling.call_window_valid") or "unknown").strip().lower()
-        valid_display = {
-            "true": "dentro del horario de atención",
-            "false": "fuera del horario de atención",
-        }.get(valid, "no interpretable del horario de atención")
-        ventana_line = (
-            f"Ventana solicitada: {window_text}\n"
-            if window_text and window_text != PENDING_TEXT else ""
-        )
-        llamada_block = (
-            "📞 Llamada\n"
-            "Solicitó llamada: Sí (registrada, sin agenda automática)\n"
-            f"{ventana_line}"
-            f"Horario: {valid_display}\n\n"
+        valid_display = {"true": "dentro del horario de atención", "false": "fuera del horario de atención"}.get(valid, "por confirmar")
+        ventana_line = f"Ventana: {window_text}\n" if window_text and window_text != PENDING_TEXT else ""
+        llamada_block = f"📞 Llamada solicitada ({valid_display})\n{ventana_line}\n"
+
+    # ── Selección de escenario (determinista) ─────────────────────────────────
+    # 4.2 Escuelita
+    if "considerar_escuelita_transmontes" in lbl:
+        return _render_escuelita_note(lead, message, facts, license_category)
+
+    # 4.6 CECATI
+    if "cecati_sugerido" in lbl:
+        return (
+            f"{_nota_header('Candidato referido a CECATI')}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            "Sin experiencia en tracto federal. Se orientó al CECATI Gómez Palacio para formación.\n\n"
+            "✅ Lo que ya sabemos\n"
+            f"Ciudad: {city}\n"
+            f"Edad: {age}\n\n"
+            "👥 Para Capital Humano\n"
+            "Candidato orientado a CECATI; retomará proceso al completar formación.\n"
+            f"Requiere Agente: {requiere_agente}\n\n"
+            "⏭️ Siguiente acción\n"
+            "Sin acción inmediata; esperar recontacto tras formación CECATI."
         )
 
+    # 4.6 B1 / EUA
+    if "b1_us" in lbl or "business_route_us" in lbl:
+        return (
+            f"{_nota_header('Candidato con Ruta B1/EUA')}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            "Interesado en ruta con cruce a EUA (B1). Requiere revisión de Capital Humano.\n\n"
+            "✅ Lo que ya sabemos\n"
+            f"Ciudad: {city}\n"
+            f"Unidad: {vt_display}\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n\n"
+            "👥 Para Capital Humano\n"
+            "Revisar vacante B1/EUA disponible y confirmar requisitos de cruce.\n"
+            f"Requiere Agente: Sí\n\n"
+            "⏭️ Siguiente acción\n"
+            f"{_next_action_dinamica(facts, is_local, lbl)}"
+        )
+
+    # 4.6 Reingreso
+    if "reingreso" in lbl:
+        return (
+            f"{_nota_header('Candidato de Reingreso')}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            "Candidato que operó anteriormente con Transmontes y solicita reingreso.\n\n"
+            "✅ Lo que ya sabemos\n"
+            f"Ciudad: {city}\n"
+            f"Unidad: {vt_display}\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n\n"
+            "👥 Para Capital Humano\n"
+            "Verificar historial del candidato en sistema antes de canalizar.\n"
+            f"Requiere Agente: Sí\n\n"
+            "⏭️ Siguiente acción\n"
+            "Verificar historial de reingreso y confirmar disponibilidad de vacante."
+        )
+
+    # 4.6 Edad fuera de perfil
+    if age_disq:
+        return (
+            f"{_nota_header('Candidato Fuera de Perfil por Edad')}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            f"Edad fuera del rango requerido. Edad declarada: {age}.\n\n"
+            "👥 Para Capital Humano\n"
+            "Perfil no aplica por edad. Proceso cerrado automáticamente.\n"
+            "Requiere Agente: No\n\n"
+            "⏭️ Siguiente acción\n"
+            "Ninguna. Cierre automático por edad fuera de perfil."
+        )
+
+    # 4.6 Riesgo / sensible
+    if riesgo_alto:
+        return (
+            f"{_nota_header('Candidato con Señal de Riesgo')}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            "Conversación con señal de riesgo detectada. Requiere revisión humana.\n\n"
+            "👥 Para Capital Humano\n"
+            "Revisar historial de mensajes y determinar continuidad del proceso.\n"
+            "Requiere Agente: Sí\n"
+            "⚠️ Riesgo: Alto\n\n"
+            "⏭️ Siguiente acción\n"
+            "Revisar conversación completa antes de continuar."
+        )
+
+    # 4.5 Vencido sin trámite
+    if vencido_sin_tramite:
+        return (
+            f"{_nota_header('Candidato con Licencia/Apto Vencido')}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            "Licencia o apto vencido. Sin comprobante de renovación en trámite.\n\n"
+            "✅ Lo que ya sabemos\n"
+            f"Ciudad: {city}\n"
+            f"Unidad: {vt_display}\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n"
+            f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n\n"
+            "👥 Para Capital Humano\n"
+            "Candidato invitado a retomar cuando renueve documentos. Sin acción inmediata.\n"
+            "Requiere Agente: No\n\n"
+            "⏭️ Siguiente acción\n"
+            "Esperar recontacto cuando el candidato tenga documentos vigentes."
+        )
+
+    # 4.5 Vencido en trámite (con comprobante)
+    if tramite_lic or tramite_apto:
+        doc_tramite = []
+        if tramite_lic:
+            doc_tramite.append("licencia en renovación")
+        if tramite_apto:
+            doc_tramite.append("apto en renovación")
+        return (
+            f"{_nota_header('Candidato con Trámite en Proceso')}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            f"Candidato con {', '.join(doc_tramite)}. Tiene comprobante de cita.\n\n"
+            "✅ Lo que ya sabemos\n"
+            f"Ciudad: {city}\n"
+            f"Unidad: {vt_display}\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n"
+            f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n\n"
+            "👥 Para Capital Humano\n"
+            "Continuar perfilamiento. Aclaración pendiente de validación de documentos.\n"
+            "Requiere Agente: No\n\n"
+            "⏭️ Siguiente acción\n"
+            f"{_next_action_dinamica(facts, is_local, lbl)}"
+        )
+
+    # 4.3 Perfil listo local / 4.4 Perfil listo foráneo
+    if nucleo_completo:
+        doc_display = "Cartas laborales o semanas cotizadas del IMSS" if is_local else "2 cartas laborales membretadas"
+        traslado_line = "" if is_local else "Traslado: Foráneo (requiere validar viáticos y alojamiento)\n"
+        scenario = "Perfil Listo — Candidato Local ZM Laguna" if is_local else "Perfil Listo — Candidato Foráneo"
+        return (
+            f"{_nota_header(scenario)}\n\n"
+            f"Último mensaje: \"{message}\"\n\n"
+            f"{_nota_contacto(lead)}\n\n"
+            "📌 Estado del candidato\n"
+            f"Perfil de operador completo. {'Local de ZM Laguna.' if is_local else 'Candidato foráneo.'}\n\n"
+            "✅ Lo que ya sabemos\n"
+            f"Ciudad: {city}\n"
+            f"Edad: {age}\n"
+            f"Unidad: {vt_display}\n"
+            f"Experiencia: {years}\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n"
+            f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n"
+            f"Documento laboral: {doc_display}\n"
+            f"{traslado_line}\n"
+            + llamada_block +
+            "👥 Para Capital Humano\n"
+            "Validar documentos y continuar proceso de contratación.\n"
+            f"Requiere Agente: {requiere_agente}\n\n"
+            "⏭️ Siguiente acción\n"
+            f"{_next_action_dinamica(facts, is_local, lbl)}"
+        )
+
+    # ── 4.1 Formato base: candidato en perfilamiento ──────────────────────────
+    sabemos: list[str] = []
+    if name:
+        sabemos.append(f"Nombre: {name}")
+    if has_city:
+        sabemos.append(f"Ciudad: {city}")
+    if age and age != PENDING_TEXT:
+        sabemos.append(f"Edad: {age}")
+    if has_vt:
+        sabemos.append(f"Unidad: {vt_display}")
+    if has_years:
+        sabemos.append(f"Experiencia: {years}")
+    if has_lic:
+        lic_line = f"Licencia: {_human_fact(license_category)}"
+        if license_exp_text:
+            lic_line += f" · vence {license_exp_text}"
+        sabemos.append(lic_line)
+    if has_apto:
+        apto_line = f"Apto médico: {_human_fact(medical_status_raw)}"
+        if apto_exp_text:
+            apto_line += f" · {apto_exp_text}"
+        sabemos.append(apto_line)
+    if has_doc:
+        sabemos.append(f"Documentos: {_human_fact(proof_raw)}")
+
+    falta: list[str] = []
+    if not has_city:
+        falta.append("Ciudad de residencia")
+    if not age or age == PENDING_TEXT:
+        falta.append("Edad")
+    if not has_vt:
+        falta.append("Tipo de unidad (tracto full o sencillo)")
+    if not has_years:
+        falta.append("Años de experiencia")
+    if not has_lic:
+        falta.append("Licencia federal (tipo y vigencia)")
+    if not has_apto:
+        falta.append("Apto médico (vigencia)")
+    if not has_doc:
+        doc_req = "Cartas laborales o semanas IMSS" if is_local else "2 cartas laborales membretadas"
+        falta.append(f"Documento laboral: {doc_req}")
+
+    falta_block = ""
+    if falta:
+        falta_block = "⚠️ Falta confirmar\n" + "\n".join(f"· {f}" for f in falta) + "\n\n"
+
+    sabemos_block = ("✅ Lo que ya sabemos\n" + "\n".join(sabemos) + "\n\n") if sabemos else ""
+
+    estado = "Candidato interesado, sin datos de perfil aún." if not sabemos else "Candidato en proceso de perfilamiento."
+    scenario = "Candidato en Perfilamiento"
+
     return (
-        "🤖 Nota IA: Seguimiento de candidato\n\n"
+        f"{_nota_header(scenario)}\n\n"
         f"Último mensaje: \"{message}\"\n\n"
-        "👤 Contacto\n"
-        f"Nombre: {_text(lead.get('display_name'))}\n"
-        f"Teléfono: {_text(lead.get('phone'))}\n"
-        f"Canal: {_text(channel_label or conversation.get('channel') or lead.get('source_channel'), 'Chatwoot')}\n\n"
-        "📋 Perfil confirmado\n"
-        f"Tipo de unidad: {experience_display}\n"
-        f"Experiencia: {years}\n"
-        f"Licencia: {_human_fact(license_category)}"
-        + (f" · vigencia {license_exp_text}" if license_exp_text and license_exp_text != PENDING_TEXT else "") + "\n"
-        f"Apto médico: {medical_status}"
-        + (f" · {apto_exp_text}" if apto_exp_text and apto_exp_text != PENDING_TEXT else "") + "\n"
-        f"Cartas/documentos: {documents_status}\n"
-        f"Ciudad: {city}\n"
-        f"Edad: {age}\n\n"
-        + pendientes_block
-        + llamada_block +
-        "📍 Embudo\n"
-        f"Etapa: {_stage(stage_value)}\n"
-        f"Bloqueo actual: {blocker}\n"
-        f"Riesgo: {_risk(lead.get('risk_level'))}\n"
-        f"Requiere humano: {requires_human}\n\n"
+        f"{_nota_contacto(lead)}\n\n"
+        "📌 Estado del candidato\n"
+        f"{estado}\n\n"
+        + sabemos_block
+        + falta_block
+        + llamada_block
+        + "👥 Para Capital Humano\n"
+        "Esperar a que el candidato complete su perfil.\n"
+        f"Requiere Agente: {requiere_agente}\n\n"
         "⏭️ Siguiente acción\n"
-        f"{next_action}"
+        f"{_next_action_dinamica(facts, is_local, lbl)}"
     )
 
 
