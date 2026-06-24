@@ -327,3 +327,61 @@ def test_greeting_returning_profile_complete_no_full_greeting():
     reply = _greeting_reply(lead_mem)
     assert reply != GREETING_REPLY, "no debe ser idéntico al saludo inicial"
     assert "soy mundo" not in reply.lower(), f"no debe repetir presentación: {reply!r}"
+
+
+# ── Pre-handoff condicional: tests por rama ───────────────────────────────────
+
+def test_escuelita_sin_licencia_pregunta_licencia():
+    # 2.1: escuelita sin licencia B/E → pregunta licencia
+    from app.knowledge.current_turn import next_prehandoff_question
+    q = next_prehandoff_question("escuelita", {})
+    assert q is not None, "sin licencia debe preguntar"
+    assert "licencia" in q.lower() and ("b" in q.lower() or "e" in q.lower()), f"debe mencionar B/E: {q!r}"
+
+
+def test_escuelita_con_licencia_b_handoff():
+    # 2.3: escuelita con licencia B → no pregunta (handoff puede proceder)
+    from app.knowledge.current_turn import next_prehandoff_question
+    q = next_prehandoff_question("escuelita", {"license.category": "B"})
+    assert q is None, f"con licencia B debe retornar None: {q!r}"
+
+
+def test_escuelita_con_licencia_e_handoff():
+    # 2.3: escuelita con licencia E → None (handoff)
+    from app.knowledge.current_turn import next_prehandoff_question
+    q = next_prehandoff_question("escuelita", {"license.category": "E"})
+    assert q is None, f"con licencia E debe retornar None: {q!r}"
+
+
+def test_b1_sin_unidad_pregunta_unidad():
+    # 3.1: B1 sin vehicle_type → pregunta unidad
+    from app.knowledge.current_turn import next_prehandoff_question
+    q = next_prehandoff_question("b1", {})
+    assert q is not None and ("full" in q.lower() or "sencillo" in q.lower()), f"debe preguntar unidad: {q!r}"
+
+
+def test_b1_con_todos_datos_handoff():
+    # 3.3: B1 con unidad + licencia + apto → handoff
+    from app.knowledge.current_turn import next_prehandoff_question
+    facts = {
+        "experience.vehicle_type": "full",
+        "license.category": "E",
+        "license.expiration_text": "1 año",
+        "medical.apto_expiration_text": "1 año",
+    }
+    q = next_prehandoff_question("b1", facts)
+    assert q is None, f"con datos completos debe retornar None: {q!r}"
+
+
+def test_reingreso_sin_tipo_vacante_pregunta():
+    # 4.1: reingreso sin tipo_vacante → pregunta
+    from app.knowledge.current_turn import next_prehandoff_question
+    q = next_prehandoff_question("reingreso", {})
+    assert q is not None and ("operador" in q.lower() or "vacante" in q.lower()), f"debe preguntar tipo: {q!r}"
+
+
+def test_reingreso_con_tipo_vacante_handoff():
+    # 4.3: reingreso con tipo_vacante confirmado → None
+    from app.knowledge.current_turn import next_prehandoff_question
+    q = next_prehandoff_question("reingreso", {"reingreso.tipo_vacante": "operador"})
+    assert q is None, f"con tipo_vacante debe retornar None: {q!r}"

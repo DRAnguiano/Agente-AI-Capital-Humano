@@ -572,6 +572,51 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     return _profile_complete_closing()
 
 
+def next_prehandoff_question(branch: str, facts: dict[str, Any]) -> str | None:
+    """Retorna la pregunta de verificación previa al handoff, o None si el dato mínimo ya está.
+
+    branch: 'escuelita' | 'cecati' | 'b1' | 'reingreso'
+    facts: dict canónico de facts del lead (group.key → value)
+    """
+    lic = str(facts.get("license.category") or "").upper()
+    has_be = lic in {"B", "E"}
+    has_tramite = (
+        facts.get("license.tramite_comprobante") == "true"
+        or facts.get("medical.tramite_comprobante") == "true"
+    )
+
+    if branch in {"escuelita", "cecati"}:
+        if has_be or has_tramite:
+            return None  # dato mínimo confirmado → handoff puede proceder
+        return (
+            "Para considerar su candidatura, necesitamos saber si cuenta con "
+            "licencia federal tipo B o E vigente (o comprobante de renovación). "
+            "¿Tiene licencia federal B o E?"
+        )
+
+    if branch == "b1":
+        if not facts.get("experience.vehicle_type"):
+            return "Para las vacantes con ruta B1/EUA, ¿su experiencia es en tracto full o sencillo?"
+        if not has_be or not facts.get("license.expiration_text"):
+            return (
+                "Para las vacantes B1/EUA necesitamos confirmar que su licencia federal esté vigente. "
+                "¿Qué tipo de licencia federal tiene y cuándo vence?"
+            )
+        if not facts.get("medical.apto_expiration_text"):
+            return "¿Cuándo vence su apto médico?"
+        return None  # todos los datos confirmados
+
+    if branch == "reingreso":
+        if not facts.get("reingreso.tipo_vacante"):
+            return (
+                "Gracias por contactarnos de nuevo. ¿Busca regresar como operador de tracto, "
+                "o tiene en mente otro tipo de vacante?"
+            )
+        return None
+
+    return None
+
+
 # Quita un "Perfecto" inicial (+ puntuación de cierre, sin tocar ¿/¡) de la pregunta
 # cuando el ack ya abre con "Perfecto", para no duplicar el prefijo.
 _LEADING_PERFECTO = re.compile(r"^perfecto\s*[,.:;!]*\s*", re.IGNORECASE)
