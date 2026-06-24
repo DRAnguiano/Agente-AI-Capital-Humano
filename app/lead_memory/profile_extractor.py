@@ -449,7 +449,12 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
         upsert("experience", "carretera_mexicana", "sí", 0.75)
 
     # ── Documents ────────────────────────────────────────────────────────────
-    _has_negation_docs = any(t in text for t in ("no tengo", "no cuento", "sin cartas"))
+    _has_negation_docs = any(t in text for t in (
+        "no tengo", "no cuento", "sin cartas", "no tengo cartas",
+        "no tengo membretadas", "no cuento con cartas", "no tengo documentos laborales",
+    ))
+    if _has_negation_docs and any(t in text for t in ("carta", "cartas", "membretada", "membretadas", "documento")):
+        upsert("documents", "proof", "ninguno", 0.80)
     if not _has_negation_docs:
         if "cartas" in text and any(t in text for t in ("si", "sí", "cuento", "tengo")):
             upsert("documents", "proof", "cartas", 0.85)

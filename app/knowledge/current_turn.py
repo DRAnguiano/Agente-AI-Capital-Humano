@@ -369,13 +369,22 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
                 except Exception:
                     pass
 
-        exp_text = _contextual_expiration_text(text)
-        if exp_text:
-            last_norm = normalize_text(last_bot_message)
-            if "license.expiration_text" not in facts and "licencia" in last_norm and "vence" in last_norm:
-                facts["license.expiration_text"] = exp_text
-            if "medical.apto_expiration_text" not in facts and "apto" in last_norm and "vence" in last_norm:
-                facts["medical.apto_expiration_text"] = exp_text
+        # P0-1: solo llamar al extractor LLM si el candidato mencionó algo de vencimiento.
+        # Sin esta guarda el modelo alucina "vencido" sobre mensajes vacíos de fechas.
+        _expiry_hints = ("vence", "vencen", "vencimiento", "caduca", "caduco",
+                         "se me acaba", "me queda", "año", "anos", "meses", "mes")
+        _has_expiry_context = (
+            getattr(turn_signals, "has_expiry_context", False)
+            or any(h in text for h in _expiry_hints)
+        )
+        if _has_expiry_context:
+            exp_text = _contextual_expiration_text(text)
+            if exp_text:
+                last_norm = normalize_text(last_bot_message)
+                if "license.expiration_text" not in facts and "licencia" in last_norm and "vence" in last_norm:
+                    facts["license.expiration_text"] = exp_text
+                if "medical.apto_expiration_text" not in facts and "apto" in last_norm and "vence" in last_norm:
+                    facts["medical.apto_expiration_text"] = exp_text
 
     # Fields only needed by the debounce guard, not persisted to lead_memory.
     if any(t in text for t in ("cuanto pagan", "pago", "sueldo", "compensacion", "kilometro", "km")):
@@ -502,6 +511,17 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
         is_local = facts.get("location.is_local_laguna") == "true" or (
             normalize_text(facts.get("candidate.city") or "") in LOCAL_LAGUNA
         )
+        _proof = facts.get("documents.proof")
+        # P0-2: candidato negó tener cartas — ofrecer alternativa o cerrar sin loop
+        if _proof == "ninguno":
+            if is_local:
+                return "¿Cuenta con su documento de semanas cotizadas del IMSS?"
+            else:
+                return (
+                    "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
+                    "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para que "
+                    "Capital Humano le indique opciones al contactarle."
+                )
         if is_local:
             return "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?"
         else:
@@ -552,12 +572,14 @@ def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | N
         detected.append(f"ciudad {current['candidate.city']}")
     if current.get("license.category"):
         detected.append(f"licencia tipo {current['license.category']}")
-    if current.get("license.expiration_text"):
-        detected.append(f"licencia vence {current['license.expiration_text']}")
+    _lic_exp = current.get("license.expiration_text")
+    if _lic_exp and _lic_exp != "vencido":
+        detected.append(f"licencia vence {_lic_exp}")
     if current.get("medical.apto_status") == "vigente":
         detected.append("apto médico vigente")
-    if current.get("medical.apto_expiration_text"):
-        detected.append(f"apto vence {current['medical.apto_expiration_text']}")
+    _apto_exp = current.get("medical.apto_expiration_text")
+    if _apto_exp and _apto_exp != "vencido":
+        detected.append(f"apto vence {_apto_exp}")
     if current.get("documents.general_status") == "vigente":
         detected.append("documentación vigente")
     if current.get("documents.labor_letters") == "sí":
