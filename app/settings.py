@@ -47,7 +47,7 @@ def _env_list(name: str, default: str) -> list[str]:
 
 EMBEDDING_MODEL = os.getenv(
     "EMBEDDING_MODEL",
-    "sentence-transformers/all-MiniLM-L6-v2",
+    "BAAI/bge-m3",
 )
 
 # Provider principal:
@@ -56,7 +56,7 @@ EMBEDDING_MODEL = os.getenv(
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
 
 # Groq fallback / provider alterno
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
 GROQ_MAX_TOKENS = _env_int("GROQ_MAX_TOKENS", 900)
 
 # Cohere generación
@@ -65,7 +65,12 @@ COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r-plus-08-2024")
 COHERE_MAX_TOKENS = _env_int("COHERE_MAX_TOKENS", GROQ_MAX_TOKENS)
 
 # Generación
-TEMPERATURE = _env_float("TEMPERATURE", 0.15)
+TEMPERATURE = _env_float("TEMPERATURE", 0.1)
+
+# Edad máxima (exclusive) para operar. Candidatos con edad >= este valor
+# no aplican al perfil de operador. Configurable vía env para no redeployar
+# si cambia la política de RH.
+AGE_DISQUALIFICATION_LIMIT = _env_int("AGE_DISQUALIFICATION_LIMIT", 57)
 
 
 # =========================
@@ -76,6 +81,18 @@ CHUNK_SIZE = _env_int("CHUNK_SIZE", 800)
 CHUNK_OVERLAP = _env_int("CHUNK_OVERLAP", 150)
 TOP_K = _env_int("TOP_K", 5)
 
+# Ensamblado de contexto RAG (context_builder.py) — fuente única de defaults.
+# RAG_TOP_K hereda TOP_K por defecto para que un solo knob controle la recuperación
+# (antes context_builder usaba un 3 hardcodeado independiente de TOP_K).
+RAG_TOP_K = _env_int("RAG_TOP_K", TOP_K)
+RAG_MIN_SCORE = _env_float("RAG_MIN_SCORE", 0.25)
+RAG_MAX_CONTEXT_CHARS = _env_int("RAG_MAX_CONTEXT_CHARS", 2200)
+RAG_MAX_CHARS_PER_DOC = _env_int("RAG_MAX_CHARS_PER_DOC", 850)
+# Anti over-retrieval (B5): tras recuperar, solo se ensambla la fuente del mejor match y
+# otras fuentes cuyo mejor score esté dentro de este margen → no mezcla temas (p. ej. pago
+# vs paradas autorizadas vs proceso documental).
+RAG_SOURCE_FOCUS_MARGIN = _env_float("RAG_SOURCE_FOCUS_MARGIN", 0.08)
+
 INDEX_EXTENSIONS = _env_list(
     "INDEX_EXTENSIONS",
     ".pdf,.txt,.md,.markdown",
@@ -83,11 +100,11 @@ INDEX_EXTENSIONS = _env_list(
 
 # Rutas internas del contenedor
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
-DB_DIR = os.getenv("DB_DIR", "/app/chroma_db")
+DB_DIR = os.getenv("DB_DIR", "/app/chroma_db_bge_m3")
 
 # Alias usado por indexer.py
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", DB_DIR)
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "rh_rag_docs")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "rh_rag_docs_bge_m3")
 
 
 # =========================
@@ -106,6 +123,9 @@ RERANK_MAX_CHARS_PER_DOC = _env_int("RERANK_MAX_CHARS_PER_DOC", 2500)
 # =========================
 
 REINDEX_API_KEY = os.getenv("REINDEX_API_KEY", "")
+# Clave para proteger endpoints internos (/ask, /orchestrate/message).
+# Si está vacía, los endpoints siguen abiertos (modo demo). Configúrala en producción.
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 INCLUDE_ERROR_DETAILS = _env_bool("INCLUDE_ERROR_DETAILS", False)
 REINDEX_CLEAN = _env_bool("REINDEX_CLEAN", False)
 

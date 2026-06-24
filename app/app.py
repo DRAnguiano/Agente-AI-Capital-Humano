@@ -1,3 +1,19 @@
+"""Entry HTTP (FastAPI) del asistente de reclutamiento "Mundo".
+
+Responsabilidad: recibir el webhook de Chatwoot, aplicar las defensas de borde
+y encolar el trabajo. NO orquesta ni genera respuestas — eso vive en el worker
+(`tasks_chatwoot.py` → `orchestrators/knowledge_orchestrator.py`).
+
+Defensas de borde en el path del webhook (`/chatwoot/webhook`):
+- auth **fail-closed** (sin API key válida ⇒ 401),
+- filtros de evento (ignora eventos no entrantes / sin contenido útil),
+- rate limit en Redis db2 (separado del broker Celery en db1),
+- `media_guard` (G4): mensajes con attachments se cortan ANTES de extraer u
+  orquestar — no hay OCR; ver `_chatwoot_has_media`.
+
+`/classify` es un endpoint **aislado de prueba** del pipeline multi-intent
+(shadow): no persiste ni envía a Chatwoot, no es el path de producción.
+"""
 import time
 import traceback
 import os
@@ -10,69 +26,44 @@ from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
 from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int
-from .orchestrator import orchestrate_message
+from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
-from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY
+from .settings import INCLUDE_ERROR_DETAILS, REINDEX_API_KEY, INTERNAL_API_KEY
+from .chatwoot_note_sync import (
+    TERMINAL_LABELS,
+    _filter_official_labels,
+    sync_chatwoot_candidate_note,
+)
 
 app = FastAPI(default_response_class=ORJSONResponse)
 
-
-def _sanitize(text: str):
-    if not text:
-        return text
-    return text.replace("\uFFFD", "").encode("utf-8", "ignore").decode("utf-8").strip()
+_rl_redis_client = None
 
 
-def _clean_llm_answer(text: str):
+def _rate_limit_redis():
+    """Lazy singleton Redis client on db 2 (separate from Celery on db 1)."""
+    global _rl_redis_client
+    if _rl_redis_client is None:
+        try:
+            import redis as _r
+            url = os.getenv("CELERY_BROKER_URL", "redis://chatwoot_redis:6379/1")
+            rl_url = re.sub(r"/\d+$", "/2", url)
+            _rl_redis_client = _r.from_url(rl_url, decode_responses=True)
+        except Exception:
+            pass
+    return _rl_redis_client
+
+
+def _clean_llm_answer(text: str) -> str:
+    """Limpia la respuesta del LLM — delega al cleaner unificado (rag-corpus #13).
+
+    Antes esta función y `knowledge_orchestrator._clean_reply` eran implementaciones
+    divergentes; ahora ambas usan `reply_cleaner.clean_reply` (unión de sus reglas).
     """
-    Limpia cierres genéricos que algunos modelos agregan aunque el prompt pida no hacerlo.
-    No toca el contenido central de la respuesta.
-    """
-    cleaned = _sanitize(text or "")
+    from app.knowledge.reply_cleaner import clean_reply
 
-    if not cleaned:
-        return cleaned
-
-    # Frases exactas frecuentes.
-    generic_endings = [
-        "Si tienes alguna otra duda sobre el proceso, puedo ayudarte a resolverla.",
-        "Si tienes alguna otra duda sobre el proceso, puedo ayudarte a resolverlas.",
-        "Si tienes alguna otra duda, puedo ayudarte a resolverla.",
-        "Si tienes alguna otra duda, puedo ayudarte a resolverlas.",
-        "Si tienes otra duda, puedo ayudarte.",
-        "Puedo ayudarte si tienes alguna otra duda.",
-        "Estoy aquí para ayudarte.",
-        "¿Tienes alguna otra duda?",
-        "¿Puedo ayudarte con algo más?",
-        "¿Quieres que te aclare algo más?",
-    ]
-
-    changed = True
-    while changed:
-        changed = False
-        for ending in generic_endings:
-            if cleaned.endswith(ending):
-                cleaned = cleaned[: -len(ending)].rstrip()
-                changed = True
-
-    # Variantes abiertas que Cohere puede redactar de formas ligeramente distintas.
-    generic_patterns = [
-        r"\n*Si tienes más dudas sobre .*?, puedo ayudarte a resolverlas\.?\s*$",
-        r"\n*Si tienes más dudas.*, puedo ayudarte.*$",
-        r"\n*Si hay algo más que quieras saber.*, puedo buscar.*$",
-        r"\n*No olvides que Capital Humano puede validar cualquier duda.*$",
-        r"\n*Capital Humano puede confirmar los detalles exactos.*$",
-        r"\n*Estoy aquí para ayudarte.*$",
-        r"\n*Puedo ayudarte a resolver.*$",
-        r"\n*¿Tienes alguna otra duda\?\s*$",
-        r"\n*¿Quieres que te aclare algo más\?\s*$",
-    ]
-
-    for pattern in generic_patterns:
-        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
-
-    return cleaned.strip()
+    return clean_reply(text)
 
 
 def _source_payload(item: dict) -> dict:
@@ -123,7 +114,47 @@ def _public_error(exc: Exception):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    checks: dict = {}
+    all_ok = True
+
+    # ── Postgres ──────────────────────────────────────────────────────────────
+    try:
+        t0 = time.time()
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 AS ok")
+        checks["postgres"] = {"ok": True, "ms": round((time.time() - t0) * 1000, 1)}
+    except Exception as exc:
+        checks["postgres"] = {"ok": False, "error": str(exc)[:120]}
+        all_ok = False
+
+    # ── Neo4j ─────────────────────────────────────────────────────────────────
+    try:
+        t0 = time.time()
+        from .knowledge.neo4j_client import get_knowledge_client
+        neo4j_ok = get_knowledge_client().healthcheck()
+        checks["neo4j"] = {"ok": bool(neo4j_ok.get("ok")), "ms": round((time.time() - t0) * 1000, 1)}
+        if not neo4j_ok.get("ok"):
+            all_ok = False
+    except Exception as exc:
+        checks["neo4j"] = {"ok": False, "error": str(exc)[:120]}
+        all_ok = False
+
+    # ── ChromaDB ──────────────────────────────────────────────────────────────
+    try:
+        t0 = time.time()
+        from .indexer import _get_collection
+        col = _get_collection()
+        checks["chromadb"] = {"ok": True, "docs": col.count(), "ms": round((time.time() - t0) * 1000, 1)}
+    except Exception as exc:
+        checks["chromadb"] = {"ok": False, "error": str(exc)[:120]}
+        all_ok = False
+
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "ok" if all_ok else "degraded", "checks": checks},
+    )
 
 
 class ReindexBody(BaseModel):
@@ -174,11 +205,22 @@ class OrchestrateMessageBody(BaseModel):
 
 
 @app.post("/ask")
-def ask(body: AskBody):
+def ask(body: AskBody, x_api_key: str | None = Header(default=None)):
     """
     Endpoint RAG original.
     Lo conservamos para compatibilidad con el workflow actual.
     """
+    # [NOTA] Este endpoint es legacy — hace RAG directo sin perfil ni memoria de
+    # lead. Fue el primer endpoint del sistema antes del orquestador.
+    # En el flujo normal de Chatwoot/Telegram nunca se llama; solo se usa en
+    # pruebas manuales o integraciones antiguas.
+    # [RIESGO] Si alguien lo llama en paralelo con el webhook, puede generar
+    # respuestas inconsistentes con el perfil guardado en Postgres porque no
+    # lee ni escribe lead_memory.
+    # [MEJORA] Documentar en README que este endpoint está deprecado.
+    # No eliminar aún hasta confirmar que ninguna integración externa lo usa.
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         question = body.q.strip()
         history_text = body.history.strip() if body.history else "No hay historial previo."
@@ -235,7 +277,7 @@ RESPUESTA:
 
 
 @app.post("/orchestrate/message")
-def orchestrate(body: OrchestrateMessageBody):
+def orchestrate(body: OrchestrateMessageBody, x_api_key: str | None = Header(default=None)):
     """
     Endpoint principal del sistema.
 
@@ -249,16 +291,77 @@ def orchestrate(body: OrchestrateMessageBody):
     - guarda eventos analíticos
     - devuelve respuesta lista para Telegram/Chatwoot/WhatsApp
     """
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
-        result = orchestrate_message(
+        result = run_hr_graph_message(
             channel=body.channel,
             channel_user_id=body.channel_user_id,
             username=body.username,
             phone=body.phone,
             message=body.message,
             external_message_id=body.external_message_id,
-        )
+)
         return result
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": _public_error(exc)})
+
+
+class ClassifyBody(BaseModel):
+    message: str
+    known_facts: dict | None = None
+    last_bot_question: str | None = None
+
+
+@app.post("/classify")
+def classify(body: ClassifyBody, x_api_key: str | None = Header(default=None)):
+    """Endpoint de prueba del pipeline multi-intent (Fases 1-3).
+
+    Aislado: no persiste ni envía a Chatwoot. Devuelve clasificación, enriquecimiento
+    y el plan+respuesta. known_facts simula los campos ya conocidos del lead.
+    """
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    try:
+        from .knowledge.intent_classifier import classify_message
+        from .knowledge.intent_enricher import enrich_classification
+        from .knowledge.intent_orchestrator import plan_and_respond
+        classification = classify_message(body.message, last_bot_question=body.last_bot_question)
+        enriched = enrich_classification(classification)
+        plan = plan_and_respond(enriched, body.message, body.known_facts)
+        return {"classification": classification, "enriched": enriched, "plan": plan}
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": _public_error(exc)})
+
+
+class ReleaseHumanReviewBody(BaseModel):
+    conversation_key: str
+    stage_to: str = "START"
+
+
+@app.post("/admin/release-human-review")
+def release_human_review_endpoint(
+    body: ReleaseHumanReviewBody, x_api_key: str | None = Header(default=None)
+):
+    """Libera una conversación de HUMAN_REVIEW_REQUIRED por acción humana/operativa (#8).
+
+    El bot nunca sale solo de revisión humana (`update_stage` la pin-ea); esta es la
+    ÚNICA vía explícita de regreso, pensada para que un agente u operación la invoque
+    tras tomar y resolver el caso. Protegido con `INTERNAL_API_KEY`.
+    """
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    try:
+        from .db import release_human_review
+
+        release_human_review(body.conversation_key, stage_to=body.stage_to)
+        return {
+            "status": "released",
+            "conversation_key": body.conversation_key,
+            "stage_to": body.stage_to,
+        }
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": _public_error(exc)})
@@ -343,6 +446,51 @@ def _extract_chatwoot_channel_label(payload: dict) -> str:
     return "Chatwoot"
 
 
+# Reply canned del media_guard (G4). Genérico, sin leer BD ni planner.
+_MEDIA_GUARD_REPLY = (
+    "Gracias por compartirlo. Por el momento no puedo revisar documentos, imágenes, "
+    "audios o stickers por este medio. Para continuar con su registro, por favor "
+    "respóndame en texto la información solicitada."
+)
+
+
+def _chatwoot_has_media(payload: dict) -> bool:
+    """True si el evento entrante de Chatwoot trae attachments (media), agnóstico al canal.
+
+    Cubre imagen, documento, archivo, audio, video y sticker: Chatwoot los expone en
+    `attachments` con `file_type`/`data_url`, independiente del canal (Telegram/WhatsApp/...).
+    Revisa la ruta top-level y una ruta anidada (`message.attachments`) por robustez ante
+    variaciones del payload.
+    """
+    def _any_media(items) -> bool:
+        if not isinstance(items, list):
+            return False
+        media_keys = {
+            "file_type",
+            "data_url",
+            "thumb_url",
+            "extension",
+            "file_size",
+            "id",
+            "message_id",
+        }
+        return any(
+            isinstance(a, dict)
+            and (
+                any(a.get(k) for k in media_keys)
+                or bool(a)
+            )
+            for a in items
+        )
+
+    if _any_media(payload.get("attachments")):
+        return True
+    message = payload.get("message")
+    if isinstance(message, dict) and _any_media(message.get("attachments")):
+        return True
+    return False
+
+
 async def _send_chatwoot_message(
     account_id: int | str,
     conversation_id: int | str,
@@ -403,25 +551,39 @@ def _normalize_chatwoot_labels(labels) -> list[str]:
         if value:
             clean.append(value)
 
-    return sorted(set(clean))
+    # Chokepoint único: mapea aliases fantasma → oficial y descarta lo que no esté en
+    # el catálogo, igual que el path Python. Antes esta función NO filtraba y dejaba
+    # pasar labels de la vista SQL (requiere_humano, ubicacion_extranjero, …) a Chatwoot.
+    return _filter_official_labels(clean)
 
 
 def _fallback_chatwoot_labels(result: dict) -> list[str]:
     """
     Labels básicas si por alguna razón no se puede leer v_rh_work_queue.
+    Solo labels del catálogo oficial; las terminales remueven bot_activo.
+
+    OJO — ruta DEGRADADA: el criterio de `perfil_listo` aquí es
+    `current_stage == "PROFILE_READY"`, distinto del de la ruta principal
+    (`chatwoot_note_sync.calculate_candidate_labels`, que exige
+    vehículo+licencia+apto+`vacancy_accepted`). Ambas comparten
+    `OFFICIAL_LABELS`/`TERMINAL_LABELS` pero pueden discrepar en cuándo emiten
+    una label terminal. Deuda registrada en `docs/deuda_tecnica.md` (D-3).
     """
-    labels = ["bot_activo"]
+    labels = {"bot_activo"}
 
     if result.get("requires_human"):
-        labels.extend(["requiere_humano", "requiere_revision_ch"])
+        labels.update({"requiere_agente", "requiere_revision_ch"})
 
     if result.get("risk_level") == "high":
-        labels.extend(["riesgo_alto", "requiere_humano"])
+        labels.update({"riesgo_alto", "requiere_agente"})
 
     if result.get("current_stage") == "PROFILE_READY":
-        labels.extend(["perfil_listo", "requiere_revision_ch"])
+        labels.update({"perfil_listo", "requiere_revision_ch"})
 
-    return sorted(set(labels))
+    if labels & TERMINAL_LABELS:
+        labels.discard("bot_activo")
+
+    return _filter_official_labels(labels)
 
 
 def _get_rh_work_queue_metadata(conversation_key: str) -> dict:
@@ -778,7 +940,8 @@ async def chatwoot_webhook(
     expected_token = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "").strip()
     received_token = x_chatwoot_webhook_token or token
 
-    if expected_token and received_token != expected_token:
+    # Fail-closed: si no hay token configurado, o no coincide, se rechaza.
+    if not expected_token or received_token != expected_token:
         return JSONResponse(
             status_code=401,
             content={
@@ -850,6 +1013,51 @@ async def chatwoot_webhook(
             "message_type": message_type,
         }
 
+    # ── media_guard (G4): attachments → no extraer, no encolar, no orquestar ──
+    # Agnóstico al canal (Telegram demo / WhatsApp futuro entran por Chatwoot).
+    # Va ANTES de empty_content: los mensajes solo-media traen content vacío.
+    if _chatwoot_has_media(payload):
+        if not account_id or not conversation_id:
+            return {"status": "ignored", "reason": "media_without_ids"}
+        _top_att = payload.get("attachments")
+        _msg_att = (payload.get("message") or {}).get("attachments")
+        attachments_count = (
+            (len(_top_att) if isinstance(_top_att, list) else 0)
+            + (len(_msg_att) if isinstance(_msg_att, list) else 0)
+        )
+        sent = False
+        try:
+            await _send_chatwoot_message(
+                account_id=account_id,
+                conversation_id=conversation_id,
+                content=_MEDIA_GUARD_REPLY,
+            )
+            sent = True
+        except Exception:
+            traceback.print_exc()
+        print(
+            "[CHATWOOT_MEDIA_GUARD]",
+            json.dumps(
+                {
+                    "account_id": account_id,
+                    "conversation_id": conversation_id,
+                    "message_id": message_id,
+                    "channel_label": channel_label,
+                    "attachments": attachments_count,
+                    "had_caption": bool(content),
+                    "sent": sent,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        return {
+            "status": "media_guard",
+            "sent_to_chatwoot": sent,
+            "extracted": False,
+            "enqueued": False,
+        }
+
     if not content:
         return {
             "status": "ignored",
@@ -873,8 +1081,103 @@ async def chatwoot_webhook(
 
     username = contact.get("name") or f"Chatwoot Contact {channel_user_id}"
 
+    # ── Rate limit: max N messages per channel_user_id per 60 s ─────────────
+    if os.getenv("WEBHOOK_RATE_LIMIT_ENABLED", "true").strip().lower() not in {"0", "false", "no", "n", "off"}:
+        try:
+            _rl = _rate_limit_redis()
+            if _rl is not None:
+                _rl_key = f"rate:webhook:{channel_user_id}"
+                _rl_count = _rl.incr(_rl_key)
+                if _rl_count == 1:
+                    _rl.expire(_rl_key, 60)
+                _rl_max = int(os.getenv("WEBHOOK_RATE_LIMIT_MAX_PER_MINUTE", "30"))
+                if _rl_count > _rl_max:
+                    print(
+                        f"[RATE_LIMITED] channel_user_id={channel_user_id} count={_rl_count}",
+                        flush=True,
+                    )
+                    return JSONResponse(
+                        status_code=429,
+                        content={"status": "rate_limited", "retry_after": 60},
+                    )
+        except Exception:
+            pass  # never block the webhook on rate limit errors
+
+    # [NOTA] INBOUND_DEBOUNCE_ENABLED está OFF por defecto (valor "false").
+    # Cuando está OFF, el mensaje va directo al orquestador en este mismo request
+    # y se bypasea toda la lógica del worker: current_turn guard, deduplicación
+    # de mensajes rápidos y el manejo especial del primer mensaje.
+    # [MEJORA] Activar en .env: INBOUND_DEBOUNCE_ENABLED=true
+    # Esto mueve el procesamiento al worker Celery (tasks_chatwoot.py), que tiene
+    # la lógica más completa, y libera el webhook para responder en <100ms.
+    if os.getenv("INBOUND_DEBOUNCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        try:
+            from .tasks_chatwoot import enqueue_chatwoot_message
+
+            queued = enqueue_chatwoot_message(
+                {
+                    "account_id": account_id,
+                    "conversation_id": conversation_id,
+                    "inbox_id": inbox_id,
+                    "message_id": message_id,
+                    "channel_user_id": channel_user_id,
+                    "username": username,
+                    "phone": contact.get("phone"),
+                    "channel_label": channel_label,
+                    "content": content,
+                }
+            )
+
+            print(
+                "[CHATWOOT_DEBOUNCE_QUEUED]",
+                json.dumps(
+                    {
+                        "account_id": account_id,
+                        "conversation_id": conversation_id,
+                        "message_id": message_id,
+                        "channel_user_id": channel_user_id,
+                        "debounce_seconds": queued.get("debounce_seconds"),
+                        "content_preview": content[:300],
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+
+            return {
+                "status": "accepted",
+                "queued": True,
+                "debounce_seconds": queued.get("debounce_seconds"),
+                "conversation_id": conversation_id,
+                "account_id": account_id,
+                "message_id": message_id,
+            }
+
+        except Exception as exc:
+            traceback.print_exc()
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "error": _public_error(exc),
+                    "where": "chatwoot_debounce_enqueue",
+                },
+            )
+
+
+    # [RIESGO] Todo lo que sigue (orquestador + 2 llamadas HTTP a Chatwoot) se
+    # ejecuta de forma síncrona dentro del handler async ANTES de devolver 200.
+    # Si el total tarda más de ~25-30s, Chatwoot reintenta el webhook y el
+    # candidato recibe el mensaje duplicado.
+    # Desglose del tiempo típico por operación:
+    #   run_hr_graph_message  → Neo4j + Postgres + LLM: 3-8s
+    #   _send_chatwoot_message → HTTP Chatwoot: 0.5-2s
+    #   sync_chatwoot_candidate_note → Postgres + 2x HTTP Chatwoot: 1-4s
+    # Total: 4-14s en condiciones normales. Puede escalar con latencia de red.
+    # [MEJORA] Activar INBOUND_DEBOUNCE_ENABLED=true para que todo esto ocurra
+    # en el worker Celery y el webhook responda en <200ms.
     try:
-        result = orchestrate_message(
+        result = run_hr_graph_message(
             channel="chatwoot",
             channel_user_id=channel_user_id,
             username=username,
@@ -914,60 +1217,107 @@ async def chatwoot_webhook(
         note_created = False
         labels_error = None
         note_error = None
+        note_sync = None
 
         try:
-            await _set_chatwoot_labels(
+            note_sync = await sync_chatwoot_candidate_note(
+                lead_key=conversation_key,
                 account_id=account_id,
                 conversation_id=conversation_id,
-                labels=labels,
+                fallback_last_message=content,
+                channel_label=channel_label,
             )
-            labels_applied = True
-        except Exception as label_exc:
-            labels_error = str(label_exc)
+            labels = note_sync.get("labels") or []
+            labels_applied = bool(note_sync.get("ok"))
+            note_created = bool(note_sync.get("ok"))
+
             print(
-                "[CHATWOOT_LABELS_ERROR]",
+                "[CHATWOOT_NOTE_SYNC_OK]",
                 json.dumps(
                     {
+                        "lead_key": conversation_key,
                         "conversation_id": conversation_id,
                         "account_id": account_id,
                         "labels": labels,
-                        "error": labels_error[:500],
+                        "note_message_id": note_sync.get("note_message_id"),
                     },
                     ensure_ascii=False,
                 ),
                 flush=True,
             )
 
-        try:
-            note = _build_chatwoot_internal_note(
-                result=result,
-                work_queue=work_queue,
-                labels=labels,
-                username=username,
-                content=content,
-                channel_label=channel_label,
-            )
+        except Exception as sync_exc:
+            note_error = str(sync_exc)
+            labels_error = str(sync_exc)
 
-            await _send_chatwoot_private_note(
-                account_id=account_id,
-                conversation_id=conversation_id,
-                content=note,
-            )
-            note_created = True
-        except Exception as note_exc:
-            note_error = str(note_exc)
             print(
-                "[CHATWOOT_NOTE_ERROR]",
+                "[CHATWOOT_NOTE_SYNC_ERROR]",
                 json.dumps(
                     {
+                        "lead_key": conversation_key,
                         "conversation_id": conversation_id,
                         "account_id": account_id,
-                        "error": note_error[:500],
+                        "error": str(sync_exc)[:500],
                     },
                     ensure_ascii=False,
                 ),
                 flush=True,
             )
+
+            # Fallback al comportamiento anterior para no romper operación si falla la memoria v2.
+            try:
+                await _set_chatwoot_labels(
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    labels=labels,
+                )
+                labels_applied = True
+            except Exception as label_exc:
+                labels_error = str(label_exc)
+                print(
+                    "[CHATWOOT_LABELS_ERROR]",
+                    json.dumps(
+                        {
+                            "conversation_id": conversation_id,
+                            "account_id": account_id,
+                            "labels": labels,
+                            "error": labels_error[:500],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+
+            try:
+                note = _build_chatwoot_internal_note(
+                    result=result,
+                    work_queue=work_queue,
+                    labels=labels,
+                    username=username,
+                    content=content,
+                    channel_label=channel_label,
+                )
+
+                await _send_chatwoot_private_note(
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    content=note,
+                )
+                note_created = True
+            except Exception as fallback_note_exc:
+                note_error = str(fallback_note_exc)
+                print(
+                    "[CHATWOOT_NOTE_ERROR]",
+                    json.dumps(
+                        {
+                            "conversation_id": conversation_id,
+                            "account_id": account_id,
+                            "error": note_error[:500],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
 
         return {
             "status": "ok",
@@ -985,6 +1335,7 @@ async def chatwoot_webhook(
             "labels_error": labels_error,
             "note_created": note_created,
             "note_error": note_error,
+            "note_sync": note_sync,
             "work_priority": work_queue.get("work_priority"),
             "work_bucket": work_queue.get("work_bucket"),
             "recommended_action": work_queue.get("recommended_action"),

@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import contextmanager
 from typing import Any
@@ -5,35 +6,84 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
+
+
+log = logging.getLogger(__name__)
+
+RISK_RANK = {"low": 1, "medium": 2, "high": 3}
+
+# Tamaño del pool configurable via .env.
+# min=2: siempre hay 2 conexiones listas; max=10: techo bajo carga.
+_POOL_MIN = int(os.getenv("POSTGRES_POOL_MIN", "2"))
+_POOL_MAX = int(os.getenv("POSTGRES_POOL_MAX", "10"))
+
+_pool: ConnectionPool | None = None
+
+
+def _db_conninfo() -> str:
+    host     = os.getenv("POSTGRES_HOST", "postgres")
+    port     = os.getenv("POSTGRES_PORT", "5432")
+    dbname   = os.getenv("POSTGRES_DB", "hrdb")
+    user     = os.getenv("POSTGRES_USER", "hr_david")
+    password = os.getenv("POSTGRES_PASSWORD", "")
+    timeout  = os.getenv("POSTGRES_CONNECT_TIMEOUT", "5")
+    return (
+        f"host={host} port={port} dbname={dbname} "
+        f"user={user} password={password} connect_timeout={timeout}"
+    )
+
+
+def _get_pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = ConnectionPool(
+            conninfo=_db_conninfo(),
+            min_size=_POOL_MIN,
+            max_size=_POOL_MAX,
+            kwargs={"row_factory": dict_row},
+            open=True,
+        )
+        log.info("[DB_POOL] Pool inicializado min=%d max=%d", _POOL_MIN, _POOL_MAX)
+    return _pool
+
+
+@contextmanager
+def get_conn():
+    # Pool de conexiones: sin overhead TCP por llamada.
+    # La interfaz es idéntica al get_conn() anterior — todos los callers
+    # siguen usando "with get_conn() as conn:" sin cambios.
+    with _get_pool().connection() as conn:
+        yield conn
 
 
 def _db_config() -> dict[str, Any]:
+    # Mantenido por compatibilidad con cualquier código que lo llame directamente.
     return {
         "host": os.getenv("POSTGRES_HOST", "postgres"),
         "port": int(os.getenv("POSTGRES_PORT", "5432")),
         "dbname": os.getenv("POSTGRES_DB", "hrdb"),
         "user": os.getenv("POSTGRES_USER", "hr_david"),
         "password": os.getenv("POSTGRES_PASSWORD", ""),
+        "connect_timeout": int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "5")),
     }
-
-
-@contextmanager
-def get_conn():
-    conn = psycopg.connect(**_db_config(), row_factory=dict_row)
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def make_conversation_key(channel: str, channel_user_id: str) -> str:
     channel = (channel or "unknown").strip().lower()
     channel_user_id = (channel_user_id or "unknown").strip()
     return f"{channel}:{channel_user_id}"
+
+
+def _normalize_risk_level(value: str | None, default: str = "low") -> str:
+    risk = (value or default or "low").strip().lower()
+    return risk if risk in RISK_RANK else default
+
+
+def _max_risk_level(left: str | None, right: str | None) -> str:
+    left_norm = _normalize_risk_level(left)
+    right_norm = _normalize_risk_level(right)
+    return left_norm if RISK_RANK[left_norm] >= RISK_RANK[right_norm] else right_norm
 
 
 def upsert_conversation(
@@ -313,6 +363,96 @@ def update_stage(
             )
 
 
+def release_human_review(conversation_key: str, stage_to: str = "START") -> None:
+    """Vía explícita de liberación de HUMAN_REVIEW (acción humana/operativa).
+
+    `update_stage` pin-ea `HUMAN_REVIEW_REQUIRED` a propósito para que el bot NO
+    auto-regrese por mensajes del candidato. Esta función es la ÚNICA vía de salida:
+    debe invocarse solo desde una acción humana/operativa explícita (agente que
+    resuelve/reasigna en Chatwoot, o un endpoint admin), nunca desde el flujo
+    automático del turno. Así se evita el bloqueo permanente sin reabrir el handoff
+    por sí solo. El WHERE acota el efecto a conversaciones realmente en revisión humana.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE rh_conversations
+                SET
+                    current_stage = %(stage_to)s,
+                    requires_human = false,
+                    risk_level = 'low',
+                    updated_at = now()
+                WHERE conversation_key = %(conversation_key)s
+                  AND current_stage = 'HUMAN_REVIEW_REQUIRED';
+                """,
+                {
+                    "conversation_key": conversation_key,
+                    "stage_to": stage_to,
+                },
+            )
+
+
+def sync_conversation_risk_from_profile(
+    conversation_key: str,
+    *,
+    risk_level: str | None = None,
+    requires_human: bool | None = None,
+    intent: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Synchronize aggregate conversation risk from candidate profile facts.
+
+    This helper never downgrades risk or clears requires_human. It only promotes
+    the conversation aggregate state when lead/profile ingestion discovers a
+    higher-risk condition such as expiring documents or callback/handoff needs.
+    """
+    if not conversation_key:
+        return None
+
+    requested_risk = _normalize_risk_level(risk_level, default="low")
+    requested_requires_human = bool(requires_human)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT risk_level, requires_human
+                FROM rh_conversations
+                WHERE conversation_key = %(conversation_key)s;
+                """,
+                {"conversation_key": conversation_key},
+            )
+            current = cur.fetchone()
+            if not current:
+                return None
+
+            next_risk = _max_risk_level(current.get("risk_level"), requested_risk)
+            next_requires_human = bool(current.get("requires_human", False)) or requested_requires_human
+
+            cur.execute(
+                """
+                UPDATE rh_conversations
+                SET
+                    risk_level = %(risk_level)s,
+                    requires_human = %(requires_human)s,
+                    last_intent = COALESCE(%(intent)s, last_intent),
+                    updated_at = now()
+                WHERE conversation_key = %(conversation_key)s
+                RETURNING conversation_key, risk_level, requires_human, last_intent;
+                """,
+                {
+                    "conversation_key": conversation_key,
+                    "risk_level": next_risk,
+                    "requires_human": next_requires_human,
+                    "intent": intent,
+                },
+            )
+            row = cur.fetchone()
+
+    return dict(row) if row else None
+
+
 def update_candidate_profile(conversation_key: str, fields: dict[str, Any]) -> None:
     allowed = {
         "nombre_completo",
@@ -346,6 +486,15 @@ def update_candidate_profile(conversation_key: str, fields: dict[str, Any]) -> N
         "last_detected_intent",
         "risk_level",
         "requires_human",
+        "substance_disclosure",
+        "substance_disclosure_status",
+        "substance_disclosure_context",
+        "substance_last_use_text",
+        "substance_operational_risk",
+        "substance_requires_review",
+        "substance_analytics_flag",
+        "substance_analytics_category",
+        "substance_raw_mention",
     }
 
     clean_fields = {k: v for k, v in fields.items() if k in allowed and v is not None}
@@ -354,6 +503,8 @@ def update_candidate_profile(conversation_key: str, fields: dict[str, Any]) -> N
 
     set_sql = ", ".join([f"{key} = %({key})s" for key in clean_fields])
     params = {"conversation_key": conversation_key, **clean_fields}
+    if "substance_disclosure" in params and isinstance(params["substance_disclosure"], (dict, list)):
+        params["substance_disclosure"] = Jsonb(params["substance_disclosure"])
 
     with get_conn() as conn:
         with conn.cursor() as cur:

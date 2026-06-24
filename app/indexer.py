@@ -1,3 +1,20 @@
+"""Indexación RAG y clientes LLM.
+
+Dos responsabilidades:
+
+1. **Construcción del índice** (`build_index`): lee fuentes en ``DATA_DIR``
+   (PDF/txt/md), las trocea (`_split_text`) y las persiste como embeddings
+   `BAAI/bge-m3` en la colección ChromaDB. El volumen ``.cache/`` (~2.4 GB con
+   el modelo) NO se borra; ver constraint 7 en ``openspec/project.md``.
+2. **Recuperación y generación**: `retrieve_context_for_guardrail` (recupera +
+   rerank Cohere para el guardrail) y los clientes LLM Groq/Cohere
+   (`call_llm`, `call_groq_json`, …).
+
+Nota: la recuperación acotada por fuente autorizada (fail-closed de pago) vive
+en `app/knowledge/context_builder.py`, que reutiliza los helpers privados de
+este módulo (`_embed_texts`, `_get_collection`). El RAG responde políticas/HR;
+nunca decide facts del candidato.
+"""
 import os
 import re
 from pathlib import Path
@@ -693,7 +710,8 @@ def call_groq_llm(prompt: str) -> str:
         return "Error: falta configurar GROQ_API_KEY."
 
     try:
-        timeout = httpx.Timeout(60.0, connect=20.0)
+        timeout_secs = float(os.getenv("GROQ_TIMEOUT_SECONDS", "8"))
+        timeout = httpx.Timeout(timeout_secs, connect=5.0)
 
         with httpx.Client(timeout=timeout) as http_client:
             client = Groq(api_key=api_key, http_client=http_client)
@@ -770,6 +788,75 @@ def call_cohere_llm(prompt: str) -> str:
             print("[cohere] Usando fallback Groq.", flush=True)
             return call_groq_llm(prompt)
 
+        return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
+
+
+def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0,
+                   model: str | None = None) -> str:
+    """Llama a Groq en JSON mode para clasificación determinista.
+
+    Devuelve el string JSON crudo (el caller lo parsea/valida). Distinta de
+    call_llm: usa response_format json_object, temperatura ~0 y un system message
+    propio (no el de Mundo conversacional). No reemplaza call_llm.
+
+    model: por defecto GROQ_MODEL. Para clasificación conviene un modelo chico
+    (ej. llama-3.1-8b-instant): más barato en tokens y más rápido.
+    """
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return '{"error": "missing_groq_api_key"}'
+
+    try:
+        timeout_secs = float(os.getenv("GROQ_JSON_TIMEOUT_SECONDS", "10"))
+        timeout = httpx.Timeout(timeout_secs, connect=5.0)
+
+        with httpx.Client(timeout=timeout) as http_client:
+            client = Groq(api_key=api_key, http_client=http_client)
+            completion = client.chat.completions.create(
+                model=model or GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=temperature,
+                max_tokens=GROQ_MAX_TOKENS,
+                response_format={"type": "json_object"},
+            )
+        return completion.choices[0].message.content or "{}"
+
+    except Exception as exc:
+        print(f"[groq_json] Error: {type(exc).__name__}: {exc}", flush=True)
+        return f'{{"error": "{type(exc).__name__}"}}'
+
+
+def call_groq_with_system(system: str, user: str, *, temperature: float | None = None, max_tokens: int = 300) -> str:
+    """Groq conversational call con system prompt arbitrario (no JSON mode).
+
+    Distinta de call_llm: acepta system prompt externo en lugar de _llm_system_message().
+    Usada para respuestas generadas por el LLM siguiendo reglas de persona_config sin
+    pasar por el pipeline RAG completo (ej. descalificación por edad).
+    """
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
+    try:
+        t = temperature if temperature is not None else TEMPERATURE
+        timeout_secs = float(os.getenv("GROQ_TIMEOUT_SECONDS", "8"))
+        timeout = httpx.Timeout(timeout_secs, connect=5.0)
+        with httpx.Client(timeout=timeout) as http_client:
+            client = Groq(api_key=api_key, http_client=http_client)
+            completion = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=t,
+                max_tokens=max_tokens,
+            )
+        return completion.choices[0].message.content or ""
+    except Exception as exc:
+        print(f"[groq_with_system] Error: {type(exc).__name__}: {exc}", flush=True)
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
 
 

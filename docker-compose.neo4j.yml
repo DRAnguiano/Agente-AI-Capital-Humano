@@ -1,0 +1,33 @@
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: hr_neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo4j_password}
+      server.memory.heap.initial_size: ${NEO4J_HEAP_INITIAL:-512m}
+      server.memory.heap.max_size: ${NEO4J_HEAP_MAX:-1G}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./app/knowledge:/var/lib/neo4j/import
+    restart: unless-stopped
+
+  api-webhook-proxy:
+    image: nginx:alpine
+    container_name: api-webhook-proxy
+    depends_on:
+      - api
+    volumes:
+      - ./deploy/nginx/api-webhook-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      default:
+        aliases:
+          - api.localhost
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

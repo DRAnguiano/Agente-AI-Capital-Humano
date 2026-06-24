@@ -1,0 +1,88 @@
+{
+  "name": "hr_recruiting_schema_driven_extraction",
+  "version": "0.1.0",
+  "description": "Restricted extraction schema for HR recruiting knowledge. Use this with LLM graph extraction tools to prevent uncontrolled graph growth.",
+  "nodes": [
+    {
+      "label": "Term",
+      "description": "Controlled dictionary term, synonym group, typo variant or trucking/recruiting slang.",
+      "properties": [
+        {"name": "id", "type": "string", "required": true, "unique": true},
+        {"name": "canonical", "type": "string", "required": true},
+        {"name": "category", "type": "string", "required": true},
+        {"name": "aliases", "type": "list<string>", "required": false},
+        {"name": "meanings", "type": "list<string>", "required": false},
+        {"name": "action", "type": "string", "required": false}
+      ]
+    },
+    {
+      "label": "Intent",
+      "description": "Business intent selected by the knowledge node.",
+      "properties": [
+        {"name": "id", "type": "string", "required": true, "unique": true},
+        {"name": "risk_level", "type": "string", "required": true},
+        {"name": "topic", "type": "string", "required": false}
+      ]
+    },
+    {
+      "label": "Route",
+      "description": "Route used by the assistant workflow.",
+      "properties": [
+        {"name": "id", "type": "string", "required": true, "unique": true},
+        {"name": "label", "type": "string", "required": false}
+      ]
+    },
+    {
+      "label": "ReplyTemplate",
+      "description": "Controlled public reply template.",
+      "properties": [
+        {"name": "id", "type": "string", "required": true, "unique": true},
+        {"name": "text", "type": "string", "required": true}
+      ]
+    },
+    {
+      "label": "Policy",
+      "description": "Generation/safety policy that constrains public answers.",
+      "properties": [
+        {"name": "id", "type": "string", "required": true, "unique": true},
+        {"name": "label", "type": "string", "required": true},
+        {"name": "risk_level", "type": "string", "required": true},
+        {"name": "public_guidance", "type": "string", "required": true}
+      ]
+    },
+    {
+      "label": "Topic",
+      "description": "Internal topic bucket for RAG source selection.",
+      "properties": [
+        {"name": "id", "type": "string", "required": true, "unique": true}
+      ]
+    },
+    {
+      "label": "InternalSource",
+      "description": "Internal RAG document or structured fact source.",
+      "properties": [
+        {"name": "id", "type": "string", "required": true, "unique": true},
+        {"name": "kind", "type": "string", "required": false}
+      ]
+    }
+  ],
+  "relationships": [
+    {"type": "SUGGESTS_INTENT", "start": "Term", "end": "Intent"},
+    {"type": "ROUTES_TO", "start": "Intent", "end": "Route"},
+    {"type": "PREFERS_SOURCE", "start": "Term", "end": "InternalSource"},
+    {"type": "PREFERS_SOURCE", "start": "Topic", "end": "InternalSource"},
+    {"type": "USES_REPLY", "start": "Term", "end": "ReplyTemplate"},
+    {"type": "USES_REPLY", "start": "Intent", "end": "ReplyTemplate"},
+    {"type": "USES_REPLY", "start": "Route", "end": "ReplyTemplate"},
+    {"type": "APPLIES_TO", "start": "Policy", "end": "Intent"},
+    {"type": "APPLIES_TO", "start": "Policy", "end": "Topic"},
+    {"type": "APPLIES_TO", "start": "Policy", "end": "Term"}
+  ],
+  "hard_rules": [
+    "Do not create new Route or Policy nodes from candidate messages.",
+    "Do not create sensitive facts unless the candidate explicitly stated them.",
+    "Unknown candidate terms should become clarification candidates, not policies.",
+    "Recruiting facts such as pay, requirements and routes must come from InternalSource documents or controlled seed data.",
+    "Candidate-facing answers must never be generated directly from external web snippets."
+  ]
+}

@@ -1,5 +1,30 @@
 services:
   #######################################
+  # NEO4J GRAFO DE CONOCIMIENTO RH
+  #######################################
+  neo4j:
+    image: neo4j:5-community
+    container_name: hr_neo4j
+    environment:
+      # No usar env_file aquí — Neo4j 5 interpreta todas las vars NEO4J_* como
+      # config y las vars extra del .env (HEAP_INITIAL, etc.) causan error.
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./app/knowledge:/var/lib/neo4j/import
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  #######################################
   # POSTGRES PRINCIPAL RH / FASTAPI
   #######################################
   postgres:
@@ -12,6 +37,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-hr_david}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
     ports:
+      # [RIESGO] El puerto 5432 está expuesto al host. En desarrollo está bien,
+      # pero en un servidor compartido o VPS esto expone la BD directamente.
+      # TODO: en producción remover esta sección ports: y acceder solo
+      # desde la red interna de Docker (los contenedores ya se ven entre sí).
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
@@ -29,32 +58,98 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-hrdb}
-      POSTGRES_USER: ${POSTGRES_USER:-hr_david}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
-
-      # FastAPI habla con Chatwoot por red interna Docker.
-      CHATWOOT_BASE_URL: http://chatwoot_rails:3000
-
-      HF_HOME: /app/.cache
-      SENTENCE_TRANSFORMERS_HOME: /app/.cache
+      ANONYMIZED_TELEMETRY: "false"
     ports:
       - "8000:8000"
     volumes:
-      - chroma_data:/app/chroma_db
+      - chroma_bge_m3:/app/chroma_db_bge_m3
       - ./.cache:/app/.cache
       - ./data:/app/data
     depends_on:
       - postgres
+      - neo4j
       - chatwoot_rails
+      - chatwoot_redis
     networks:
       default:
         aliases:
-          # Alias válido para que Chatwoot UI acepte la URL del webhook:
-          # http://api.localhost:8000/chatwoot/webhook?token=...
           - api.localhost
+    restart: unless-stopped
+
+  #######################################
+  # API-TEST — solo perfil "test"; NO arranca en `docker compose up`.
+  # No afecta api/worker/beat. Los tests corren contra el repo (read-only).
+  #######################################
+  api-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: hr-rag-api-test:latest
+    profiles: ["test"]
+    env_file:
+      - .env
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+    working_dir: /app
+    volumes:
+      - ./app:/app/app:ro
+      - ./tests:/app/tests:ro
+      - ./scripts:/app/scripts:ro
+    networks:
+      default:
+
+  #######################################
+  # CELERY WORKER / DEBOUNCE INBOUND CHATWOOT
+  #######################################
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hr-rag-api:latest
+    container_name: hr_worker
+    env_file:
+      - .env
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+    command:
+      - sh
+      - -c
+      - celery -A app.tasks_chatwoot worker --loglevel=INFO -Q inbound
+    volumes:
+      - chroma_bge_m3:/app/chroma_db_bge_m3
+      - ./.cache:/app/.cache
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - neo4j
+      - chatwoot_rails
+      - chatwoot_redis
+    restart: unless-stopped
+
+  #######################################
+  # CELERY BEAT / SEGUIMIENTO AUTOMÁTICO
+  #######################################
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hr-rag-api:latest
+    container_name: hr_beat
+    env_file:
+      - .env
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+      TZ: America/Monterrey
+    command:
+      - sh
+      - -c
+      - celery -A app.tasks_seguimiento beat --loglevel=INFO -s /tmp/celerybeat-schedule
+    volumes:
+      - ./.cache:/app/.cache
+    depends_on:
+      - postgres
+      - chatwoot_redis
+      - worker
     restart: unless-stopped
 
   #######################################
@@ -96,11 +191,7 @@ services:
       INSTALLATION_ENV: docker
       RAILS_LOG_TO_STDOUT: "true"
       LOG_LEVEL: info
-
-      # Chatwoot público para Telegram.
-      # NGROK_DOMAIN debe venir desde .env.
       FRONTEND_URL: https://${NGROK_DOMAIN}
-
       POSTGRES_HOST: chatwoot_postgres
       POSTGRES_PORT: 5432
       POSTGRES_DATABASE: chatwoot
@@ -108,7 +199,6 @@ services:
       POSTGRES_USERNAME: chatwoot
       POSTGRES_USER: chatwoot
       POSTGRES_PASSWORD: chatwoot_password
-
       REDIS_URL: redis://chatwoot_redis:6379
       ACTIVE_STORAGE_SERVICE: local
       ENABLE_ACCOUNT_SIGNUP: "true"
@@ -139,9 +229,7 @@ services:
       INSTALLATION_ENV: docker
       RAILS_LOG_TO_STDOUT: "true"
       LOG_LEVEL: info
-
       FRONTEND_URL: https://${NGROK_DOMAIN}
-
       POSTGRES_HOST: chatwoot_postgres
       POSTGRES_PORT: 5432
       POSTGRES_DATABASE: chatwoot
@@ -149,7 +237,6 @@ services:
       POSTGRES_USERNAME: chatwoot
       POSTGRES_USER: chatwoot
       POSTGRES_PASSWORD: chatwoot_password
-
       REDIS_URL: redis://chatwoot_redis:6379
       ACTIVE_STORAGE_SERVICE: local
     command:
@@ -164,9 +251,47 @@ services:
     restart: unless-stopped
 
   #######################################
-  # N8N AUXILIAR / LABORATORIO / AUTOMATIZACIONES
+  # GATEWAY PUBLICO CHATWOOT + WEBHOOK API
+  #######################################
+  public-gateway:
+    image: nginx:alpine
+    container_name: public-gateway
+    depends_on:
+      - api
+      - chatwoot_rails
+    volumes:
+      - ./deploy/nginx/public-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  #######################################
+  # NGROK PUBLICANDO GATEWAY PUBLICO
+  #######################################
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    command:
+      - "http"
+      - "--log=stdout"
+      - "--authtoken"
+      - "${NGROK_AUTHTOKEN}"
+      - "--domain"
+      - "${NGROK_DOMAIN}"
+      - "http://public-gateway:80"
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+      NGROK_DOMAIN: ${NGROK_DOMAIN}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - public-gateway
+    restart: unless-stopped
+
+  #######################################
+  # N8N OPCIONAL / LABORATORIO
   #######################################
   n8n:
+    profiles:
+      - lab
     image: n8nio/n8n:latest
     container_name: hr_n8n
     env_file:
@@ -177,7 +302,6 @@ services:
       N8N_PROTOCOL: http
       NODE_ENV: production
       GENERIC_TIMEZONE: America/Mexico_City
-
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: postgres
       DB_POSTGRESDB_PORT: 5432
@@ -192,33 +316,12 @@ services:
       - postgres
     restart: unless-stopped
 
-  #######################################
-  # NGROK PUBLICANDO CHATWOOT
-  #######################################
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: ngrok
-    command:
-      - "http"
-      - "--log=stdout"
-      - "--authtoken"
-      - "${NGROK_AUTHTOKEN}"
-      - "--domain"
-      - "${NGROK_DOMAIN}"
-      - "http://chatwoot_rails:3000"
-    environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
-      NGROK_DOMAIN: ${NGROK_DOMAIN}
-    ports:
-      - "4040:4040"
-    depends_on:
-      - chatwoot_rails
-    restart: unless-stopped
-
 volumes:
-  chroma_data:
+  chroma_bge_m3:
   n8n_data:
   pg_data:
+  neo4j_data:
+  neo4j_logs:
   chatwoot_pg_data:
   chatwoot_redis_data:
   chatwoot_storage:
