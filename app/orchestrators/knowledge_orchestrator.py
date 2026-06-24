@@ -615,7 +615,11 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any], turn_
 
     # Torton/rabón/reparto/local/camioneta → experiencia no-objetivo (escuelita).
     # No fija vehicle_type full/sencillo; solo agrega la señal para valoración humana.
-    if _NON_TARGET_RE.search(text):
+    # BUG-1: quinta rueda y variantes no están en _NON_TARGET_RE (domain_catalog); se detectan aquí
+    _QUINTA_RUEDA_TERMS = ("quinta rueda", "5ta rueda", "kinta rueda", "quintarueda", "quinta_rueda")
+    _is_quinta_rueda = any(t in text for t in _QUINTA_RUEDA_TERMS)
+
+    if _NON_TARGET_RE.search(text) or _is_quinta_rueda:
         updated = dict(contract)
         signals = list(updated.get("business_signals") or [])
         if "considerar_escuelita_transmontes" not in signals:

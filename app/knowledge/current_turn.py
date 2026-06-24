@@ -387,6 +387,13 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
                 if "medical.apto_expiration_text" not in facts and "apto" in last_norm and "vence" in last_norm:
                     facts["medical.apto_expiration_text"] = exp_text
 
+        # BUG-2: "No" bare como respuesta directa a pregunta de cartas/documentos
+        _last_norm_docs = normalize_text(last_bot_message)
+        _asks_cartas = any(t in _last_norm_docs for t in ("cartas", "membretadas", "documentos laborales", "documento laboral"))
+        _bare_negation = text in {"no", "nop", "nel", "nope", "para nada", "tampoco", "negativo", "no tengo", "no cuento"}
+        if _asks_cartas and _bare_negation and "documents.proof" not in facts:
+            facts["documents.proof"] = "ninguno"
+
     # Fields only needed by the debounce guard, not persisted to lead_memory.
     if any(t in text for t in ("cuanto pagan", "pago", "sueldo", "compensacion", "kilometro", "km")):
         facts["interest.payment"] = "asked"
