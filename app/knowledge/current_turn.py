@@ -568,38 +568,40 @@ def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | N
     if is_age_disqualified(facts):
         return age_disqualification_reply(_to_int(facts.get("candidate.age")))
 
-    detected = []
+    # Frases de confirmación naturales por tipo de dato (P2-5)
+    confirms = []
     if current.get("candidate.city"):
-        detected.append(f"ciudad {current['candidate.city']}")
-    if current.get("license.category"):
-        detected.append(f"licencia tipo {current['license.category']}")
-    _lic_exp = current.get("license.expiration_text")
-    if _lic_exp and _lic_exp != "vencido":
-        detected.append(f"licencia vence {_lic_exp}")
-    if current.get("medical.apto_status") == "vigente":
-        detected.append("apto médico vigente")
-    _apto_exp = current.get("medical.apto_expiration_text")
-    if _apto_exp and _apto_exp != "vencido":
-        detected.append(f"apto vence {_apto_exp}")
-    if current.get("documents.general_status") == "vigente":
-        detected.append("documentación vigente")
-    if current.get("documents.labor_letters") == "sí":
-        detected.append("cartas laborales")
+        confirms.append(f"Anotado, {current['candidate.city']}.")
     if current.get("candidate.age"):
-        detected.append(f"{current['candidate.age']} años")
-    if current.get("experience.years"):
-        detected.append(f"{current['experience.years']} de experiencia")
+        confirms.append(f"Edad anotada, continuamos con el proceso.")
     vt = current.get("experience.vehicle_type")
     if vt == "sencillo":
-        detected.append("experiencia en camión sencillo")
+        confirms.append("Entendido, experiencia en camión sencillo.")
     elif vt == "full":
         # Solo full confirma tracto full; jerga (quinta rueda/tráiler) nunca
         # llega aquí como vehicle_type y no debe afirmarse como full.
-        detected.append("experiencia en tracto full")
+        confirms.append("Entendido, operador de tracto full.")
+    if current.get("license.category"):
+        confirms.append(f"Queda anotado: licencia federal tipo {current['license.category']}.")
+    _lic_exp = current.get("license.expiration_text")
+    if _lic_exp and _lic_exp != "vencido":
+        confirms.append(f"Tomamos nota, licencia vigente ({_lic_exp}).")
+    _apto_exp = current.get("medical.apto_expiration_text")
+    if _apto_exp and _apto_exp != "vencido":
+        confirms.append(f"Bien, apto médico vigente ({_apto_exp}).")
+    if current.get("medical.apto_status") == "vigente":
+        if not _apto_exp:
+            confirms.append("Bien, apto médico vigente.")
+    if current.get("experience.years"):
+        confirms.append(f"Esa experiencia es valiosa. Con ese perfil nos interesa conocerle.")
+    if current.get("documents.labor_letters") == "sí" or current.get("documents.proof") in {"cartas", "semanas_imss"}:
+        confirms.append("Listo, documentos anotados.")
+    if current.get("documents.general_status") == "vigente":
+        confirms.append("Documentación vigente, anotado.")
 
-    if detected:
-        prefix = "Perfecto, registro " + ", ".join(detected) + "."
+    if confirms:
+        prefix = " ".join(confirms)
     else:
-        prefix = "Perfecto, lo dejo registrado."
+        prefix = "Gracias, lo dejo registrado."
 
     return _join_ack_and_question(prefix, next_question_from_missing_facts(facts))
