@@ -5,61 +5,59 @@
 Contrato de la Nota IA privada en Chatwoot: formato canónico, secciones permitidas/prohibidas,
 una sola "siguiente acción", renderer determinístico sin facts inventados y sección condicional
 de pendientes/conflictos.
-
 ## Requirements
-
 ### Requirement: Formato canónico de la Nota IA
 
-El sistema SHALL generar la nota privada de Chatwoot con exactamente estas secciones,
-en este orden, comenzando con la cabecera literal `🤖 Nota IA: Seguimiento de candidato`:
+El sistema SHALL generar la nota privada de Chatwoot en **lenguaje administrativo** para Capital
+Humano (no técnico): SHALL NOT usar `Canal`, `Embudo`, `Etapa`, `Bloqueo`, `Riesgo` (salvo
+`riesgo_alto`), `Requiere humano`, ni nombres de labels. La cabecera SHALL describir el **escenario
+operativo** del candidato. El formato base es:
 
 ```
-🤖 Nota IA: Seguimiento de candidato
+🤖 Nota IA: <escenario operativo>
 
 Último mensaje: "<literal del candidato, máx 500 chars>"
 
 👤 Contacto
 Nombre: <nombre | No disponible>
 Teléfono: <teléfono | No disponible>
-Canal: <canal | Chatwoot>
 
-📋 Perfil confirmado
-Tipo de unidad: <Tracto full | Sencillo | valor humano | Pendiente>
-Experiencia: <valor | Pendiente>
-Licencia: <tipo/estado | Pendiente> [· vigencia <license.expiration_text>]
-Apto médico: <estado humano | Pendiente> [· <medical.apto_expiration_text>]
-Cartas/documentos: <estado | Pendiente>
-Ciudad: <valor | Pendiente>
+📌 Estado del candidato
+<estado operativo en lenguaje simple>
 
-⚠️ Pendientes o conflictos        ← CONDICIONAL: solo si existen
-<campo>: <pendiente/conflicto clave>
+✅ Lo que ya sabemos
+<solo los datos relevantes al escenario, confirmados>
 
-📍 Embudo
-Etapa: <etapa desde Postgres>
-Bloqueo actual: <bloqueo | Sin bloqueo>
-Riesgo: <Bajo | Medio | Alto | No disponible>
-Requiere humano: <Sí | No>
+⚠️ Falta confirmar              ← CONDICIONAL: solo si hay pendientes
+<lo que falta, en lenguaje simple>
+
+👥 Para Capital Humano
+<qué debe hacer Capital Humano>
+Requiere Agente: <Sí | No>
 
 ⏭️ Siguiente acción
-<una única acción determinística>
+<una única acción, dinámica según el último pendiente resuelto>
 ```
 
-La sección de perfil SHALL titularse `📋 Perfil confirmado` (no `Perfil detectado`).
+`Riesgo` SHALL aparecer únicamente cuando la label `riesgo_alto` esté activa. `Requiere Agente`
+SHALL reemplazar a `Requiere humano`. La sección `👤 Contacto` SHALL NOT incluir `Canal`.
 
-#### Scenario: Cabecera correcta
+#### Scenario: Sin lenguaje técnico
 - **WHEN** se genera la nota privada
-- **THEN** la nota comienza con `🤖 Nota IA: Seguimiento de candidato`
+- **THEN** la nota no contiene `Embudo`, `Etapa`, `Bloqueo actual`, `Canal` ni `Requiere humano`
+- **AND** no contiene nombres de labels técnicas
 
-#### Scenario: Orden de secciones
-- **WHEN** se genera la nota privada
-- **THEN** `Último mensaje` aparece antes que `👤 Contacto`, que aparece antes que
-  `📋 Perfil confirmado`, que aparece antes que `📍 Embudo`, que aparece antes que
-  `⏭️ Siguiente acción`
+#### Scenario: Cabecera por escenario
+- **WHEN** el candidato corresponde a un escenario operativo (escuelita, perfil listo local, etc.)
+- **THEN** la cabecera describe ese escenario (p. ej. `🤖 Nota IA: Candidato para Escuelita Transmontes`)
 
-#### Scenario: Perfil confirmado renombrado
-- **WHEN** se genera la nota privada
-- **THEN** la sección de perfil se titula `📋 Perfil confirmado`
-- **AND** la nota no contiene `📋 Perfil detectado`
+#### Scenario: Riesgo solo si alto
+- **WHEN** el candidato no tiene `riesgo_alto`
+- **THEN** la nota no muestra ninguna línea de `Riesgo`
+
+#### Scenario: Requiere Agente reemplaza Requiere humano
+- **WHEN** un escenario requiere intervención de Capital Humano
+- **THEN** la nota muestra `Requiere Agente: Sí` y nunca `Requiere humano`
 
 ### Requirement: Secciones y campos prohibidos en la nota
 
@@ -164,3 +162,62 @@ indicarse siempre en `Bloqueo actual` dentro de `📍 Embudo`.
 - **GIVEN** facts sin tipo de unidad confirmado
 - **WHEN** se genera la nota privada
 - **THEN** `Bloqueo actual:` está presente con el faltante principal
+
+### Requirement: Cabecera y contenido de la nota por escenario operativo
+
+El sistema SHALL seleccionar el escenario operativo de la nota desde facts/labels/estado
+(determinista, no LLM) y SHALL mostrar solo los campos relevantes a ese escenario. Escenarios
+mínimos: nuevo/interesado, objetivo en captura, perfil listo local, perfil listo foráneo,
+unidad ambigua, escuelita, escuelita sin licencia B/E (no aplica), CECATI (sin experiencia),
+B1/EUA, reingreso, edad fuera de perfil, riesgo/sensible, pendiente por licencia/apto, y
+licencia/apto vencidos en trámite con comprobante.
+
+#### Scenario: Escuelita muestra solo lo mínimo
+- **WHEN** el candidato es escuelita (experiencia no objetivo)
+- **THEN** `Lo que ya sabemos` muestra la experiencia no objetivo y la licencia si existe
+- **AND** no lista apto, cartas, ciudad ni edad como pendientes principales
+
+#### Scenario: No aplica no ofrece continuar
+- **WHEN** el escenario es "no aplica" (escuelita sin B/E, CECATI, edad fuera)
+- **THEN** la nota indica el cierre y no propone continuar el flujo automático
+
+#### Scenario: Perfil listo local muestra ciudad exacta
+- **WHEN** el candidato es perfil listo local
+- **THEN** `Ciudad` muestra la ciudad exacta de la ZM Laguna (Torreón, Gómez Palacio, Lerdo o Matamoros), no "La Laguna"
+
+### Requirement: Documento laboral mostrado según residencia
+
+El sistema SHALL mostrar el requisito de documento laboral según la residencia: para candidato
+local de la ZM Laguna, "cartas laborales o semanas cotizadas del IMSS"; para foráneo, "2 cartas
+laborales membretadas". SHALL NOT mostrar Infonavit ni mezclar ambos requisitos.
+
+#### Scenario: Documento local
+- **WHEN** el candidato es local de la ZM Laguna
+- **THEN** la nota describe el documento como "cartas laborales o semanas cotizadas del IMSS"
+
+#### Scenario: Documento foráneo
+- **WHEN** el candidato es foráneo
+- **THEN** la nota describe el documento como "2 cartas laborales membretadas"
+
+### Requirement: Siguiente acción dinámica según el pendiente resuelto
+
+La `⏭️ Siguiente acción` SHALL reflejar el siguiente pendiente del núcleo del perfil y SHALL
+actualizarse cuando el candidato resuelve uno (al enviar/confirmar un dato, la acción avanza al
+siguiente pendiente). Con el núcleo completo, SHALL indicar el cierre del escenario: local →
+"Validar documentos y continuar proceso"; foráneo → "Validar traslado, documentos y continuidad".
+
+#### Scenario: Avance al resolver un pendiente
+- **GIVEN** la siguiente acción pedía la licencia
+- **WHEN** el candidato confirma/envía la licencia y queda pendiente el apto
+- **THEN** la siguiente acción pasa a pedir el apto médico
+
+#### Scenario: Núcleo local completo
+- **GIVEN** un candidato local con todo el núcleo confirmado
+- **WHEN** se genera la nota
+- **THEN** la siguiente acción es "Validar documentos y continuar proceso"
+
+#### Scenario: Núcleo foráneo completo
+- **GIVEN** un candidato foráneo con todo el núcleo confirmado
+- **WHEN** se genera la nota
+- **THEN** la siguiente acción es "Validar traslado, documentos y continuidad"
+
