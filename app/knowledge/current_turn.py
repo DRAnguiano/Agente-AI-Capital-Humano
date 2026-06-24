@@ -469,10 +469,20 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if is_age_disqualified(facts):
         return age_disqualification_reply(_to_int(facts.get("candidate.age")))
     if not facts.get("experience.vehicle_type"):
-        return (
-            "¿Su experiencia es en tracto full o en sencillo? "
-            "Las vacantes disponibles son para operadores de tracto full o sencillo."
-        )
+        # 2.4: condición por licencia si ya se conoce (B→sencillo, E→ambas)
+        cat = (facts.get("license.category") or "").upper()
+        if cat == "B":
+            return (
+                "Con licencia tipo B la vacante disponible es de sencillo. "
+                "¿Le interesa una vacante de operador sencillo?"
+            )
+        elif cat == "E":
+            return "¿Le interesa una vacante de tracto full o de sencillo?"
+        else:
+            return (
+                "¿Su experiencia es en tracto full o en sencillo? "
+                "Las vacantes disponibles son para operadores de tracto full o sencillo."
+            )
     if not facts.get("license.category"):
         return "Gracias. ¿Qué tipo de licencia federal tiene y cuándo vence?"
     if not facts.get("license.expiration_text"):
@@ -488,7 +498,14 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if not facts.get("experience.years"):
         return "Perfecto. ¿Cuántos años de experiencia tiene como operador?"
     if not _has_labor_document(facts):
-        return "¿Cuenta con cartas laborales o semanas del IMSS?"
+        # 2.5: documento por residencia (local ZM Laguna acepta IMSS; foráneo exige membretadas)
+        is_local = facts.get("location.is_local_laguna") == "true" or (
+            normalize_text(facts.get("candidate.city") or "") in LOCAL_LAGUNA
+        )
+        if is_local:
+            return "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?"
+        else:
+            return "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?"
     return _profile_complete_closing()
 
 

@@ -206,3 +206,79 @@ def test_apto_vencido_con_cita_marca_tramite():
 def test_vencido_sin_comprobante_no_marca_tramite():
     d = facts("mi licencia está vencida")
     assert d.get("license.tramite_comprobante") is None
+
+
+# ── Tasks 2.1 / 2.4 / 2.5: funnel como ciclo — inferencia y documento ────────
+
+def test_funnel_skips_already_provided_facts():
+    # 2.1: funnel no re-pregunta edad ni unidad ni experiencia ya dadas
+    f = {
+        "candidate.age": "35",
+        "experience.vehicle_type": "full",
+        "experience.years": "10 años",
+    }
+    q = next_question_from_missing_facts(f)
+    assert "ciudad" in q.lower(), f"esperaba preguntar ciudad, got: {q!r}"
+    assert "edad" not in q.lower()
+    assert "tracto full" not in q.lower()
+    assert "años de experiencia" not in q.lower()
+
+
+def test_funnel_licencia_b_ofrece_sencillo():
+    # 2.4: con licencia B, la pregunta de unidad debe orientar a sencillo
+    f = {
+        "candidate.city": "Torreon",
+        "candidate.age": "45",
+        "license.category": "B",
+        "license.expiration_text": "vence en 1 año",
+        "medical.apto_expiration_text": "vence en 1 año",
+        "experience.years": "5 años",
+    }
+    q = next_question_from_missing_facts(f)
+    assert "sencillo" in q.lower(), f"B debe ofrecer sencillo, got: {q!r}"
+    assert "full" not in q.lower(), f"B no debe ofrecer full, got: {q!r}"
+
+
+def test_funnel_licencia_e_ofrece_ambas():
+    # 2.4: con licencia E, la pregunta de unidad debe ofrecer full o sencillo
+    f = {
+        "candidate.city": "Torreon",
+        "candidate.age": "45",
+        "license.category": "E",
+        "license.expiration_text": "vence en 1 año",
+        "medical.apto_expiration_text": "vence en 1 año",
+        "experience.years": "5 años",
+    }
+    q = next_question_from_missing_facts(f)
+    assert "full" in q.lower() and "sencillo" in q.lower(), f"E debe ofrecer ambas, got: {q!r}"
+
+
+def test_funnel_documento_local_acepta_imss():
+    # 2.5: candidato local de ZM Laguna — pregunta debe incluir IMSS
+    f = {
+        "candidate.city": "Torreon",
+        "candidate.age": "45",
+        "experience.vehicle_type": "full",
+        "license.category": "E",
+        "license.expiration_text": "vence en 1 año",
+        "medical.apto_expiration_text": "vence en 1 año",
+        "experience.years": "10 años",
+    }
+    q = next_question_from_missing_facts(f)
+    assert "imss" in q.lower(), f"local debe ofrecer IMSS, got: {q!r}"
+
+
+def test_funnel_documento_foraneo_exige_cartas_membretadas():
+    # 2.5: candidato foráneo — pregunta debe exigir cartas membretadas
+    f = {
+        "candidate.city": "Monterrey",
+        "candidate.age": "45",
+        "experience.vehicle_type": "full",
+        "license.category": "E",
+        "license.expiration_text": "vence en 1 año",
+        "medical.apto_expiration_text": "vence en 1 año",
+        "experience.years": "10 años",
+    }
+    q = next_question_from_missing_facts(f)
+    assert "membretada" in q.lower(), f"foráneo debe pedir membretadas, got: {q!r}"
+    assert "imss" not in q.lower(), f"foráneo no debe mencionar IMSS, got: {q!r}"

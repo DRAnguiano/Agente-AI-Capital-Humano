@@ -1490,9 +1490,40 @@ def _build_funnel_nudge(
     except (ValueError, ImportError):
         pass
 
+    _LOCAL_LAGUNA = {"torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"}
+
     for step in _FUNNEL_STEPS:
-        if any(k not in active_facts for k in step["keys"]):
-            return random.choice(step["variants"]), _canonical_asked_keys(step["keys"])
+        if not any(k not in active_facts for k in step["keys"]):
+            continue
+        # 2.4: vehicle_type conditioned on license category if already known
+        if step["keys"] == {"experience.vehicle_type"}:
+            cat = (active_facts.get("license.category") or "").upper()
+            if cat == "B":
+                return (
+                    "Con licencia tipo B la vacante disponible es de sencillo. "
+                    "¿Le interesa una vacante de operador sencillo?",
+                    _canonical_asked_keys(step["keys"]),
+                )
+            elif cat == "E":
+                return (
+                    "¿Le interesa una vacante de tracto full o de sencillo?",
+                    _canonical_asked_keys(step["keys"]),
+                )
+        # 2.5: document question by residency
+        if step["keys"] == {"documents.labor_letters_status"}:
+            city_norm = normalize_text(active_facts.get("candidate.city") or "")
+            is_local = active_facts.get("location.is_local_laguna") == "true" or city_norm in _LOCAL_LAGUNA
+            if is_local:
+                return (
+                    "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?",
+                    _canonical_asked_keys(step["keys"]),
+                )
+            else:
+                return (
+                    "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?",
+                    _canonical_asked_keys(step["keys"]),
+                )
+        return random.choice(step["variants"]), _canonical_asked_keys(step["keys"])
 
     return None, []  # All profile fields covered — no nudge needed
 

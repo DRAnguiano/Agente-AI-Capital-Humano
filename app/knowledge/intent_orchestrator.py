@@ -28,6 +28,34 @@ def _has(facts: dict[str, Any], key: str) -> bool:
     return bool(facts.get(key))
 
 
+_LOCAL_LAGUNA = {"torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"}
+
+
+def _is_local(facts: dict[str, Any]) -> bool:
+    if facts.get("location.is_local_laguna") == "true":
+        return True
+    from app.knowledge.text_normalizer import normalize_text
+    return normalize_text(facts.get("candidate.city") or "") in _LOCAL_LAGUNA
+
+
+def _vehicle_type_question(facts: dict[str, Any]) -> str:
+    cat = (facts.get("license.category") or "").upper()
+    if cat == "B":
+        return (
+            "Con licencia tipo B la vacante disponible es de sencillo. "
+            "¿Le interesa una vacante de operador sencillo?"
+        )
+    if cat == "E":
+        return "¿Le interesa una vacante de tracto full o de sencillo?"
+    return "¿Su experiencia es en tracto full o en sencillo? Las vacantes disponibles son para operadores de tracto full o sencillo."
+
+
+def _document_question(facts: dict[str, Any]) -> str:
+    if _is_local(facts):
+        return "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?"
+    return "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?"
+
+
 FUNNEL_STEPS: list[dict[str, Any]] = [
     {
         "field": "candidate.city",
@@ -35,29 +63,37 @@ FUNNEL_STEPS: list[dict[str, Any]] = [
         "complete": lambda f: _has(f, "candidate.city"),
     },
     {
-        "field": "experience.vehicle_type",
-        "question": "¿Ha manejado sencillo, full o ambos?",
-        "complete": lambda f: _has(f, "experience.vehicle_type"),
+        "field": "candidate.age",
+        "question": "¿Cuántos años tiene?",
+        "complete": lambda f: _has(f, "candidate.age"),
     },
     {
         "field": "license",
-        "question": "¿Qué tipo de licencia federal tiene y está vigente?",
-        "complete": lambda f: _has(f, "license.type") and f.get("license.status") == "vigente",
+        "question": "¿Qué tipo de licencia federal tiene y cuándo vence?",
+        "complete": lambda f: _has(f, "license.category") and _has(f, "license.expiration_text"),
     },
     {
-        "field": "medical.apto_status",
-        "question": "¿Su apto médico está vigente?",
-        "complete": lambda f: f.get("medical.apto_status") == "vigente",
+        "field": "experience.vehicle_type",
+        "question": None,  # generated dynamically by next_funnel_question
+        "complete": lambda f: _has(f, "experience.vehicle_type"),
+    },
+    {
+        "field": "medical.apto_expiration_text",
+        "question": "¿Cuándo vence su apto médico?",
+        "complete": lambda f: _has(f, "medical.apto_expiration_text"),
     },
     {
         "field": "experience.years",
-        "question": "¿Cuántos años tiene manejando?",
+        "question": "¿Cuántos años de experiencia tiene como operador?",
         "complete": lambda f: _has(f, "experience.years"),
     },
     {
         "field": "documents.proof",
-        "question": "¿Cuenta con 2 cartas laborales o su documento de semanas cotizadas del IMSS?",
-        "complete": lambda f: f.get("documents.proof") in {"cartas", "semanas_imss"},
+        "question": None,  # generated dynamically by next_funnel_question
+        "complete": lambda f: (
+            f.get("documents.proof") in {"cartas", "semanas_imss"}
+            or f.get("documents.labor_letters_status") in {"available", "sí", "si"}
+        ),
     },
 ]
 
@@ -68,16 +104,21 @@ def next_funnel_question(
 ) -> str | None:
     """Devuelve la siguiente pregunta del funnel, o None si el núcleo está completo.
 
-    ``forbidden_questions`` (del memory_guard, tarea 6.2): campos que NO deben
-    preguntarse aunque el predicado los vea incompletos — p. ej. un dato que el
-    candidato ya dio o que reclama haber dado. Se saltan sin emitir pregunta.
+    ``forbidden_questions``: campos que NO deben preguntarse aunque el predicado
+    los vea incompletos (dato ya confirmado en turno previo). Se saltan sin emitir.
     """
     forbidden = set(forbidden_questions or ())
     for step in FUNNEL_STEPS:
         if step["field"] in forbidden:
             continue
-        if not step["complete"](facts):
-            return step["question"]
+        if step["complete"](facts):
+            continue
+        # dynamic questions (2.4 / 2.5)
+        if step["field"] == "experience.vehicle_type":
+            return _vehicle_type_question(facts)
+        if step["field"] == "documents.proof":
+            return _document_question(facts)
+        return step["question"]
     return None
 
 
