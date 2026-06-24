@@ -1716,6 +1716,93 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     contract = _apply_deterministic_overrides(message, contract)
     contract = _apply_business_rule_overrides(message, contract, turn_signals=turn_signals)
 
+    # ── 5a: Pre-handoff condicional ───────────────────────────────────────────
+    # Antes de canalizar a Capital Humano, el bot verifica el dato mínimo que
+    # determina si el candidato es viable en su categoría.
+    _prehandoff_facts: dict[str, str] = {
+        f"{r['fact_group']}.{r['fact_key']}": str(r["fact_value"])
+        for r in (lead_memory_before.get("facts") or []) if r.get("fact_value")
+    }
+    _intent_now = str(contract.get("intent") or "")
+    _lic_now = (_prehandoff_facts.get("license.category") or "").upper()
+    _has_be = _lic_now in {"B", "E"}
+    _has_tramite = (
+        _prehandoff_facts.get("license.tramite_comprobante") == "true"
+        or _prehandoff_facts.get("medical.tramite_comprobante") == "true"
+    )
+
+    # 5a.1/5a.2: escuelita / CECATI — verificar licencia B/E antes de canalizar
+    if _intent_now in {"considerar_escuelita_transmontes", "cecati_sugerido"}:
+        if _has_be or _has_tramite:
+            _esc_acuse = (
+                f"Gracias por compartir su experiencia. Con licencia tipo {_lic_now}, "
+                "Capital Humano revisará si hay generación disponible para Escuelita Transmontes. "
+                "Lo dejo canalizado para que lo contacten."
+            )
+            contract = dict(contract)
+            contract["reply_template"] = {"id": "escuelita_handoff_con_licencia", "text": _esc_acuse}
+        else:
+            # Sin licencia B/E confirmada → preguntar antes de canalizar
+            contract = dict(contract)
+            contract.update({
+                "requires_human": False,
+                "reply_template": {
+                    "id": "escuelita_prehandoff_licencia",
+                    "text": (
+                        "Para considerar su candidatura, necesitamos saber si cuenta con "
+                        "licencia federal tipo B o E vigente (o comprobante de renovación). "
+                        "¿Tiene licencia federal B o E?"
+                    ),
+                },
+                "reason": "escuelita_prehandoff_verificar_licencia",
+            })
+
+    # 5a.3: B1/EUA — verificar unidad, licencia y apto antes de canalizar
+    elif _intent_now == "business_route_us":
+        _vt = _prehandoff_facts.get("experience.vehicle_type", "")
+        _has_lic_exp = bool(_prehandoff_facts.get("license.expiration_text"))
+        _has_apto_exp = bool(_prehandoff_facts.get("medical.apto_expiration_text"))
+        if not _vt:
+            contract = dict(contract)
+            contract.update({
+                "requires_human": False,
+                "reply_template": {
+                    "id": "b1_prehandoff_unidad",
+                    "text": "Para las vacantes con ruta B1/EUA, ¿su experiencia es en tracto full o sencillo?",
+                },
+                "reason": "b1_prehandoff_verificar_unidad",
+            })
+        elif not (_has_be and _has_lic_exp and _has_apto_exp):
+            contract = dict(contract)
+            contract.update({
+                "requires_human": False,
+                "reply_template": {
+                    "id": "b1_prehandoff_docs",
+                    "text": (
+                        "Para las vacantes B1/EUA necesitamos confirmar que su licencia federal "
+                        "y apto médico estén vigentes. ¿Qué tipo de licencia federal tiene y cuándo vence?"
+                    ),
+                },
+                "reason": "b1_prehandoff_verificar_licencia",
+            })
+
+    # 5a.4: Reingreso — preguntar tipo de vacante (operador u otro)
+    elif _intent_now == "reingreso_verificar":
+        _tipo_vacante = _prehandoff_facts.get("reingreso.tipo_vacante", "")
+        if not _tipo_vacante:
+            contract = dict(contract)
+            contract.update({
+                "requires_human": False,
+                "reply_template": {
+                    "id": "reingreso_prehandoff_tipo",
+                    "text": (
+                        "Gracias por contactarnos de nuevo. ¿Busca regresar como operador de tracto, "
+                        "o tiene en mente otro tipo de vacante?"
+                    ),
+                },
+                "reason": "reingreso_prehandoff_verificar_tipo",
+            })
+
     # answer_primary_question (multi-intent al path vivo): si el mensaje es compuesto
     # (perfil + pregunta) y la ruta principal no es RAG, resolvemos la pregunta
     # embebida. Si exige fuente autorizada y no la hay (pago), el fail-closed marca
