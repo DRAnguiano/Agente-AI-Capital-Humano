@@ -1537,10 +1537,27 @@ def _build_funnel_nudge(
                     "¿Le interesa una vacante de tracto full o de sencillo?",
                     _canonical_asked_keys(step["keys"]),
                 )
-        # 2.5: document question by residency
+        # 2.5 / P0-2: document question by residency; skip if candidate already answered
         if step["keys"] == {"documents.labor_letters_status"}:
+            _proof = active_facts.get("documents.proof")
+            # Si ya hay un proof (positivo o "ninguno") el paso está resuelto → no nudge
+            if _proof in {"cartas", "semanas_imss", "sí", "si"}:
+                continue
             city_norm = normalize_text(active_facts.get("candidate.city") or "")
             is_local = active_facts.get("location.is_local_laguna") == "true" or city_norm in _LOCAL_LAGUNA
+            if _proof == "ninguno":
+                if is_local:
+                    return (
+                        "¿Cuenta con su documento de semanas cotizadas del IMSS?",
+                        _canonical_asked_keys(step["keys"]),
+                    )
+                else:
+                    return (
+                        "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
+                        "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para "
+                        "que Capital Humano le indique opciones al contactarle.",
+                        _canonical_asked_keys(step["keys"]),
+                    )
             if is_local:
                 return (
                     "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?",
