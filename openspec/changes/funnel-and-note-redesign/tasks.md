@@ -4,9 +4,9 @@
 
 ## 1. Extracción: ambigüedad, documento por residencia, vencido-en-trámite
 
-- [ ] 1.1 RED+impl: "todo en regla / todo bien" NO confirma vigencia de licencia ni apto — `current_turn`/`profile_extractor`
-- [ ] 1.2 RED+impl: `documents.proof` ∈ {cartas, semanas_imss} como fact canónico; consolidar lectura desde `documents.labor_letters*`
-- [ ] 1.3 RED+impl: señal `license.tramite_comprobante` / `medical.tramite_comprobante` (vencido + comprobante de cita)
+- [x] 1.1 RED+impl: "todo en regla / todo bien" NO confirma vigencia de licencia ni apto — `current_turn`/`profile_extractor`
+- [x] 1.2 RED+impl: `documents.proof` ∈ {cartas, semanas_imss} como fact canónico; consolidar lectura desde `documents.labor_letters*`
+- [x] 1.3 RED+impl: señal `license.tramite_comprobante` / `medical.tramite_comprobante` (vencido + comprobante de cita)
 
 ## 2. Funnel como ciclo (no estricto, solo ambiguo/no respondido)
 

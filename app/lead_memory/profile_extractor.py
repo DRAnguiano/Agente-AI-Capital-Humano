@@ -327,10 +327,13 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
         upsert("license", "category", m.group(1).upper(), 0.90)
 
     # ── License validity ─────────────────────────────────────────────────────
-    if any(t in text for t in ("vigente", "vigentes", "en regla", "todo vigente", "toda mi informacion")):
+    # "en regla", "todo bien", "toda mi información" son afirmaciones globales
+    # ambiguas: NO confirman vigencia (spec funnel-and-note-redesign 1.1).
+    # Solo "vigente"/"vigentes" con contexto específico confirma.
+    if any(t in text for t in ("vigente", "vigentes")):
         if any(t in text for t in ("licencia", "lic", "tipo e", "tipo b")):
             upsert("license", "status", "vigente", 0.80)
-        if any(t in text for t in ("apto", "toda mi informacion", "todo vigente")):
+        if "apto" in text:
             upsert("medical", "apto_status", "vigente", 0.80)
         if "cartas" in text:
             upsert("documents", "labor_letters_status", "available", 0.80)
@@ -401,6 +404,11 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
 
     if turn_signals.renewal_proof:
         upsert("documents", "renewal_proof", turn_signals.renewal_proof, 0.80)
+        if turn_signals.renewal_proof == "si":
+            if any(t in text for t in ("licencia", "lic", "tipo e", "tipo b")):
+                upsert("license", "tramite_comprobante", "true", 0.85)
+            if any(t in text for t in ("apto", "medico")):
+                upsert("medical", "tramite_comprobante", "true", 0.85)
 
     # ── Experience ───────────────────────────────────────────────────────────
     DRIVING_TERMS = ("manejando", "manejo", "experiencia", "operador", "full", "quinta", "fulero", "fulera", "tracto")
@@ -441,11 +449,17 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
         upsert("experience", "carretera_mexicana", "sí", 0.75)
 
     # ── Documents ────────────────────────────────────────────────────────────
-    if "cartas" in text and any(t in text for t in ("si", "sí", "cuento", "tengo")):
-        upsert("documents", "labor_letters_status", "available", 0.80)
+    _has_negation_docs = any(t in text for t in ("no tengo", "no cuento", "sin cartas"))
+    if not _has_negation_docs:
+        if "cartas" in text and any(t in text for t in ("si", "sí", "cuento", "tengo")):
+            upsert("documents", "proof", "cartas", 0.85)
+            upsert("documents", "labor_letters_status", "available", 0.80)
+        elif any(t in text for t in ("carta", "cartas", "laboral", "laborales")):
+            upsert("documents", "proof", "cartas", 0.82)
+            upsert("documents", "labor_letters", "sí", 0.90)
 
-    if any(t in text for t in ("carta", "cartas", "laboral", "laborales")) and "no tengo" not in text:
-        upsert("documents", "labor_letters", "sí", 0.90)
+        if any(t in text for t in ("imss", "semanas del imss", "semanas cotizadas", "cotizadas")):
+            upsert("documents", "proof", "semanas_imss", 0.85)
 
     if any(t in text for t in ("en unas horas", "yo le aviso", "luego se los mando", "luego los mando",
                                "dame oportunidad", "deme oportunidad", "conseguirlos", "vengo manejando")):
