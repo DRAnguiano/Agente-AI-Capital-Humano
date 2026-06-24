@@ -555,7 +555,7 @@ _SENSITIVE_PAID_REPLY = (
 )
 
 
-def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> dict[str, Any]:
+def _apply_business_rule_overrides(message: str, contract: dict[str, Any], turn_signals=None) -> dict[str, Any]:
     """Aplica políticas de negocio deterministas al contrato del camino vivo."""
     text = normalize_text(message or "")
 
@@ -615,14 +615,15 @@ def _apply_business_rule_overrides(message: str, contract: dict[str, Any]) -> di
         })
         return updated
 
-    _no_road_facts: dict[str, Any] = {}
-    if any(h in text for h in ("no tengo", "sin experiencia", "nunca he", "nunca mane", "aprender a manejar", "quiero aprender")):
+    if turn_signals is not None:
+        _no_road_experience = turn_signals.no_road_experience
+    else:
         try:
-            from app.lead_memory.profile_extractor import extract_profile_facts_as_dict
-            _no_road_facts = extract_profile_facts_as_dict(message)
+            from app.knowledge.turn_intent_classifier import classify_turn_intent
+            _no_road_experience = classify_turn_intent(message).no_road_experience
         except Exception:
-            pass
-    if _no_road_facts.get("experience.road_experience") == "none":
+            _no_road_experience = False
+    if _no_road_experience:
         updated = dict(contract)
         signals = list(updated.get("business_signals") or [])
         if "cecati_sugerido" not in signals:
@@ -1051,6 +1052,7 @@ def _store_lead_memory_updates(
     stage_to: str,
     reply: str,
     asked_field_keys: list[str] | None = None,
+    turn_signals=None,
 ) -> dict[str, Any]:
     """Write useful memory to v2 without letting it govern the conversation."""
     facts_written: list[str] = []
@@ -1094,7 +1096,7 @@ def _store_lead_memory_updates(
         neo4j_facts = _drop_unanchored_neo4j_geo(extract_profile_facts_from_neo4j(message), message)
         neo4j_keys = {(f["fact_group"], f["fact_key"]) for f in neo4j_facts}
         regex_facts = [
-            f for f in extract_profile_facts(message, intent)
+            f for f in extract_profile_facts(message, intent, turn_signals=turn_signals)
             if (f["fact_group"], f["fact_key"]) not in neo4j_keys
         ]
 
@@ -1427,6 +1429,7 @@ def _build_funnel_nudge(
     message: str,
     contract: dict[str, Any],
     lead_memory: dict[str, Any],
+    turn_signals=None,
 ) -> tuple[str | None, list[str]]:
     """Return ``(question, asked_field_keys)`` for the next profiling step.
 
@@ -1472,7 +1475,7 @@ def _build_funnel_nudge(
             active_facts[k] = str(f["fact_value"])
             neo4j_keys.add(k)
 
-        for f in extract_profile_facts(message, intent or None):
+        for f in extract_profile_facts(message, intent or None, turn_signals=turn_signals):
             k = f"{f['fact_group']}.{f['fact_key']}"
             if k not in neo4j_keys:
                 active_facts[k] = str(f["fact_value"])
@@ -1574,10 +1577,16 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
 
     save_message(conversation_key, "user", message)
 
+    from app.knowledge.turn_intent_classifier import TurnIntentSignals, classify_turn_intent
+    try:
+        turn_signals = classify_turn_intent(message)
+    except Exception:
+        turn_signals = TurnIntentSignals()
+
     contract = resolve_message(message, conversation_state=conversation)
     contract = _apply_profile_guards(message, contract)
     contract = _apply_deterministic_overrides(message, contract)
-    contract = _apply_business_rule_overrides(message, contract)
+    contract = _apply_business_rule_overrides(message, contract, turn_signals=turn_signals)
 
     # answer_primary_question (multi-intent al path vivo): si el mensaje es compuesto
     # (perfil + pregunta) y la ruta principal no es RAG, resolvemos la pregunta
@@ -1634,7 +1643,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     # Capture which canonical field(s) the nudge asked about (passive metadata).
     asked_field_keys: list[str] = []
     if (rag_result is not None or friendly_result is not None or profile_ack_used) and not embedded_derived:
-        nudge, asked_field_keys = _build_funnel_nudge(message, contract, lead_memory_before)
+        nudge, asked_field_keys = _build_funnel_nudge(message, contract, lead_memory_before, turn_signals=turn_signals)
         if nudge:
             reply = f"{reply}\n\n{nudge}"
         else:
@@ -1693,6 +1702,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         stage_to=lead_stage_to,
         reply=reply,
         asked_field_keys=asked_field_keys,
+        turn_signals=turn_signals,
     )
     lead_memory_after = lead_write.get("memory") or {}
 

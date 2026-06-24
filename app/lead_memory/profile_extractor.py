@@ -77,17 +77,6 @@ Ejemplos:
 - "¿manejan ruta B1?" → {"experience_context": false}
 - "la empresa maneja tractos full" → {"experience_context": false}"""
 
-_NO_ROAD_EXP_SYSTEM = """Eres un clasificador de datos de reclutamiento.
-Determina si el candidato declara EXPLÍCITAMENTE no tener experiencia manejando carretera.
-- true: "no tengo experiencia", "nunca he manejado camión", "quiero aprender a manejar", "sin experiencia"
-- false: cualquier otro caso (incluye mensajes sin mención de experiencia, o que sí tienen experiencia)
-Responde SOLO JSON: {"no_road_experience": true | false}
-Ejemplos:
-- "no tengo experiencia en tracto" → {"no_road_experience": true}
-- "nunca he manejado carretera" → {"no_road_experience": true}
-- "quiero aprender a manejar" → {"no_road_experience": true}
-- "tengo 10 años de experiencia" → {"no_road_experience": false}
-- "hola, estoy interesado" → {"no_road_experience": false}"""
 
 _CITY_FALLBACK_SYSTEM = """Eres un extractor de datos de reclutamiento.
 Del mensaje, extrae la ciudad donde RESIDE el candidato.
@@ -120,9 +109,10 @@ Ejemplos:
 - "me pueden llamar por favor" → {"call_window": null}"""
 
 
-def _find_expiration_text(text: str, message: str = "") -> str | None:
-    _expiry_hints = ("vence", "vencen", "vencimiento", "caduca", "caducidad", "caduco")
-    if not any(h in text for h in _expiry_hints):
+def _find_expiration_text(text: str, message: str = "", has_expiry_context: bool = False) -> str | None:
+    _expiry_hints = ("vence", "vencen", "vencimiento", "caduca", "caducidad", "caduco",
+                     "se me acaba", "me queda", "me queda un")
+    if not has_expiry_context and not any(h in text for h in _expiry_hints):
         return None
     try:
         from app.indexer import call_groq_json
@@ -132,8 +122,6 @@ def _find_expiration_text(text: str, message: str = "") -> str | None:
     except Exception:
         return None
 
-
-_RENEWAL_PROOF_HINTS = ("papel", "comprobante", "pago", "cita", "tramite", "tramit")
 
 _RENEWAL_PROOF_SYSTEM = """Eres un extractor de datos de reclutamiento.
 Determina si el candidato indica que TIENE o NO TIENE comprobante de trámite de renovación de licencia o apto.
@@ -149,18 +137,6 @@ Ejemplos:
 - "no he tramitado nada" → {"renewal_proof": "no"}
 - "sin comprobante todavía" → {"renewal_proof": "no"}
 - "mi licencia vence en 3 meses" → {"renewal_proof": null}"""
-
-
-def _has_renewal_proof(message: str, text: str) -> str | None:
-    if not any(term in text for term in _RENEWAL_PROOF_HINTS):
-        return None
-    try:
-        from app.indexer import call_groq_json
-        raw = call_groq_json(message, _RENEWAL_PROOF_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-        val = json.loads(raw).get("renewal_proof")
-        return str(val) if val else None
-    except Exception:
-        return None
 
 
 def _expiry_text_is_short_unknown(expiration_text: str) -> bool:
@@ -286,22 +262,6 @@ def detect_laredo_ambiguity(message: str) -> bool:
 # Detección de solicitud de llamada via LLM T=0. La emisión del label
 # `llamada_pendiente` la decide `calculate_candidate_labels` (gate perfil_listo / agente);
 # aquí solo se registran los facts `scheduling.*`. NO se promete agenda real.
-_CALL_INTENT_HINTS = ("llam", "marc", "llamada", "telefono", "tel ", "cel ", "hablamos",
-                      "contacten", "agend")
-
-_CALL_INTENT_SYSTEM = """Eres un extractor de datos de reclutamiento.
-Determina si el candidato pide que le llamen por teléfono.
-- call_requested true: el candidato pide/acepta una llamada ("me pueden llamar", "quiero una llamada", "agéndenme", "hablamos por teléfono")
-- call_requested false: el candidato no pide llamada, o la rechaza explícitamente ("no me llamen", "por favor no llamadas")
-Responde SOLO JSON: {"call_requested": true | false}
-Ejemplos:
-- "me pueden llamar mañana" → {"call_requested": true}
-- "quiero que me llamen" → {"call_requested": true}
-- "agéndenme una llamada" → {"call_requested": true}
-- "hablamos por teléfono mejor" → {"call_requested": true}
-- "no me llamen por favor" → {"call_requested": false}
-- "tengo 10 años manejando full" → {"call_requested": false}
-- "soy de Torreón" → {"call_requested": false}"""
 
 
 def _extract_call_window(message: str) -> str | None:
@@ -314,13 +274,20 @@ def _extract_call_window(message: str) -> str | None:
         return None
 
 
-def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[str, Any]]:
+def extract_profile_facts(message: str, intent: str | None = None, turn_signals=None) -> list[dict[str, Any]]:
     """Extract conservative profile facts from short recruiting messages.
 
     Neo4j handles geo (city/state) and vehicle type at higher confidence.
     This extractor covers license, medical, experience, documents, age, and
     geo as a fallback when Neo4j is unavailable.
     """
+    if turn_signals is None:
+        try:
+            from app.knowledge.turn_intent_classifier import classify_turn_intent
+            turn_signals = classify_turn_intent(message or "")
+        except Exception:
+            from app.knowledge.turn_intent_classifier import TurnIntentSignals
+            turn_signals = TurnIntentSignals()
     text_raw = normalize_text(message)
     # Normalize common "aos" typo so year patterns match consistently.
     text = text_raw.replace(" aos", " anos").replace(" ao ", " ano ")
@@ -368,7 +335,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         if "cartas" in text:
             upsert("documents", "labor_letters_status", "available", 0.80)
 
-    expiration_text = _find_expiration_text(text, message)
+    expiration_text = _find_expiration_text(text, message, has_expiry_context=turn_signals.has_expiry_context)
     if expiration_text and any(t in text for t in ("licencia", "lic", "tipo e", "tipo b")):
         upsert("license", "expiration_text", expiration_text, 0.90)
         if not _expiry_text_is_short_unknown(expiration_text):
@@ -432,15 +399,14 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("medical", "apto_expiration_text", exp_text, 0.88)
         upsert("document", "apto_status", "vigente", 0.88)
 
-    proof = _has_renewal_proof(message, text)
-    if proof:
-        upsert("documents", "renewal_proof", proof, 0.80)
+    if turn_signals.renewal_proof:
+        upsert("documents", "renewal_proof", turn_signals.renewal_proof, 0.80)
 
     # ── Experience ───────────────────────────────────────────────────────────
     DRIVING_TERMS = ("manejando", "manejo", "experiencia", "operador", "full", "quinta", "fulero", "fulera", "tracto")
 
     _dur_label: str | None = None
-    if any(t in text for t in DRIVING_TERMS):
+    if turn_signals.experience_context or any(t in text for t in DRIVING_TERMS):
         try:
             from app.indexer import call_groq_json
             raw = call_groq_json(message, _PROFILE_EXPERIENCE_YEARS_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
@@ -499,7 +465,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     # Edad SOLO con señal explícita; nunca desde "N años" de experiencia.
     #   (a) con la palabra "edad" → siempre edad
     #   (b) "tengo / cuento con N años" → solo si NO hay contexto de experiencia
-    has_exp_context = any(t in text for t in DRIVING_TERMS)
+    has_exp_context = turn_signals.experience_context or any(t in text for t in DRIVING_TERMS)
     age_m = (
         re.search(r"\b(\d{1,2})\s*(?:ano|anos|anio|anios)\s+de\s+edad\b", text)
         or re.search(r"\bedad\s+(?:es\s+)?(?:de\s+)?(\d{1,2})\b", text)
@@ -510,15 +476,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("candidate", "age", age_m.group(1), 0.88)
 
     # ── Solicitud de llamada (B7.4) + validación de ventana (B7.5) ────────────
-    _call_requested = False
-    if any(h in text for h in _CALL_INTENT_HINTS):
-        try:
-            from app.indexer import call_groq_json
-            raw = call_groq_json(message, _CALL_INTENT_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-            _call_requested = bool(json.loads(raw).get("call_requested"))
-        except Exception:
-            pass
-    if _call_requested:
+    if turn_signals.call_requested:
         upsert("scheduling", "call_requested", "true", 0.85)
         upsert("scheduling", "call_status", "pending", 0.85)
         window = _extract_call_window(message)
@@ -544,16 +502,7 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
         upsert("experience", "non_target_vehicle_type", veh.domain, 0.88)
 
     has_confirmed_or_non_target_unit = bool(veh and (veh.value or veh.status == NON_TARGET))
-    no_road_experience = False
-    _no_road_hints = ("no tengo", "sin experiencia", "nunca he", "nunca mane", "aprender a manejar", "quiero aprender")
-    if any(h in text for h in _no_road_hints):
-        try:
-            from app.indexer import call_groq_json
-            raw = call_groq_json(message, _NO_ROAD_EXP_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-            no_road_experience = bool(json.loads(raw).get("no_road_experience"))
-        except Exception:
-            pass
-    if no_road_experience and not has_confirmed_or_non_target_unit and not _dur_label:
+    if turn_signals.no_road_experience and not has_confirmed_or_non_target_unit and not _dur_label:
         upsert("experience", "road_experience", "none", 0.88)
 
     if re.search(r"\b(b1|b-1|estados unidos|eeuu|ee uu|eua|usa|ruta americana|lado americano|laredo texas|laredo tx|cruce|cruzar)\b", text):
@@ -571,11 +520,11 @@ def extract_profile_facts(message: str, intent: str | None = None) -> list[dict[
     return facts
 
 
-def extract_profile_facts_as_dict(message: str) -> dict[str, Any]:
+def extract_profile_facts_as_dict(message: str, turn_signals=None) -> dict[str, Any]:
     """Flat dict view of extract_profile_facts — used by the debounce guard."""
     return {
         f"{f['fact_group']}.{f['fact_key']}": f["fact_value"]
-        for f in extract_profile_facts(message)
+        for f in extract_profile_facts(message, turn_signals=turn_signals)
     }
 
 

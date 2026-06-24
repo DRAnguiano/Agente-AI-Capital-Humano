@@ -57,19 +57,6 @@ Ejemplos:
 - "desde 2010" → {"years": null}
 - "poco tiempo" → {"years": null}"""
 
-_YA_RECLAMO_SYSTEM = """Eres un clasificador de datos de reclutamiento.
-Determina si el mensaje del candidato es un RECLAMO de que ya dio esa información antes (no una confirmación).
-- true: el candidato afirma haber dado el dato previamente ("ya le había dicho", "ya se lo dije", "ya lo mandé antes")
-- false: el candidato confirma o aporta un dato nuevo ("ya tengo cartas", "ya está vigente", "ya lo conseguí")
-Responde SOLO JSON: {"is_complaint": true | false}
-Ejemplos:
-- "ya le había dicho que 10 años" → {"is_complaint": true}
-- "ya te lo dije" → {"is_complaint": true}
-- "ya se los mandé" → {"is_complaint": true}
-- "ya tengo cartas" → {"is_complaint": false}
-- "ya está vigente" → {"is_complaint": false}
-- "ya lo conseguí" → {"is_complaint": false}
-- "ya me lo dijeron" → {"is_complaint": false}"""
 
 
 def _profile_complete_closing() -> str:
@@ -220,6 +207,13 @@ def _contextual_expiration_text(norm_message: str) -> str | None:
         return None
 
 # Detect the topic of the last bot question for context-aware "si" interpretation
+# Señal estructural de pregunta cuantitativa embebida: "cuántas necesita",
+# "cuánto pagan", etc. OR-fallback para cuando TIPC no clasifica has_embedded_question.
+_EMBEDDED_Q_SIGNAL = re.compile(
+    r"(?:cuantos?|cuantas?|cuanto\s+es|cuanto\s+queda|cuanto\s+vale)\s+",
+    re.IGNORECASE,
+)
+
 _TOPIC_APTO = re.compile(r"\bapto\b", re.IGNORECASE)
 _TOPIC_LICENSE_VIGENTE = re.compile(
     r"\blicencia\b.{0,80}(?:\bvigente\b|\bvigencia\b|\bal\s+corriente\b)"
@@ -229,7 +223,7 @@ _TOPIC_LICENSE_VIGENTE = re.compile(
 _TOPIC_LETTERS = re.compile(r"\bcartas?\s+laborales?\b", re.IGNORECASE)
 
 
-def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str) -> dict[str, Any]:
+def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str, _turn_signals=None) -> dict[str, Any]:
     """Infer profile facts when the candidate gives a short affirmation.
 
     Example: bot asks '¿Tu apto médico está vigente?' and candidate replies
@@ -266,15 +260,19 @@ def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str
         or t.startswith("exacto")
         or t in {"simon", "sip"}
     )
-    # "ya" de RECLAMO no es confirmación: "ya le habia dicho que 10 años"
-    # re-confirmaba apto vigente (smoke 2026-06-12 16:16).
+    # "ya" de RECLAMO no es confirmación: "ya le habia dicho que 10 años".
+    # Guarda estructural: bare "ya" nunca es reclamo; solo cuando va seguido de
+    # texto puede serlo. TIPC clasifica la intención dentro de ese sub-caso.
     _ya_reclamo = False
     if t.startswith("ya "):
-        try:
-            raw = call_groq_json(norm_message, _YA_RECLAMO_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-            _ya_reclamo = bool(json.loads(raw).get("is_complaint"))
-        except Exception:
-            pass
+        if _turn_signals is not None:
+            _ya_reclamo = _turn_signals.is_ya_reclamo
+        else:
+            try:
+                from app.knowledge.turn_intent_classifier import classify_turn_intent
+                _ya_reclamo = classify_turn_intent(norm_message).is_ya_reclamo
+            except Exception:
+                _ya_reclamo = False
     # Confirmaciones suaves/ambiguas: solo válidas si no hay negación en el mensaje.
     soft_yes = not _ya_reclamo and (
         t in {"ok", "okay", "oka", "va", "sale", "dale", "ya"}
@@ -303,7 +301,7 @@ def is_question(text: str | None) -> bool:
     return bool(re.match(r"^(cuanto|cuanta|cuantos|cuantas|cuando|donde|que|como|cual|pagan|tienen|hay|manejan)\b", norm))
 
 
-def extract_current_turn_facts(message: str | None, last_bot_message: str | None = None) -> dict[str, Any]:
+def extract_current_turn_facts(message: str | None, last_bot_message: str | None = None, turn_signals=None) -> dict[str, Any]:
     """Dict view of profile facts for the debounce guard in tasks_chatwoot.
 
     Delegates extraction to profile_extractor (single source of truth) and adds
@@ -319,12 +317,20 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
     if not raw:
         return {}
 
-    facts = extract_profile_facts_as_dict(raw)
+    if turn_signals is None:
+        try:
+            from app.knowledge.turn_intent_classifier import classify_turn_intent
+            turn_signals = classify_turn_intent(raw)
+        except Exception:
+            from app.knowledge.turn_intent_classifier import TurnIntentSignals
+            turn_signals = TurnIntentSignals()
+
+    facts = extract_profile_facts_as_dict(raw, turn_signals=turn_signals)
     text = normalize_text(raw)
 
     # Context-aware: infer field from "si" when we know what was last asked
     if last_bot_message:
-        for k, v in _extract_context_confirmation_facts(text, last_bot_message).items():
+        for k, v in _extract_context_confirmation_facts(text, last_bot_message, _turn_signals=turn_signals).items():
             if k not in facts:
                 facts[k] = v
 
@@ -420,46 +426,24 @@ def has_current_turn_profile_signal(message: str | None, last_bot_message: str |
     )
 
 
-# Pregunta de negocio EMBEBIDA sin "?" ni inicio interrogativo.
-# Guardia de contexto (sobre texto normalizado) para activar el clasificador LLM.
-_EMBEDDED_Q_HINTS = (
-    "rutas", "corridas", "vueltas", "tramos", "pagan", "pago", "sueldo", "salario",
-    "boletos", "prestaciones", "vacantes", "descansos", "bonos", "requisitos",
-    "cuantas cartas", "cuantos documentos",
-)
-_EMBEDDED_Q_SIGNAL = (
-    "que", "cuanto", "cuantos", "cuantas", "hay", "ay", "dan",
-    "necesitan", "nececitan", "nececita", "piden",
-)
+def has_embedded_business_question(message: str | None, turn_signals=None) -> bool:
+    """True si el mensaje contiene una pregunta de negocio embebida (sin "?").
 
-_EMBEDDED_QUESTION_SYSTEM = """Eres un clasificador de datos de reclutamiento.
-Determina si el mensaje del candidato contiene una PREGUNTA sobre condiciones laborales
-(rutas, pago, sueldo, prestaciones, requisitos, boletos, descansos, horarios, cartas) aunque no tenga signo "?".
-- true: el mensaje incluye una pregunta explícita o implícita sobre condiciones del trabajo
-- false: el mensaje es solo una declaración de perfil o saludo, sin pregunta de negocio
-Responde SOLO JSON: {"has_business_question": true | false}
-Ejemplos:
-- "soy de gomez palacio que rutas hay" → {"has_business_question": true}
-- "tengo licencia E que rutas manejan" → {"has_business_question": true}
-- "cuanto pagan" → {"has_business_question": true}
-- "cuantas cartas necesitan" → {"has_business_question": true}
-- "dan boleto para ir a trabajar" → {"has_business_question": true}
-- "soy de gomez palacio, tengo licencia E" → {"has_business_question": false}
-- "tengo 10 años manejando full" → {"has_business_question": false}
-- "hola buenos días" → {"has_business_question": false}"""
-
-
-def has_embedded_business_question(message: str | None) -> bool:
-    """True si el mensaje contiene una pregunta de negocio embebida (sin "?")."""
-    t = normalize_text(message or "")
-    # Solo invocar LLM si hay al menos una palabra de señal + un tema laboral
-    has_signal = any(s in t for s in _EMBEDDED_Q_SIGNAL)
-    has_topic = any(h in t for h in _EMBEDDED_Q_HINTS)
-    if not (has_signal or has_topic):
+    Consume turn_signals.has_embedded_question cuando está disponible.
+    OR-fallback: _EMBEDDED_Q_SIGNAL cubre casos que TIPC puede subestimar
+    (e.g. "cuántas necesita?").
+    Sin turn_signals: llama al TIPC internamente (compat tests).
+    """
+    text = normalize_text(message or "")
+    if not text:
         return False
+    if _EMBEDDED_Q_SIGNAL.search(text):
+        return True
+    if turn_signals is not None:
+        return bool(turn_signals.has_embedded_question)
     try:
-        raw = call_groq_json(message or "", _EMBEDDED_QUESTION_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-        return bool(json.loads(raw).get("has_business_question"))
+        from app.knowledge.turn_intent_classifier import classify_turn_intent
+        return classify_turn_intent(message or "").has_embedded_question
     except Exception:
         return False
 

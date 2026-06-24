@@ -6,7 +6,10 @@ Deterministas, sin LLM ni DB.
 """
 from __future__ import annotations
 
+import os
 import pytest
+
+_NO_GROQ = not os.getenv("GROQ_API_KEY")
 
 from app.knowledge.current_turn import build_current_turn_ack, next_question_from_missing_facts
 from app.chatwoot_note_sync import render_candidate_note, calculate_candidate_labels
@@ -80,6 +83,7 @@ def test_extractor_torton_persiste_non_target_sin_vehicle_type():
     assert "experience.vehicle_type" not in facts
 
 
+@pytest.mark.skipif(_NO_GROQ, reason="road_experience ahora via TIPC — requiere GROQ_API_KEY")
 def test_extractor_sin_experiencia_persiste_road_experience_none():
     facts = extract_profile_facts_as_dict("no tengo experiencia en carretera")
     assert facts["experience.road_experience"] == "none"

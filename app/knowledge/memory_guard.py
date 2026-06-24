@@ -21,34 +21,14 @@ Se ejecuta ANTES de proponer cualquier pregunta del funnel. Tiene dos trabajos:
   Distinto de la corrección explícita (tarea 7.4), que sí sobrescribe con
   auditoría.
 
-No lee BD ni muta la entrada. `_is_memory_claim` usa LLM T=0 (Groq, fail-safe→False)
-cuando detecta señal de guardia. Recibe ``known_facts``
-(memoria previa al turno) y la clasificación enriquecida del turno.
+No lee BD ni muta la entrada. `_is_memory_claim` consume `TurnIntentSignals.is_memory_claim`
+cuando está disponible; sin signals llama al TIPC internamente (fail-safe→False).
+Recibe ``known_facts`` (memoria previa al turno) y la clasificación enriquecida del turno.
 """
 from __future__ import annotations
 
-import json
-import os
-import re
 from typing import Any
 
-from app.knowledge.text_normalizer import normalize_text
-
-_EXTRACTOR_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
-
-_MEMORY_CLAIM_SYSTEM = """Eres un clasificador de datos de reclutamiento.
-Determina si el candidato afirma que YA DIO esa información anteriormente en la conversación.
-- true: el candidato reclama haber compartido el dato antes ("ya te lo dije", "como te había dicho", "ya le comenté", "ya se lo mandé")
-- false: el candidato aporta un dato nuevo, confirma, o pregunta algo
-Responde SOLO JSON: {"is_memory_claim": true | false}
-Ejemplos:
-- "ya le había dicho que tengo 10 años" → {"is_memory_claim": true}
-- "como te dije, soy de Torreón" → {"is_memory_claim": true}
-- "ya les comenté que tengo licencia E" → {"is_memory_claim": true}
-- "ya se lo dije a su compañero" → {"is_memory_claim": true}
-- "tengo 10 años manejando" → {"is_memory_claim": false}
-- "soy de Torreón" → {"is_memory_claim": false}
-- "¿cuánto pagan?" → {"is_memory_claim": false}"""
 
 # Campos del funnel (mismos ids que `intent_orchestrator.FUNNEL_STEPS`) y las
 # claves de fact que dan el campo por respondido. Espejo deliberado: si cambian
@@ -62,24 +42,18 @@ FUNNEL_FIELD_FACT_KEYS: dict[str, tuple[str, ...]] = {
     "documents.proof":         ("documents.proof",),
 }
 
-# Palabras clave de guardia (sobre texto normalizado) para activar el clasificador LLM.
-_MEMORY_CLAIM_HINTS = ("ya te", "ya le", "ya lo", "ya les", "ya se", "habia dicho",
-                       "habia comentado", "ya comente", "como te dije", "como le dije",
-                       "si te dije", "si le dije")
-
-
-def _is_memory_claim(message: str) -> bool:
+def _is_memory_claim(message: str, turn_signals=None) -> bool:
     """True si el mensaje contiene una frase de reclamo de memoria.
 
-    Usa LLM T=0 (Groq) cuando hay señal de guardia; fail-safe → False.
+    Consume turn_signals.is_memory_claim cuando está disponible (sin LLM propio).
+    Sin turn_signals: llama al TIPC internamente (compat tests / call sites sin orquestador).
+    Fail-safe → False.
     """
-    norm = normalize_text(message or "")
-    if not any(h in norm for h in _MEMORY_CLAIM_HINTS):
-        return False
+    if turn_signals is not None:
+        return bool(turn_signals.is_memory_claim)
     try:
-        from app.indexer import call_groq_json
-        raw = call_groq_json(message, _MEMORY_CLAIM_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-        return bool(json.loads(raw).get("is_memory_claim"))
+        from app.knowledge.turn_intent_classifier import classify_turn_intent
+        return classify_turn_intent(message or "").is_memory_claim
     except Exception:
         return False
 
@@ -116,6 +90,7 @@ def apply_memory_guard(
     enriched: dict[str, Any],
     message: str,
     known_facts: dict[str, Any] | None = None,
+    turn_signals=None,
 ) -> dict[str, Any]:
     """Resultado de la etapa memory_guard. Función pura.
 
@@ -128,7 +103,7 @@ def apply_memory_guard(
     forbidden = derive_forbidden_questions(known_facts)
 
     memory_claim: dict[str, Any] | None = None
-    if _is_memory_claim(message):
+    if _is_memory_claim(message, turn_signals=turn_signals):
         ans = _claimed_answer(enriched)
         if ans is not None:
             field = ans["field"]
