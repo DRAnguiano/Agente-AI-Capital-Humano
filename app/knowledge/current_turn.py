@@ -349,6 +349,7 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
         _q_parts = re.split(r"[.!]", last_norm)
         _last_question = normalize_text(_q_parts[-1]) if _q_parts else last_norm
 
+        _ya_reclamo = getattr(turn_signals, "is_ya_reclamo", False)
         _age_question = re.search(r"\bcuantos anos\b", _last_question) and "experiencia" not in _last_question
         if _age_question and ("candidate.age" not in facts or _ya_reclamo):
             try:
