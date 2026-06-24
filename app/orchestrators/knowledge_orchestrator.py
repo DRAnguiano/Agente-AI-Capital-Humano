@@ -45,8 +45,8 @@ NO_CONTEXT_REPLY = (
 )
 
 DOCUMENT_ACK_REPLY = (
-    "Perfecto, gracias por avisar. Lo dejo registrado para que nuestro equipo "
-    "lo valide y le indique el siguiente paso."
+    "Gracias, ya tenemos parte de su información registrada. "
+    "Continuamos con las preguntas pendientes para completar su perfil."
 )
 
 FAREWELL_REPLY = (
@@ -91,6 +91,10 @@ PROFILE_ACK_HINTS = (
     "ya mande", "ya mandé", "ya envie", "ya envié", "ya subi", "ya subí",
     "ya cargue", "ya cargué", "ya lo mande", "ya lo mandé", "ya los mande",
     "ya los mandé", "ya quedo", "ya quedó", "listo", "ahi esta", "ahí está",
+    # candidato reclama que ya dio sus datos en este chat
+    "ya habia pasado", "ya había pasado", "ya les pase", "ya les pasé",
+    "ya tenia mis datos", "ya tenía mis datos", "ya le di mis datos",
+    "ya le habia dado", "ya había dado", "ya le pase mis datos", "ya le pasé mis datos",
 )
 
 DOCUMENT_WORDS = (
