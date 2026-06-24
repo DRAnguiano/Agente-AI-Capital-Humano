@@ -6,7 +6,7 @@
 - [x] 1.1 RED: tests de `experience.non_target_vehicle_type` (torton/rabón/reparto local/interurbano → fact normalizado; sin evidencia → no escribe; no sobrescribe full/sencillo confirmado)
 - [x] 1.2 Implementar detección por catálogo/keywords en `app/knowledge/current_turn.py` → `experience.non_target_vehicle_type` — implementado en `profile_extractor.py`, wired al mismo path de persistencia (knowledge_orchestrator L1086–1103)
 - [x] 1.3 RED+impl: señal de ausencia de experiencia en carretera (`experience.road_experience="none"`): "no he manejado tracto", "quiero aprender" → sí; años/unidad declarada → no
-- [ ] 1.4 RED+impl: fact de intención B1/EUA (`experience.b1_us_intent`): B1/EUA/USA/cruce → sí; mención como duda → no (negativo) — ⚠ DEUDA: detección positiva implementada en `profile_extractor`; caso interrogativo ("¿manejan ruta B1?") NO excluido todavía
+- [x] 1.4 RED+impl: fact de intención B1/EUA (`experience.b1_us_intent`): B1/EUA/USA/cruce → sí; mención como duda → no (negativo) — guarda: pregunta pura sin verbo de primera persona → no activa
 - [x] 1.5 RED+impl: fact de reingreso (`candidate.reingreso`): "ya trabajé en Transmontes y quiero regresar" → sí
 - [x] 1.6 RED+impl: unidad ambigua (tráiler/quinta rueda/caja seca/camión sin precisar) → NO confirma `experience.vehicle_type` + persiste `experience.vehicle_type_pending`; "full"/"sencillo" explícito → confirma y no marca pending
 - [x] 1.7 Verificar persistencia aditiva de los nuevos `fact_key` en `rh_lead_facts_v2` (sin DDL destructivo) y que cargan en el dict `facts` del turno
@@ -38,7 +38,7 @@
 ## 5. Verificación y cierre
 
 - [x] 5.1 Suite completa Groq-free en `api-test` verde (sin regresión en `test_candidate_labels`/`test_call_scheduling`)
-- [ ] 5.2 Rebuild `hr-rag-api` + recreate `api`/`worker`; pruebas end-to-end por webhook: caso objetivo, caso no-objetivo (escuelita), caso B1, caso reingreso, caso unidad ambigua → verificar labels emitidas Y acuse al candidato
+- [x] 5.2 Rebuild `hr-rag-api` + recreate `api`/`worker`; pruebas end-to-end por webhook: caso objetivo, caso no-objetivo (escuelita), caso B1, caso reingreso, caso unidad ambigua → verificar labels emitidas Y acuse al candidato
 - [x] 5.3 `openspec validate live-label-completion --strict` + `openspec validate --specs --strict`
-- [ ] 5.4 Sincronizar deltas a specs principales y archivar el change
-- [ ] 5.5 Cerrar el drift de bookkeeping: marcar como superadas las tasks vigentes consolidadas (multi-intent 10a.1–10a.8, business-route C7.4, chatwoot-ai-note objetivo_full_sencillo)
+- [x] 5.4 Sincronizar deltas a specs principales y archivar el change
+- [x] 5.5 Cerrar el drift de bookkeeping: changes referenciados (multi-intent, business-route, chatwoot-ai-note) ya archivados — drift resuelto

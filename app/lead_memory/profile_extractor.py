@@ -535,8 +535,15 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
     if turn_signals.no_road_experience and not has_confirmed_or_non_target_unit and not _dur_label:
         upsert("experience", "road_experience", "none", 0.88)
 
-    if re.search(r"\b(b1|b-1|estados unidos|eeuu|ee uu|eua|usa|ruta americana|lado americano|laredo texas|laredo tx|cruce|cruzar)\b", text):
-        upsert("experience", "b1_us_intent", "sí", 0.88)
+    # 1.4: B1/EUA intent — solo cuando el candidato declara intención propia, no cuando pregunta
+    # "¿manejan ruta B1?" es una duda del candidato, no una declaración de su experiencia/interés
+    _b1_match = re.search(r"\b(b1|b-1|estados unidos|eeuu|ee uu|eua|usa|ruta americana|lado americano|laredo texas|laredo tx|cruce|cruzar)\b", text)
+    if _b1_match:
+        # Excluir si es pregunta pura sin verbo de primera persona (quiero, tengo, puedo, manejo...)
+        _is_question = "?" in message or message.strip().startswith("¿")
+        _first_person = bool(re.search(r"\b(quiero|tengo|puedo|manejo|trabajo|me interesa|me gustaria|quisiera|he manejado)\b", text))
+        if not _is_question or _first_person:
+            upsert("experience", "b1_us_intent", "sí", 0.88)
 
     if re.search(
         r"\breingres\w*\b"
