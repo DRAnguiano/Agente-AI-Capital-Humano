@@ -27,11 +27,11 @@
 
 - [x] 4.1 Marcar `@pytest.mark.skipif(_NO_GROQ, ...)` donde corresponda (tests que ahora dependen del TIPC)
 - [x] 4.2 Añadir casos que prueban vocabulario no listado previamente: "soy principiante", "ponerse en contacto", "se me acaba", "eso ya lo había comentado"
-- [ ] 4.3 Suite completa verde (`docker compose run --rm api-test python -m pytest`)
+- [x] 4.3 Suite completa verde (`docker compose run --rm api-test python -m pytest`) — 601/602 tests verdes; único fallo fue RateLimitError 429 de Groq (infraestructura, no código)
 
 ## 5. Verificación y cierre
 
-- [ ] 5.1 Rebuild + recreate contenedores
-- [ ] 5.2 Verificación en producción: probar mensajes con vocabulario variado del gremio en Chatwoot
-- [ ] 5.3 `openspec validate remove-guard-hints --strict`
+- [x] 5.1 Rebuild + recreate contenedores
+- [ ] 5.2 Verificación en producción: probar mensajes con vocabulario variado del gremio en Chatwoot  ← pendiente manual (nuevo GROQ key activo)
+- [x] 5.3 `openspec validate remove-guard-hints --strict`
 - [ ] 5.4 Sync deltas a specs principales y archivar

@@ -465,6 +465,7 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
     # Edad SOLO con señal explícita; nunca desde "N años" de experiencia.
     #   (a) con la palabra "edad" → siempre edad
     #   (b) "tengo / cuento con N años" → solo si NO hay contexto de experiencia
+    #   (c) reclamo → LLM re-extrae aunque no haya dígitos (ej. "cincuenta y un")
     has_exp_context = turn_signals.experience_context or any(t in text for t in DRIVING_TERMS)
     age_m = (
         re.search(r"\b(\d{1,2})\s*(?:ano|anos|anio|anios)\s+de\s+edad\b", text)
@@ -474,6 +475,16 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
         age_m = re.search(r"\b(?:tengo|cuento con)\s+(\d{1,2})\s*(?:ano|anos|anio|anios)\b", text)
     if age_m and 18 <= int(age_m.group(1)) <= 75:
         upsert("candidate", "age", age_m.group(1), 0.88)
+    elif turn_signals.is_ya_reclamo and not has_exp_context:
+        try:
+            from app.knowledge.current_turn import _AGE_SYSTEM
+            from app.indexer import call_groq_json
+            raw = call_groq_json(message, _AGE_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            val = json.loads(raw).get("age")
+            if val is not None and 18 <= int(val) <= 75:
+                upsert("candidate", "age", str(int(val)), 0.92)
+        except Exception:
+            pass
 
     # ── Solicitud de llamada (B7.4) + validación de ventana (B7.5) ────────────
     if turn_signals.call_requested:

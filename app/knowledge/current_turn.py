@@ -31,7 +31,10 @@ Ejemplos:
 
 _AGE_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de preguntar la EDAD del candidato.
 Extrae la edad en años enteros de la respuesta. Rango plausible de adulto: 18–70.
-Convierte palabras a números: "treinta" → 30, "cuarenta y dos" → 42.
+Convierte palabras a números. Tabla de decenas en español:
+  treinta=30, cuarenta=40, cincuenta=50, sesenta=60, setenta=70.
+  "cincuenta y uno"=51, "cincuenta y dos"=52, "cincuenta y cinco"=55
+  "sesenta y uno"=61, "sesenta y dos"=62
 Si no hay edad clara o es ambiguo, devuelve null.
 Responde SOLO JSON: {"age": <entero 18-70> | null}
 Ejemplos:
@@ -40,6 +43,9 @@ Ejemplos:
 - "como unos 40" → {"age": 40}
 - "tengo 28" → {"age": 28}
 - "52" → {"age": 52}
+- "cincuenta y un años" → {"age": 51}
+- "tengo la edad de cincuenta y un años" → {"age": 51}
+- "sesenta y dos" → {"age": 62}
 - "no sé" → {"age": null}
 - "25 años de experiencia" → {"age": null}"""
 
@@ -343,15 +349,15 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
         _q_parts = re.split(r"[.!]", last_norm)
         _last_question = normalize_text(_q_parts[-1]) if _q_parts else last_norm
 
-        if "candidate.age" not in facts:
-            if re.search(r"\bcuantos anos\b", _last_question) and "experiencia" not in _last_question:
-                try:
-                    raw = call_groq_json(text, _AGE_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-                    val = json.loads(raw).get("age")
-                    if val is not None:
-                        facts["candidate.age"] = str(int(val))
-                except Exception:
-                    pass
+        _age_question = re.search(r"\bcuantos anos\b", _last_question) and "experiencia" not in _last_question
+        if _age_question and ("candidate.age" not in facts or _ya_reclamo):
+            try:
+                raw = call_groq_json(text, _AGE_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+                val = json.loads(raw).get("age")
+                if val is not None:
+                    facts["candidate.age"] = str(int(val))
+            except Exception:
+                pass
 
         if "experience.years" not in facts:
             if re.search(r"\bcuantos anos\b", _last_question) and "experiencia" in _last_question:
