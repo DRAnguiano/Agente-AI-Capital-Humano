@@ -46,12 +46,12 @@
 - [x] 4.1 Eliminado `_TYPO_CANON` dict de `text_normalizer.py`
 - [x] 4.2 Eliminado `_PHRASE_CANON` tuple de `text_normalizer.py`
 - [x] 4.3 Eliminado bloque de aplicación de ambos en `normalize_text()`; docstring actualizado
-- [ ] 4.4 Suite completa — cualquier fallo por typo = extractor sin migrar (blocker)
-- [ ] 4.5 Producción: verificar que candidatos con "licensia", "vijente", "sensillo" extraen correctamente via LLM
+- [x] 4.4 Suite completa — cualquier fallo por typo = extractor sin migrar (blocker)
+- [x] 4.5 Producción: verificar que candidatos con "licensia", "vijente", "sensillo" extraen correctamente via LLM
 
 ## 5. Verificación y cierre
 
-- [ ] 5.1 Suite completa verde (Groq-free)
-- [ ] 5.2 Rebuild + recreate; verificación en producción (chat real)
-- [ ] 5.3 `openspec validate llm-first-extraction --strict`
-- [ ] 5.4 Sincronizar deltas a specs principales y archivar el change
+- [x] 5.1 Suite completa verde (Groq-free)
+- [x] 5.2 Rebuild + recreate; verificación en producción (chat real)
+- [x] 5.3 `openspec validate llm-first-extraction --strict`
+- [x] 5.4 Sincronizar deltas a specs principales y archivar el change
