@@ -65,6 +65,22 @@ GREETING_REPLY = (
     "reclutamiento. ¿En qué ciudad se encuentra?"
 )
 
+def _greeting_reply(lead_memory: dict[str, Any]) -> str:
+    """Primera visita → GREETING_REPLY completo. Candidato que regresa → ack corto + siguiente campo."""
+    known: dict[str, str] = {
+        f"{row['fact_group']}.{row['fact_key']}": str(row["fact_value"])
+        for row in (lead_memory.get("facts") or [])
+        if row.get("fact_value")
+    }
+    if not known:
+        return GREETING_REPLY
+    from app.knowledge.current_turn import next_question_from_missing_facts
+    next_q = next_question_from_missing_facts(known)
+    if not next_q:
+        return "¡Hola de nuevo! Su perfil está completo, lo canalizamos pronto con el equipo de reclutamiento."
+    return f"¡Hola de vuelta! Continuamos donde quedamos.\n\n{next_q}"
+
+
 _GREETING_TERMS = (
     "hola", "buen dia", "buen día", "buenos dias", "buenos días",
     "buenas tardes", "buenas noches", "buenas", "ola", "hey", "hi",
@@ -1650,6 +1666,9 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
             lead_stage_to = _stage_for_contract(contract, message)
         friendly_result = _answer_friendly_message(message, contract, lead_memory_before)
         reply = friendly_result["reply"]
+    elif contract.get("intent") == "greeting":
+        # 2.3: candidato que regresa recibe ack corto + siguiente campo; primer turno → presentación completa
+        reply = _greeting_reply(lead_memory_before)
     elif contract.get("intent") == "candidate_profile_signal":
         ack = _build_profile_ack_reply(message)
         if ack:

@@ -282,3 +282,48 @@ def test_funnel_documento_foraneo_exige_cartas_membretadas():
     q = next_question_from_missing_facts(f)
     assert "membretada" in q.lower(), f"foráneo debe pedir membretadas, got: {q!r}"
     assert "imss" not in q.lower(), f"foráneo no debe mencionar IMSS, got: {q!r}"
+
+
+# ── Task 2.3: no re-saludar ni re-preguntar dato ya confirmado ────────────────
+
+def test_greeting_first_time_sends_full_presentation():
+    # 2.3: primera visita — saludo completo con presentación de Mundo
+    from app.orchestrators.knowledge_orchestrator import _greeting_reply
+    reply = _greeting_reply({"facts": []})
+    assert "mundo" in reply.lower(), f"primer turno debe incluir 'Mundo': {reply!r}"
+    assert "ciudad" in reply.lower(), f"primer turno debe pedir ciudad: {reply!r}"
+
+
+def test_greeting_returning_skips_city_if_already_given():
+    # 2.3: candidato con ciudad registrada — vuelta no debe pedir ciudad de nuevo
+    from app.orchestrators.knowledge_orchestrator import _greeting_reply
+    lead_mem = {"facts": [{"fact_group": "candidate", "fact_key": "city", "fact_value": "Torreon"}]}
+    reply = _greeting_reply(lead_mem)
+    assert "ciudad" not in reply.lower(), f"no debe pedir ciudad: {reply!r}"
+    assert "años" in reply.lower(), f"debe pedir edad como siguiente campo: {reply!r}"
+
+
+def test_greeting_returning_no_full_presentation():
+    # 2.3: bienvenida de regreso no incluye presentación completa
+    from app.orchestrators.knowledge_orchestrator import _greeting_reply
+    lead_mem = {"facts": [{"fact_group": "candidate", "fact_key": "city", "fact_value": "Torreon"}]}
+    reply = _greeting_reply(lead_mem)
+    assert "soy mundo" not in reply.lower(), f"regreso no debe repetir presentación: {reply!r}"
+
+
+def test_greeting_returning_profile_complete_no_full_greeting():
+    # 2.3: candidato con perfil completo — no repite GREETING_REPLY completo
+    from app.orchestrators.knowledge_orchestrator import _greeting_reply, GREETING_REPLY
+    lead_mem = {"facts": [
+        {"fact_group": "candidate", "fact_key": "city", "fact_value": "Torreon"},
+        {"fact_group": "candidate", "fact_key": "age", "fact_value": "35"},
+        {"fact_group": "experience", "fact_key": "vehicle_type", "fact_value": "full"},
+        {"fact_group": "license", "fact_key": "category", "fact_value": "E"},
+        {"fact_group": "license", "fact_key": "expiration_text", "fact_value": "1 año"},
+        {"fact_group": "medical", "fact_key": "apto_expiration_text", "fact_value": "1 año"},
+        {"fact_group": "experience", "fact_key": "years", "fact_value": "10"},
+        {"fact_group": "documents", "fact_key": "proof", "fact_value": "cartas"},
+    ]}
+    reply = _greeting_reply(lead_mem)
+    assert reply != GREETING_REPLY, "no debe ser idéntico al saludo inicial"
+    assert "soy mundo" not in reply.lower(), f"no debe repetir presentación: {reply!r}"

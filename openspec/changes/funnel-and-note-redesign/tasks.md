@@ -12,7 +12,7 @@
 
 - [x] 2.1 RED: mensaje "soy Juan, 35, full 10 años, todo en regla" → solo pregunta licencia + ciudad + vigencia (no re-pregunta lo dado)
 - [x] 2.2 Implementar `next_funnel_question` como ciclo sobre la request completa (primer campo no resuelto NI ambiguo) — `intent_orchestrator.py`
-- [ ] 2.3 RED+impl: no re-saludar ni re-preguntar dato ya confirmado en turnos previos
+- [x] 2.3 RED+impl: no re-saludar ni re-preguntar dato ya confirmado en turnos previos
 - [x] 2.4 RED+impl: inferencia licencia→unidad (B→sencillo; E→full/sencillo; B pidiendo full → aclarar)
 - [x] 2.5 RED+impl: documento laboral por residencia (local: cartas o IMSS; foráneo: 2 cartas membretadas); solo documento laboral en esta etapa
 
