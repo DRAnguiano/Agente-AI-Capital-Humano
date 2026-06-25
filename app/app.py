@@ -1059,7 +1059,7 @@ async def chatwoot_webhook(
             try:
                 chatwoot_token = os.getenv("CHATWOOT_API_TOKEN", "")
                 headers = {"api_access_token": chatwoot_token} if chatwoot_token else {}
-                async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as hc:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0), follow_redirects=True) as hc:
                     resp = await hc.get(_audio_url, headers=headers)
                     resp.raise_for_status()
                     audio_bytes = resp.content
