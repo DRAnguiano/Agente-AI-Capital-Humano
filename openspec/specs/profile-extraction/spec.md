@@ -11,22 +11,59 @@ apto médico, experiencia, documentos y edad. Los facts resultantes alimentan
 > Nota: el extractor por **regex** es la implementación **baseline actual (deuda técnica)**.
 > Sus reglas de negocio se auditarán y migrarán a catálogos/grafo/planners declarativos
 > (ver `multi-intent-migration` §13 — auditoría de regex/if de negocio).
+
+> Arquitectura vigente en el camino Chatwoot/worker (post `unified-turn-extractor`):
+> **Capa 1** — un LLM call unificado (`extract_turn`) por turno, produce `TurnExtraction`
+> con campos crudos y señales de intención (absorbe TIPC); **Capa 2** — validación
+> determinista (`validate_extraction`) convierte `TurnExtraction` en `list[dict]` de facts
+> validados (catálogos, rangos, igualdad apto↔licencia); **Capa 3** — política operativa
+> en código (`knowledge_orchestrator`, `chatwoot_note_sync`) consume los facts validados.
+> El path regex (profile_extractor) sigue activo como fallback para el endpoint API.
 ## Requirements
 ### Requirement: Extractor único por tipo de dato
 
-El sistema SHALL extraer ciudad, estado y tipo de vehículo desde nodos `GeoArea` /
-`VehicleType` de Neo4j, y licencia, apto médico, experiencia, documentos y edad desde el
-extractor regex. No SHALL existir lógica de extracción duplicada fuera de estas dos
-fuentes; `current_turn.extract_current_turn_facts` es un wrapper delgado sobre el
-extractor regex.
+El sistema SHALL extraer el lenguaje natural del candidato mediante el **extractor unificado
+de turno** (una sola pasada LLM), y SHALL validar/normalizar los conceptos resultantes contra
+catálogos deterministas: ciudad y tipo de vehículo contra Neo4j / `domain_catalog`, edad
+contra rango plausible, licencia contra el catálogo A/B/E. SHALL NOT existir extracción de
+texto natural por-campo gateada por regex (los `_SYSTEM` por campo y los gates `if <hint> in
+last_bot` se eliminan). El regex/catálogo se conserva únicamente como **validador** sobre el
+JSON ya estructurado, nunca como extractor.
 
-#### Scenario: Ciudad/vehículo
-- **WHEN** el mensaje contiene una ciudad o tipo de vehículo reconocible
-- **THEN** el fact se resuelve vía Neo4j (con sus aliases y confidence), no por regex ad-hoc
+#### Scenario: Ciudad/vehículo validados por catálogo
+- **WHEN** el extractor unificado reporta una ciudad o tipo de vehículo
+- **THEN** el concepto se valida/normaliza vía Neo4j / `domain_catalog` (con sus aliases y semántica de negocio), no por regex ad-hoc de extracción
 
-#### Scenario: Licencia/apto/experiencia/documentos/edad
-- **WHEN** el mensaje contiene uno de esos datos
-- **THEN** el fact se extrae con el extractor regex único y se normaliza a su clave canónica
+#### Scenario: Licencia/apto/experiencia/edad extraídos en una pasada
+- **WHEN** el mensaje contiene uno o varios de esos datos
+- **THEN** se extraen en la única pasada del extractor unificado y se normalizan a sus claves canónicas, sin extractores por-campo separados
+
+#### Scenario: Validador determinista descarta valor fuera de rango
+- **WHEN** el extractor reporta una edad fuera del rango plausible (p. ej. derivada de una cifra monetaria)
+- **THEN** la capa de validación la descarta y no se persiste como `candidate.age`
+
+### Requirement: Una sola extracción LLM por turno (camino worker)
+
+En el camino Chatwoot/worker, el sistema SHALL realizar exactamente una llamada LLM de
+extracción por turno (`extract_turn`) antes de bifurcar guard y orquestador. El objeto
+`TurnExtraction` resultante SHALL fluir desde `tasks_chatwoot` → `hr_graph` →
+`handle_message` → `_store_lead_memory_updates` / `_build_funnel_nudge`. No SHALL
+existir extracción redundante (TIPC separado, per-field prompts) en el camino worker.
+
+#### Scenario: Multi-dato en un solo turno
+- **WHEN** el candidato escribe "soy Juan, 35 años, operador full, licencia E"
+- **THEN** `extract_turn` produce un `TurnExtraction` con todos los campos en una sola llamada LLM
+- **AND** no se realizan llamadas LLM adicionales de extracción de perfil en ese turno
+
+#### Scenario: Señales de intención desde el extractor unificado
+- **WHEN** se procesa un turno en el camino worker
+- **THEN** las señales de intención (`TurnIntentSignals`) se leen de `_pre_extraction.signals`
+- **AND** no se realiza una llamada separada a `classify_turn_intent`
+
+#### Scenario: Validación determinista (Capa 2) como puerta de persistencia
+- **WHEN** `extract_turn` produce un `TurnExtraction`
+- **THEN** `validate_extraction` decide qué fields tienen confianza suficiente para persistir
+- **AND** solo los facts que pasan la validación se escriben a `rh_lead_facts_v2`
 
 ### Requirement: Prioridad de fuentes de verdad
 
@@ -44,13 +81,18 @@ candidato.
 
 ### Requirement: Merge y persistencia de facts
 
-Los facts de Neo4j y del extractor regex SHALL fusionarse en
-`_store_lead_memory_updates` y persistirse en `rh_lead_facts_v2` como pares
-`fact_group.fact_key = value`, marcando los facts activos del lead.
+Los facts validados del extractor unificado SHALL fusionarse y persistirse en
+`rh_lead_facts_v2` como pares `fact_group.fact_key = value` con su confianza derivada,
+mediante un **único escritor por turno**. SHALL NOT haber dos rutas de escritura (orquestador
+y guard) compitiendo sobre el mismo turno.
 
-#### Scenario: Facts extraídos en un turno
-- **WHEN** un turno produce facts desde Neo4j y/o regex
-- **THEN** se fusionan y se escriben en `rh_lead_facts_v2`, quedando disponibles para el funnel y el status del lead
+#### Scenario: Facts de un turno escritos una sola vez
+- **WHEN** un turno produce facts validados
+- **THEN** se escriben en `rh_lead_facts_v2` por un único escritor, quedando disponibles para el funnel y el status del lead
+
+#### Scenario: Campo de texto libre sin anclaje no se persiste
+- **WHEN** el extractor reporta un campo de texto libre (p. ej. `candidate.name`) sin `explicit_marker` y sin `answered_direct_question`
+- **THEN** el valor no se persiste (evita registrar ruido como un saludo en lugar de un nombre)
 
 ### Requirement: La edad no se infiere de años de experiencia
 
@@ -129,7 +171,7 @@ vigencia suficiente (límite 2B.1).
 ### Requirement: Edad como dato temprano del perfil
 
 El extractor SHALL capturar `candidate.age` desde respuestas a la pregunta de
-edad y el planner SHALL evaluar el descalificador (50 años o más) en cuanto
+edad y el planner SHALL evaluar el descalificador (57 años o más) en cuanto
 exista el dato.
 
 #### Scenario: Edad declarada
@@ -137,8 +179,8 @@ exista el dato.
 - **THEN** se persiste `candidate.age=45` y el funnel continúa
 
 #### Scenario: Edad descalificante también se persiste
-- **WHEN** el candidato responde "tengo 52" tras la pregunta de edad
-- **THEN** se persiste `candidate.age=52` y el planner dispara el descarte
+- **WHEN** el candidato responde "tengo 57" tras la pregunta de edad
+- **THEN** se persiste `candidate.age=57` y el planner dispara el descarte
 
 ### Requirement: Residencia en Laredo es ambigua y requiere desambiguación
 

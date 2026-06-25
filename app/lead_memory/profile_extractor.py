@@ -519,9 +519,13 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
         upsert("candidate", "age", age_m.group(1), 0.88)
     elif turn_signals.is_ya_reclamo and not has_exp_context:
         try:
-            from app.knowledge.current_turn import _AGE_SYSTEM
             from app.indexer import call_groq_json
-            raw = call_groq_json(message, _AGE_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+            _AGE_SYS = (
+                "Eres un extractor de datos de reclutamiento. Extrae la edad en años enteros. "
+                "Rango plausible 18-70. Convierte palabras a números. "
+                "Si no hay edad clara, null. Solo JSON: {\"age\": <int 18-70>|null}"
+            )
+            raw = call_groq_json(message, _AGE_SYS, temperature=0.0, model=_EXTRACTOR_MODEL)
             val = json.loads(raw).get("age")
             if val is not None and 18 <= int(val) <= 75:
                 upsert("candidate", "age", str(int(val)), 0.92)

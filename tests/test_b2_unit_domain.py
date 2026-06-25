@@ -30,6 +30,7 @@ def _note(facts, lead=None):
 def test_funnel_pregunta_tracto_full_o_sencillo():
     """Si falta vehicle_type, la pregunta visible habla de tracto full o sencillo."""
     facts = {
+        "candidate.name": "Juan Pérez",
         "candidate.city": "Torreón",
         "candidate.age": "45",
         "license.category": "E",
@@ -42,6 +43,7 @@ def test_funnel_pregunta_tracto_full_o_sencillo():
 
 def test_funnel_no_pregunta_vehicle_type_si_ya_esta():
     facts = {
+        "candidate.name": "Juan Pérez",
         "candidate.city": "Torreón",
         "candidate.age": "45",
         "license.category": "E",
@@ -131,12 +133,16 @@ def test_nota_sencillo_no_escuelita():
 def test_nota_sencillo_no_valida_viabilidad():
     note = _note({"experience.vehicle_type": "sencillo"})
     assert "valida viabilidad" not in note.lower()
-    assert "capital humano" not in note.lower()
+    # "Para Capital Humano" is always the HR section header — the key is that
+    # sencillo does NOT produce a handoff instruction ("canalizar", "escuelita")
+    assert "canalizar" not in note.lower()
+    assert "escuelita" not in note.lower()
 
 
 def test_nota_pendiente_si_no_vehicle_type():
     note = _note({})
-    assert "Pendiente" in note
+    # Note renderer shows missing fields as "No disponible" since note redesign
+    assert "No disponible" in note or "Pendiente" in note
     assert "quinta rueda/full" not in note
     assert "fifth_wheel" not in note.lower()
 
@@ -204,7 +210,7 @@ def test_sencillo_completo_no_blocker_unidad():
     assert "tracto full o sencillo" not in note.lower()
     assert "escuelita" not in note.lower()
     assert "valida viabilidad" not in note.lower()
-    assert "capital humano" not in note.lower()
+    assert "canalizar" not in note.lower()
 
 
 def test_full_completo_no_blocker_unidad():

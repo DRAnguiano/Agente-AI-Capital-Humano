@@ -368,9 +368,8 @@ def process_chatwoot_debounced_message(
         from app.graphs.hr_graph import run_hr_graph_message
         from app.knowledge.current_turn import (
             build_current_turn_ack,
-            extract_current_turn_facts,
             is_campaign_or_interest_entry,
-            should_prioritize_current_turn,
+            is_question,
         )
         from app.chatwoot_note_sync import sync_chatwoot_candidate_note
         from app.lead_memory.repository import get_lead_memory
@@ -384,6 +383,43 @@ def process_chatwoot_debounced_message(
                 last_bot_message = str(_m.get("message") or "")[:500]
                 break
 
+        # ── 6.1: extracción única antes de bifurcar guard/orquestador ──────────
+        from app.knowledge.turn_extractor import extract_turn, validate_extraction
+        from app.knowledge.text_normalizer import normalize_text as _norm
+        _known_facts = {
+            f"{r['fact_group']}.{r['fact_key']}": r["fact_value"]
+            for r in (pre_memory.get("facts") or [])
+            if r.get("fact_group") and r.get("fact_key") and r.get("fact_value")
+        }
+        _pre_extraction = extract_turn(combined_content, last_bot_message, _known_facts)
+        _pre_validated = validate_extraction(_pre_extraction, _known_facts)
+
+        # Construir dict de guard a partir de los facts validados (Capa 2)
+        _current_turn_facts: dict = {
+            f"{f['fact_group']}.{f['fact_key']}": f["fact_value"]
+            for f in _pre_validated
+        }
+        # Context confirmations: "si" → apto_status/license.status/labor_letters
+        # (Capa 2 determinista basada en última pregunta del bot — no LLM)
+        from app.knowledge.current_turn import _extract_context_confirmation_facts
+        _ctx = _extract_context_confirmation_facts(
+            _norm(combined_content), last_bot_message or "",
+            _turn_signals=_pre_extraction.signals,
+        )
+        for _ck, _cv in _ctx.items():
+            if _ck not in _current_turn_facts:
+                _current_turn_facts[_ck] = _cv
+        # Señales de interés (solo guard, no se persisten)
+        _txt = _norm(combined_content)
+        if any(t in _txt for t in ("cuanto pagan", "pago", "sueldo", "compensacion", "kilometro", "km")):
+            _current_turn_facts["interest.payment"] = "asked"
+        if any(t in _txt for t in ("que rutas", "rutas tienen", "bases", "cedis")):
+            _current_turn_facts["interest.routes"] = "asked"
+        _city_n = _norm(_current_turn_facts.get("candidate.city") or "")
+        _current_turn_facts["location.is_local_laguna"] = _city_n in {
+            "torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"
+        }
+
         result = run_hr_graph_message(
             channel="chatwoot",
             channel_user_id=str(channel_user_id),
@@ -391,23 +427,9 @@ def process_chatwoot_debounced_message(
             phone=phone,
             message=combined_content,
             external_message_id=external_message_id,
+            pre_extraction=_pre_extraction,
+            pre_validated=_pre_validated,
         )
-
-        current_turn_facts = extract_current_turn_facts(combined_content, last_bot_message)
-
-        # ── SHADOW: unified-turn-extractor (log-only, no afecta reply ni persistencia) ──
-        try:
-            from app.settings import UNIFIED_EXTRACTOR_SHADOW
-            if UNIFIED_EXTRACTOR_SHADOW:
-                _run_unified_extractor_shadow(
-                    message=combined_content,
-                    last_bot=last_bot_message,
-                    pre_memory=pre_memory,
-                    current_path_facts=current_turn_facts,
-                    conversation_id=conversation_id,
-                )
-        except Exception as _shadow_exc:
-            print("[UNIFIED_SHADOW_ERROR]", str(_shadow_exc), flush=True)
 
         # Primer contacto con entrada de campaña/interés (p. ej. el mensaje
         # default de la publicación de Facebook): Mundo SIEMPRE recibe con su
@@ -441,12 +463,21 @@ def process_chatwoot_debounced_message(
                 flush=True,
             )
 
-        if (
+        # 6.3: guard usa facts pre-computados (sin re-extracción)
+        _has_profile_signal = any(
+            k.startswith(("candidate.", "license.", "medical.", "documents.", "experience."))
+            and k not in {"candidate.vacancy_accepted"}
+            for k in _current_turn_facts
+        )
+        _guard_should_fire = (
             not first_contact_greeting
             and not result.get("requires_human")
-            and should_prioritize_current_turn(combined_content, last_bot_message)
-            and current_turn_facts
-        ):
+            and not _pre_extraction.signals.has_embedded_question
+            and not is_question(combined_content)
+            and _has_profile_signal
+            and _current_turn_facts
+        )
+        if _guard_should_fire:
             lead_memory = get_lead_memory(conversation_key=conversation_key_for_facts)
             saved_facts = {
                 f"{row['fact_group']}.{row['fact_key']}": row['fact_value']
@@ -456,25 +487,33 @@ def process_chatwoot_debounced_message(
                 (lead_memory.get("lead") or {}).get("lead_key")
                 or conversation_key_for_facts
             )
-            merged_facts = {**saved_facts, **current_turn_facts}
-            guarded_reply = build_current_turn_ack(combined_content, merged_facts, last_bot_message)
+            merged_facts = {**saved_facts, **_current_turn_facts}
+            guarded_reply = build_current_turn_ack(
+                combined_content, merged_facts, last_bot_message,
+                pre_current_facts=_current_turn_facts,
+            )
 
-            # Persist context-inferred facts (e.g. "si" → apto vigente) so funnel doesn't re-ask
+            # Persist current-turn facts so funnel doesn't re-ask
             if lead_key_for_ctx:
                 from app.lead_memory.repository import upsert_lead_fact, save_lead_message as _slm
+                _PERSIST_KEYS = {
+                    "candidate.name",
+                    "candidate.age",
+                    "medical.apto_status",
+                    "medical.apto_expiration_text",
+                    "license.status",
+                    "license.expiration_text",
+                    "license.category",
+                    "experience.vehicle_type",
+                    "experience.years",
+                    "documents.proof",
+                    "documents.labor_letters",
+                    "documents.renewal_proof",
+                    "candidate.city",
+                }
                 context_new = {
-                    k: v for k, v in current_turn_facts.items()
-                    if k not in saved_facts
-                    and k in {
-                        "candidate.name",
-                        "candidate.age",
-                        "medical.apto_status",
-                        "medical.apto_expiration_text",
-                        "license.status",
-                        "license.expiration_text",
-                        "documents.labor_letters",
-                        "documents.renewal_proof",
-                    }
+                    k: v for k, v in _current_turn_facts.items()
+                    if k not in saved_facts and k in _PERSIST_KEYS
                 }
                 for _k, _v in context_new.items():
                     _parts = _k.split(".", 1)
@@ -528,7 +567,7 @@ def process_chatwoot_debounced_message(
                     "risk_level": "low",
                     "requires_human": False,
                     "current_turn_guard_applied": True,
-                    "current_turn_facts": current_turn_facts,
+                    "current_turn_facts": _current_turn_facts,
                     "funnel_stage": (
                         "closed"
                         if guarded_reply.startswith("Gracias por su interés. Por el momento")
@@ -551,7 +590,7 @@ def process_chatwoot_debounced_message(
                     {
                         "conversation_id": conversation_id,
                         "channel_user_id": channel_user_id,
-                        "facts": current_turn_facts,
+                        "facts": _current_turn_facts,
                         "reply": guarded_reply[:300],
                     },
                     ensure_ascii=False,

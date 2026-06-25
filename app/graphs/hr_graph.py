@@ -13,6 +13,8 @@ def run_hr_graph_message(
     username: str | None = None,
     phone: str | None = None,
     external_message_id: str | None = None,
+    pre_extraction: Any = None,
+    pre_validated: Any = None,
 ) -> dict[str, Any]:
     """Entry point used by app.py and tasks_chatwoot.py."""
     payload = {
@@ -22,6 +24,8 @@ def run_hr_graph_message(
         "phone": phone,
         "message": message,
         "external_message_id": external_message_id,
+        "_pre_extraction": pre_extraction,
+        "_pre_validated": pre_validated,
     }
     result = knowledge_handle_message(payload)
     result.setdefault("selected_route", result.get("route") or result.get("selected_route"))

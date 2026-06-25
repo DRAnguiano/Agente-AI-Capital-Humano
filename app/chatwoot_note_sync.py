@@ -149,7 +149,8 @@ def _is_truthy(value: Any) -> bool:
 
 def _age_disqualified(facts: dict[str, Any]) -> bool:
     try:
-        return int(str(facts.get("candidate.age") or "").strip()) >= 50
+        from app.settings import AGE_DISQUALIFICATION_LIMIT
+        return int(str(facts.get("candidate.age") or "").strip()) >= AGE_DISQUALIFICATION_LIMIT
     except ValueError:
         return False
 

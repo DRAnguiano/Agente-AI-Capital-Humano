@@ -87,6 +87,23 @@ candidato no haya dicho, ni reutilizar valores de ejemplos internos del prompt.
 - **THEN** el sistema responde sin mencionar años ni ninguna cifra
 - **AND** no afirma datos de experiencia que el candidato no dio
 
+### Requirement: Escritor único de facts por turno
+
+En el camino worker, el sistema SHALL persistir los facts del turno exactamente una vez
+por turno, desde `_store_lead_memory_updates` usando los `pre_validated_facts` producidos
+por `validate_extraction`. SHALL NOT existir una segunda escritura de facts (guard o funnel
+nudge no persisten directamente). El guard y el funnel nudge consumen los facts validados
+del turno para tomar decisiones, sin re-extraer ni re-persistir.
+
+#### Scenario: Guard + orquestador sin escritura doble
+- **WHEN** en un turno el guard dispara y reemplaza la respuesta del orquestador
+- **THEN** los facts del turno se persisten una sola vez (por `_store_lead_memory_updates`)
+- **AND** no se persisten facts adicionales por el camino del guard
+
+#### Scenario: Funnel nudge consume facts del turno, no re-extrae
+- **WHEN** `_build_funnel_nudge` decide la siguiente pregunta del funnel
+- **THEN** lee los facts del turno de `pre_validated_facts`, no lanza un nuevo extractor
+
 ### Requirement: Respuesta de cara al candidato sin instrucciones internas
 
 El sistema SHALL responder al candidato con lenguaje de cara al usuario y SHALL NOT exponer
@@ -259,22 +276,22 @@ conversación en un bloqueo permanente sin ninguna vía de liberación.
 - **WHEN** una conversación entra en `HUMAN_REVIEW_REQUIRED`
 - **THEN** existe al menos una vía explícita (acción humana/operativa) para liberarla
 
-### Requirement: Edad temprana con descarte desde 50 años
+### Requirement: Edad temprana con descarte desde 57 años
 
 El funnel vivo SHALL preguntar la edad inmediatamente después de la ciudad. La
-edad SHALL ser menor a 50 años; con 50 años o más, el sistema SHALL responder
+edad SHALL ser menor a 57 años; con 57 años o más, el sistema SHALL responder
 el guion de descarte cortés aprobado y NO SHALL continuar el perfilamiento.
 
-#### Scenario: 50 o más se descarta
-- **WHEN** el candidato responde "tengo 52 años"
+#### Scenario: 57 o más se descarta
+- **WHEN** el candidato responde "tengo 57 años"
 - **THEN** el bot responde el guion de descarte y no emite más preguntas del funnel
 
 #### Scenario: Frontera exacta
-- **WHEN** el candidato responde "tengo 50"
-- **THEN** aplica el descarte (la regla es estrictamente menor a 50)
+- **WHEN** el candidato responde "tengo 57"
+- **THEN** aplica el descarte (la regla es estrictamente menor a 57)
 
-#### Scenario: Menor de 50 continúa
-- **WHEN** el candidato responde "tengo 49 años"
+#### Scenario: Menor de 57 continúa
+- **WHEN** el candidato responde "tengo 56 años"
 - **THEN** el funnel continúa con la siguiente pregunta (tipo de unidad)
 
 ### Requirement: Preguntas de vencimiento en lugar de vigencia
@@ -543,4 +560,24 @@ Mensajes por motivo (al menos):
 #### Scenario: Acuse de B1
 - **WHEN** el motivo de canalización es B1/EUA
 - **THEN** el acuse indica que es una vía distinta a la vacante publicada
+
+### Requirement: Punto único de extracción antes de bifurcar
+
+El sistema SHALL computar el `TurnExtraction` del mensaje **una sola vez al inicio del turno**,
+antes de bifurcar entre el orquestador y el guard del worker, y ambos caminos SHALL consumir
+ese mismo objeto. SHALL NOT re-extraer el mismo texto en múltiples puntos del turno.
+
+#### Scenario: Una extracción por turno
+- **WHEN** llega un mensaje del candidato
+- **THEN** la extracción del turno se realiza una vez y su resultado alimenta funnel, nudge, ack, labels y persistencia
+
+### Requirement: Autoridad única sobre la respuesta
+
+El reply de cara al candidato SHALL decidirse sobre el `TurnExtraction` único, no por el orden
+de ejecución de dos caminos. SHALL NOT existir un camino (guard) que pise incondicionalmente
+el reply ya producido por otro (orquestador) tras una segunda extracción del mismo turno.
+
+#### Scenario: Reply no depende de quién corre último
+- **WHEN** un turno produce facts y una posible duda embebida
+- **THEN** el reply se determina a partir del `TurnExtraction` único, de forma estable e independiente del orden interno de los componentes
 

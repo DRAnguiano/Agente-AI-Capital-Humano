@@ -16,23 +16,25 @@
 
 ---
 
-## D-1 · Edad límite (≥ 50) hardcodeada en 5 sitios — ALTA
+## D-1 · Edad límite centralizada — RESUELTO
 
-**Comportamiento actual:** la regla "candidato de 50 años o más queda fuera de perfil"
-está escrita como literal `>= 50` (o constante local) en cinco lugares independientes:
+**Comportamiento actual:** la regla de descarte por edad ya está centralizada en
+`app/settings.py` como `AGE_DISQUALIFICATION_LIMIT` (valor vigente: `57`). El candidato
+queda fuera de perfil cuando `candidate.age >= AGE_DISQUALIFICATION_LIMIT`.
 
 | Archivo | Línea | Forma |
 |---|---|---|
-| `app/knowledge/current_turn.py` | 38, 80 | `AGE_LIMIT_EXCLUSIVE = 50` + `is_age_disqualified()` (fuente canónica de facto) |
-| `app/chatwoot_note_sync.py` | 112 | `int(...) >= 50` en `_age_disqualified` |
-| `app/knowledge/guard_asked_field.py` | 41 | `if int(...) >= 50:` |
-| `app/orchestrators/knowledge_orchestrator.py` | 708, 963, 1196 | `if age >= 50:` (×3) |
+| `app/settings.py` | 73 | `AGE_DISQUALIFICATION_LIMIT = 57` |
+| `app/knowledge/current_turn.py` | 107 | importa `AGE_DISQUALIFICATION_LIMIT` |
+| `app/knowledge/guard_asked_field.py` | 41 | usa `AGE_DISQUALIFICATION_LIMIT` |
+| `app/orchestrators/knowledge_orchestrator.py` | varios | usa `AGE_DISQUALIFICATION_LIMIT` |
+| `app/persona_config.py` | 67 | copy alineado a 57 |
 
-**Comportamiento esperado:** una sola fuente de verdad del umbral y del predicado.
-Reutilizar `current_turn.AGE_LIMIT_EXCLUSIVE` / `current_turn.is_age_disqualified(facts)`
-en los otros cuatro sitios. Cambiar el umbral debe ser una edición de un solo punto.
+**Comportamiento esperado:** conservar una sola fuente de verdad del umbral. Cambiar la
+política de edad debe ser una edición de `AGE_DISQUALIFICATION_LIMIT` y una sincronización
+explícita del contrato OpenSpec.
 
-**OpenSpec relacionado:** `funnel-vigencia-edad` (regla de edad temprana / cierre por edad).
+**OpenSpec relacionado:** `message-orchestration` y `profile-extraction`.
 
 **Test rojo sugerido:** parametrizar `AGE_LIMIT_EXCLUSIVE` (o monkeypatch) y verificar que
 los cuatro paths (note_sync, guard_asked_field, orchestrator ×3) reflejan el mismo umbral

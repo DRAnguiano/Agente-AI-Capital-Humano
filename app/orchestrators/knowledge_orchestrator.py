@@ -1076,6 +1076,7 @@ def _store_lead_memory_updates(
     reply: str,
     asked_field_keys: list[str] | None = None,
     turn_signals=None,
+    pre_validated_facts: list | None = None,
 ) -> dict[str, Any]:
     """Write useful memory to v2 without letting it govern the conversation."""
     facts_written: list[str] = []
@@ -1110,32 +1111,49 @@ def _store_lead_memory_updates(
         external_metadata=assistant_metadata or None,
     )
 
-    # Extract profile facts from every message regardless of route/intent.
-    # Neo4j handles geo (city/state) and vehicle type; regex covers everything else.
-    try:
-        from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
-        from app.lead_memory.profile_extractor import extract_profile_facts
+    # 6.2: extractor unificado pre-computado en el worker → un solo escritor por turno.
+    # Fallback al path anterior (neo4j + regex) solo para el path API sin pre_validated.
+    if pre_validated_facts is not None:
+        for pf in pre_validated_facts:
+            try:
+                upsert_lead_fact(
+                    lead_key=lead_key,
+                    fact_group=pf["fact_group"],
+                    fact_key=pf["fact_key"],
+                    fact_value=str(pf["fact_value"]),
+                    confidence=float(pf.get("confidence") or 0.8),
+                    source_message_id=source_message_id,
+                    source_text=message,
+                    is_explicit_correction=bool(pf.get("is_explicit_correction", False)),
+                )
+                facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
+            except Exception as exc:
+                log.warning("[FACTS_WRITE] lead=%s key=%s.%s error=%s",
+                            lead_key, pf.get("fact_group"), pf.get("fact_key"), exc)
+    else:
+        try:
+            from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
+            from app.lead_memory.profile_extractor import extract_profile_facts
 
-        neo4j_facts = _drop_unanchored_neo4j_geo(extract_profile_facts_from_neo4j(message), message)
-        neo4j_keys = {(f["fact_group"], f["fact_key"]) for f in neo4j_facts}
-        regex_facts = [
-            f for f in extract_profile_facts(message, intent, turn_signals=turn_signals)
-            if (f["fact_group"], f["fact_key"]) not in neo4j_keys
-        ]
-
-        for pf in _drop_geo_facts_from_questions(neo4j_facts + regex_facts, message):
-            upsert_lead_fact(
-                lead_key=lead_key,
-                fact_group=pf["fact_group"],
-                fact_key=pf["fact_key"],
-                fact_value=str(pf["fact_value"]),
-                confidence=float(pf.get("confidence") or 0.8),
-                source_message_id=source_message_id,
-                source_text=message,
-            )
-            facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
-    except Exception as exc:
-        log.warning("[FACTS_EXTRACTION] lead=%s error=%s", lead_key, exc)
+            neo4j_facts = _drop_unanchored_neo4j_geo(extract_profile_facts_from_neo4j(message), message)
+            neo4j_keys = {(f["fact_group"], f["fact_key"]) for f in neo4j_facts}
+            regex_facts = [
+                f for f in extract_profile_facts(message, intent, turn_signals=turn_signals)
+                if (f["fact_group"], f["fact_key"]) not in neo4j_keys
+            ]
+            for pf in _drop_geo_facts_from_questions(neo4j_facts + regex_facts, message):
+                upsert_lead_fact(
+                    lead_key=lead_key,
+                    fact_group=pf["fact_group"],
+                    fact_key=pf["fact_key"],
+                    fact_value=str(pf["fact_value"]),
+                    confidence=float(pf.get("confidence") or 0.8),
+                    source_message_id=source_message_id,
+                    source_text=message,
+                )
+                facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
+        except Exception as exc:
+            log.warning("[FACTS_EXTRACTION] lead=%s error=%s", lead_key, exc)
 
     if any(term in text for term in ("quinta rueda", "5ta rueda", "5ta", "kinta rueda")):
         upsert_lead_fact(
@@ -1469,6 +1487,7 @@ def _build_funnel_nudge(
     contract: dict[str, Any],
     lead_memory: dict[str, Any],
     turn_signals=None,
+    pre_validated_facts: list | None = None,
 ) -> tuple[str | None, list[str]]:
     """Return ``(question, asked_field_keys)`` for the next profiling step.
 
@@ -1497,29 +1516,28 @@ def _build_funnel_nudge(
         for row in (lead_memory.get("facts") or [])
         if row.get("fact_group") and row.get("fact_key") and row.get("fact_value")
     }
-    try:
-        from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
-        from app.lead_memory.profile_extractor import extract_profile_facts
-
-        # [RIESGO] extract_profile_facts_from_neo4j llama a fetch_profile_nodes()
-        # que hace una query completa a Neo4j. Este mismo método ya se llama en
-        # _store_lead_memory_updates para el mismo mensaje en el mismo request.
-        # Son 2 queries redundantes a Neo4j por mensaje.
-        # TODO: pasar los neo4j_facts ya calculados como parámetro desde
-        # handle_message para evitar la segunda query.
-        neo4j_facts = extract_profile_facts_from_neo4j(message)
-        neo4j_keys: set[str] = set()
-        for f in neo4j_facts:
+    if pre_validated_facts is not None:
+        # 6.2: usar extractor unificado pre-computado en lugar de re-extraer
+        for f in pre_validated_facts:
             k = f"{f['fact_group']}.{f['fact_key']}"
             active_facts[k] = str(f["fact_value"])
-            neo4j_keys.add(k)
+    else:
+        try:
+            from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
+            from app.lead_memory.profile_extractor import extract_profile_facts
 
-        for f in extract_profile_facts(message, intent or None, turn_signals=turn_signals):
-            k = f"{f['fact_group']}.{f['fact_key']}"
-            if k not in neo4j_keys:
+            neo4j_facts = extract_profile_facts_from_neo4j(message)
+            neo4j_keys: set[str] = set()
+            for f in neo4j_facts:
+                k = f"{f['fact_group']}.{f['fact_key']}"
                 active_facts[k] = str(f["fact_value"])
-    except Exception as exc:
-        log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
+                neo4j_keys.add(k)
+            for f in extract_profile_facts(message, intent or None, turn_signals=turn_signals):
+                k = f"{f['fact_group']}.{f['fact_key']}"
+                if k not in neo4j_keys:
+                    active_facts[k] = str(f["fact_value"])
+        except Exception as exc:
+            log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
 
     # 3.3: vencido sin trámite → no emitir más nudges
     if active_facts.get("funnel.status") == "vencido_sin_tramite":
@@ -1705,11 +1723,17 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
 
     save_message(conversation_key, "user", message)
 
+    # 6.4: si el worker pre-computó la extracción unificada, sus señales reemplazan TIPC.
+    _pre_extraction = payload.get("_pre_extraction")
+    _pre_validated: list | None = payload.get("_pre_validated")
     from app.knowledge.turn_intent_classifier import TurnIntentSignals, classify_turn_intent
-    try:
-        turn_signals = classify_turn_intent(message)
-    except Exception:
-        turn_signals = TurnIntentSignals()
+    if _pre_extraction is not None:
+        turn_signals = _pre_extraction.signals
+    else:
+        try:
+            turn_signals = classify_turn_intent(message)
+        except Exception:
+            turn_signals = TurnIntentSignals()
 
     contract = resolve_message(message, conversation_state=conversation)
     contract = _apply_profile_guards(message, contract)
@@ -1861,7 +1885,10 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     # Capture which canonical field(s) the nudge asked about (passive metadata).
     asked_field_keys: list[str] = []
     if (rag_result is not None or friendly_result is not None or profile_ack_used) and not embedded_derived:
-        nudge, asked_field_keys = _build_funnel_nudge(message, contract, lead_memory_before, turn_signals=turn_signals)
+        nudge, asked_field_keys = _build_funnel_nudge(
+            message, contract, lead_memory_before,
+            turn_signals=turn_signals, pre_validated_facts=_pre_validated,
+        )
         if nudge:
             # 3.2: puente suave si el RAG respondió una duda en el primer turno (sin nombre aún)
             _facts_before = {
@@ -1929,6 +1956,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         reply=reply,
         asked_field_keys=asked_field_keys,
         turn_signals=turn_signals,
+        pre_validated_facts=_pre_validated,
     )
     lead_memory_after = lead_write.get("memory") or {}
 

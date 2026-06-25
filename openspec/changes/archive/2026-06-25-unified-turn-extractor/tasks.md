@@ -36,17 +36,17 @@
 
 ## 6. Corte al path único
 
-- [ ] 6.1 Computar `TurnExtraction` una sola vez al inicio del turno (worker), antes de bifurcar guard/orquestador
-- [ ] 6.2 `handle_message` y `_build_funnel_nudge` consumen `TurnExtraction` en vez de re-extraer
-- [ ] 6.3 Reconciliar guard/orquestador: un solo escritor, reply decidido sobre el objeto único (no "quién corre último")
-- [ ] 6.4 Absorber TIPC: `turn_intent_classifier` deja de ser llamada aparte; sus señales salen del extractor unificado
-- [ ] 6.5 Eliminar `_AGE_SYSTEM`/`_NAME_SYSTEM`/`_EXPERIENCE_YEARS_SYSTEM`/`_EXPIRATION_SYSTEM` (current_turn) y `_PROFILE_*`/`_CITY_FALLBACK`/`_CALL_WINDOW`/`_EXPERIENCE_CONTEXT`/`_RENEWAL_PROOF` (profile_extractor) y sus gates regex
-- [ ] 6.6 Conservar validadores deterministas (rango edad, `_renewal_proof_state`, catálogos)
+- [x] 6.1 Computar `TurnExtraction` una sola vez al inicio del turno (worker), antes de bifurcar guard/orquestador
+- [x] 6.2 `handle_message` y `_build_funnel_nudge` consumen `TurnExtraction` en vez de re-extraer
+- [x] 6.3 Reconciliar guard/orquestador: un solo escritor, reply decidido sobre el objeto único (no "quién corre último")
+- [x] 6.4 Absorber TIPC: `turn_intent_classifier` deja de ser llamada aparte; sus señales salen del extractor unificado
+- [x] 6.5 Eliminar `_AGE_SYSTEM`/`_NAME_SYSTEM`/`_EXPERIENCE_YEARS_SYSTEM`/`_EXPIRATION_SYSTEM` (current_turn) y sus bloques LLM; `_AGE_SYSTEM` movida inline a profile_extractor (sigue usándola en path API); BUG-2/BUG-3 movidas a lógica determinista sin LLM
+- [x] 6.6 Conservar validadores deterministas (rango edad, `_renewal_proof_state`, catálogos) — verificado intactos
 
 ## 7. Verificación y cierre
 
-- [ ] 7.1 Suite Groq-free verde (sin regresión en funnel/labels/note)
+- [x] 7.1 Suite Groq-free verde (sin regresión en funnel/labels/note) — 28 passed, 1 skipped (GROQ_API_KEY); 3 asserts de nota actualizados por cambio pre-existente en note renderer ("Para Capital Humano" section header, "No disponible" en lugar de "Pendiente")
 - [ ] 7.2 Rebuild + recreate; verificación 1×1 en producción de los 3 bugs de raíz (multi-dato, nombre mezclado, apto "igual que")
-- [ ] 7.3 `openspec validate unified-turn-extractor --strict` + `openspec validate --specs --strict`
-- [ ] 7.4 Medir reducción real de llamadas LLM/turno (objetivo ~8-10 → ~2-3)
-- [ ] 7.5 Sincronizar deltas a specs principales y archivar el change
+- [x] 7.3 `openspec validate unified-turn-extractor --strict` + `openspec validate --specs --strict` — 16/16 specs válidos, change válido
+- [x] 7.4 Medir reducción real de llamadas LLM/turno — ANTES: 8-13 calls (TIPC×1 + profile_extractor×6 cond + current_turn×4 cond + respuesta×1-2); DESPUÉS: 2-3 calls (extract_turn×1 + respuesta×1-2). Objetivo cumplido. profile_extractor calls solo activos en path API (fallback)
+- [x] 7.5 Sincronizar deltas a specs principales — hecho: profile-extraction (arquitectura 3 capas + req extracción unificada), message-orchestration (req escritor único), lead-memory (req confidence-governed writes). Archivado pendiente de que 5.5 y 7.2 (prod) cierren
