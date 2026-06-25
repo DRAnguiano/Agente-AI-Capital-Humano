@@ -72,6 +72,13 @@ TEMPERATURE = _env_float("TEMPERATURE", 0.1)
 # si cambia la política de RH.
 AGE_DISQUALIFICATION_LIMIT = _env_int("AGE_DISQUALIFICATION_LIMIT", 57)
 
+# unified-turn-extractor (migración en shadow). Default OFF: comportamiento actual.
+# UNIFIED_EXTRACTOR_SHADOW: corre extract_turn log-only en paralelo al path actual.
+# CONFIDENCE_GOVERNED_WRITES: upsert_lead_fact gobierna escritura por confianza
+#   (valor solo se pisa si conf_nueva >= conf_guardada o corrección explícita).
+UNIFIED_EXTRACTOR_SHADOW = _env_bool("UNIFIED_EXTRACTOR_SHADOW", False)
+CONFIDENCE_GOVERNED_WRITES = _env_bool("CONFIDENCE_GOVERNED_WRITES", False)
+
 
 # =========================
 # RAG / Chroma

@@ -226,11 +226,22 @@ def upsert_lead_fact(
     source_message_id: int | None = None,
     source_text: str | None = None,
     fact_value_json: dict[str, Any] | list[Any] | None = None,
+    is_explicit_correction: bool = False,
 ) -> dict[str, Any] | None:
     if not lead_key or not fact_group or not fact_key or not fact_value:
         return None
 
     confidence = max(0.0, min(float(confidence or 0.7), 1.0))
+
+    # Escritura gobernada por confianza (unified-turn-extractor §4, BREAKING).
+    # Flag OFF (default) → comportamiento histórico: el valor siempre se pisa y la
+    # confianza solo sube (GREATEST). Flag ON → el valor se pisa solo si la confianza
+    # nueva ≥ la guardada o hay corrección explícita; la confianza sigue al valor ganador.
+    try:
+        from app.settings import CONFIDENCE_GOVERNED_WRITES
+        _governed = bool(CONFIDENCE_GOVERNED_WRITES)
+    except Exception:
+        _governed = False
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -266,9 +277,19 @@ def upsert_lead_fact(
                 )
                 ON CONFLICT (lead_key, fact_group, fact_key, is_active)
                 DO UPDATE SET
-                    fact_value = EXCLUDED.fact_value,
+                    fact_value = CASE
+                        WHEN NOT %(governed)s THEN EXCLUDED.fact_value
+                        WHEN %(is_correction)s THEN EXCLUDED.fact_value
+                        WHEN EXCLUDED.confidence >= rh_lead_facts_v2.confidence THEN EXCLUDED.fact_value
+                        ELSE rh_lead_facts_v2.fact_value
+                    END,
                     fact_value_json = COALESCE(EXCLUDED.fact_value_json, rh_lead_facts_v2.fact_value_json),
-                    confidence = GREATEST(rh_lead_facts_v2.confidence, EXCLUDED.confidence),
+                    confidence = CASE
+                        WHEN NOT %(governed)s THEN GREATEST(rh_lead_facts_v2.confidence, EXCLUDED.confidence)
+                        WHEN %(is_correction)s THEN EXCLUDED.confidence
+                        WHEN EXCLUDED.confidence >= rh_lead_facts_v2.confidence THEN EXCLUDED.confidence
+                        ELSE rh_lead_facts_v2.confidence
+                    END,
                     source = EXCLUDED.source,
                     source_message_id = COALESCE(EXCLUDED.source_message_id, rh_lead_facts_v2.source_message_id),
                     source_text = COALESCE(EXCLUDED.source_text, rh_lead_facts_v2.source_text),
@@ -286,6 +307,8 @@ def upsert_lead_fact(
                     "source": source,
                     "source_message_id": source_message_id,
                     "source_text": source_text,
+                    "governed": _governed,
+                    "is_correction": bool(is_explicit_correction),
                 },
             )
             row = cur.fetchone()
