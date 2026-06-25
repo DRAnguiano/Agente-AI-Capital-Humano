@@ -25,7 +25,8 @@ from fastapi import FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
-from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int
+import asyncio
+from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int, call_groq_transcribe
 from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
@@ -446,11 +447,17 @@ def _extract_chatwoot_channel_label(payload: dict) -> str:
     return "Chatwoot"
 
 
-# Reply canned del media_guard (G4). Genérico, sin leer BD ni planner.
+# Reply canned del media_guard (G4). Para adjuntos no-audio (imagen, doc, sticker, video).
 _MEDIA_GUARD_REPLY = (
     "Gracias por compartirlo. Por el momento no puedo revisar documentos, imágenes, "
     "audios o stickers por este medio. Para continuar con su registro, por favor "
     "respóndame en texto la información solicitada."
+)
+
+# Reply canned cuando se recibió audio pero no pudo transcribirse.
+_AUDIO_GUARD_REPLY = (
+    "Recibí tu audio, pero no pude entenderlo bien. "
+    "¿Podrías escribirme en texto lo que me quieres decir?"
 )
 
 
@@ -489,6 +496,31 @@ def _chatwoot_has_media(payload: dict) -> bool:
     if isinstance(message, dict) and _any_media(message.get("attachments")):
         return True
     return False
+
+
+def _detect_audio_url(payload: dict) -> str | None:
+    """Devuelve la data_url del primer adjunto de tipo audio, o None si no hay audio.
+
+    Chatwoot expone file_type=="audio" para notas de voz de WhatsApp.
+    Revisa tanto la ruta top-level como la ruta anidada en message.attachments.
+    """
+    def _find_audio(items) -> str | None:
+        if not isinstance(items, list):
+            return None
+        for a in items:
+            if isinstance(a, dict) and a.get("file_type") == "audio":
+                url = a.get("data_url") or a.get("thumb_url")
+                if url:
+                    return url
+        return None
+
+    result = _find_audio(payload.get("attachments"))
+    if result:
+        return result
+    message = payload.get("message")
+    if isinstance(message, dict):
+        return _find_audio(message.get("attachments"))
+    return None
 
 
 async def _send_chatwoot_message(
@@ -1013,50 +1045,110 @@ async def chatwoot_webhook(
             "message_type": message_type,
         }
 
-    # ── media_guard (G4): attachments → no extraer, no encolar, no orquestar ──
-    # Agnóstico al canal (Telegram demo / WhatsApp futuro entran por Chatwoot).
+    # ── media_guard (G4): attachments → rama audio (transcripción) o reject genérico ──
     # Va ANTES de empty_content: los mensajes solo-media traen content vacío.
-    if _chatwoot_has_media(payload):
+    _audio_url = _detect_audio_url(payload)
+    if _audio_url or _chatwoot_has_media(payload):
         if not account_id or not conversation_id:
             return {"status": "ignored", "reason": "media_without_ids"}
-        _top_att = payload.get("attachments")
-        _msg_att = (payload.get("message") or {}).get("attachments")
-        attachments_count = (
-            (len(_top_att) if isinstance(_top_att, list) else 0)
-            + (len(_msg_att) if isinstance(_msg_att, list) else 0)
-        )
-        sent = False
-        try:
-            await _send_chatwoot_message(
-                account_id=account_id,
-                conversation_id=conversation_id,
-                content=_MEDIA_GUARD_REPLY,
+
+        # ── Rama audio: descargar + transcribir con Groq Whisper ──
+        if _audio_url:
+            transcribed_text = ""
+            transcribe_error = None
+            try:
+                chatwoot_token = os.getenv("CHATWOOT_API_TOKEN", "")
+                headers = {"api_access_token": chatwoot_token} if chatwoot_token else {}
+                async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as hc:
+                    resp = await hc.get(_audio_url, headers=headers)
+                    resp.raise_for_status()
+                    audio_bytes = resp.content
+                # filename con extensión para que Whisper detecte el codec
+                fname = _audio_url.split("?")[0].split("/")[-1] or "audio.ogg"
+                transcribed_text = await asyncio.to_thread(
+                    call_groq_transcribe, audio_bytes, fname
+                )
+            except Exception as exc:
+                transcribe_error = str(exc)
+                print(f"[CHATWOOT_AUDIO_TRANSCRIBE] Error: {exc}", flush=True)
+
+            print(
+                "[CHATWOOT_AUDIO_TRANSCRIBE]",
+                json.dumps(
+                    {
+                        "account_id": account_id,
+                        "conversation_id": conversation_id,
+                        "message_id": message_id,
+                        "audio_url": _audio_url[:80],
+                        "transcribed_len": len(transcribed_text),
+                        "error": transcribe_error,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
             )
-            sent = True
-        except Exception:
-            traceback.print_exc()
-        print(
-            "[CHATWOOT_MEDIA_GUARD]",
-            json.dumps(
-                {
-                    "account_id": account_id,
-                    "conversation_id": conversation_id,
-                    "message_id": message_id,
-                    "channel_label": channel_label,
-                    "attachments": attachments_count,
-                    "had_caption": bool(content),
-                    "sent": sent,
-                },
-                ensure_ascii=False,
-            ),
-            flush=True,
-        )
-        return {
-            "status": "media_guard",
-            "sent_to_chatwoot": sent,
-            "extracted": False,
-            "enqueued": False,
-        }
+
+            if len(transcribed_text) >= 3:
+                # Texto válido → sobreescribir content y continuar el pipeline normal
+                content = transcribed_text
+            else:
+                # Sin texto válido → reply específico, no encolar
+                sent = False
+                try:
+                    await _send_chatwoot_message(
+                        account_id=account_id,
+                        conversation_id=conversation_id,
+                        content=_AUDIO_GUARD_REPLY,
+                    )
+                    sent = True
+                except Exception:
+                    traceback.print_exc()
+                return {
+                    "status": "audio_guard",
+                    "sent_to_chatwoot": sent,
+                    "transcribed": False,
+                    "enqueued": False,
+                }
+        else:
+            # ── Rama no-audio: imagen, doc, sticker, video → reply genérico ──
+            _top_att = payload.get("attachments")
+            _msg_att = (payload.get("message") or {}).get("attachments")
+            attachments_count = (
+                (len(_top_att) if isinstance(_top_att, list) else 0)
+                + (len(_msg_att) if isinstance(_msg_att, list) else 0)
+            )
+            sent = False
+            try:
+                await _send_chatwoot_message(
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    content=_MEDIA_GUARD_REPLY,
+                )
+                sent = True
+            except Exception:
+                traceback.print_exc()
+            print(
+                "[CHATWOOT_MEDIA_GUARD]",
+                json.dumps(
+                    {
+                        "account_id": account_id,
+                        "conversation_id": conversation_id,
+                        "message_id": message_id,
+                        "channel_label": channel_label,
+                        "attachments": attachments_count,
+                        "had_caption": bool(content),
+                        "sent": sent,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+            return {
+                "status": "media_guard",
+                "sent_to_chatwoot": sent,
+                "extracted": False,
+                "enqueued": False,
+            }
 
     if not content:
         return {

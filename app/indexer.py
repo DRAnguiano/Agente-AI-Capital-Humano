@@ -94,6 +94,8 @@ COHERE_MAX_TOKENS = int(
 
 TEMPERATURE = float(getattr(settings, "TEMPERATURE", os.getenv("TEMPERATURE", "0.15")))
 
+GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
+
 # Cohere Rerank.
 # Flujo:
 #   Chroma recupera RERANK_INPUT_K candidatos.
@@ -898,6 +900,47 @@ def call_groq_with_system(system: str, user: str, *, temperature: float | None =
     except Exception as exc:
         print(f"[groq_with_system] Error: {type(exc).__name__}: {exc}", flush=True)
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
+
+
+def call_groq_transcribe(audio_bytes: bytes, filename: str = "audio.ogg") -> str:
+    """Transcribe un archivo de audio con Groq Whisper; devuelve el texto o '' si falla.
+
+    Sigue el mismo patrón de fallback a GROQ_API_KEY_BACKUP que las demás funciones Groq.
+    """
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        print("[groq_transcribe] Falta GROQ_API_KEY", flush=True)
+        return ""
+    if not audio_bytes:
+        return ""
+
+    backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+
+    def _transcribe(key: str) -> str:
+        with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0)) as http_client:
+            client = Groq(api_key=key, http_client=http_client)
+            result = client.audio.transcriptions.create(
+                file=(filename, audio_bytes),
+                model=GROQ_WHISPER_MODEL,
+                response_format="text",
+            )
+        # SDK devuelve str directamente con response_format="text"
+        return str(result).strip() if result else ""
+
+    try:
+        return _transcribe(api_key)
+    except GroqRateLimitError:
+        if not backup_key:
+            raise
+        print("[groq-fallback] cuota primaria agotada, usando BACKUP — call_groq_transcribe", flush=True)
+        try:
+            return _transcribe(backup_key)
+        except Exception as exc2:
+            print(f"[groq_transcribe] BACKUP falló: {type(exc2).__name__}: {exc2}", flush=True)
+            return ""
+    except Exception as exc:
+        print(f"[groq_transcribe] Error: {type(exc).__name__}: {exc}", flush=True)
+        return ""
 
 
 def call_llm(prompt: str) -> str:
