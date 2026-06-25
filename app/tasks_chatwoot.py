@@ -191,6 +191,61 @@ def enqueue_chatwoot_message(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _run_unified_extractor_shadow(
+    *,
+    message: str,
+    last_bot: str | None,
+    pre_memory: dict[str, Any],
+    current_path_facts: dict[str, Any],
+    conversation_id: Any,
+) -> None:
+    """Corre el extractor unificado en paralelo al path actual (log-only).
+
+    Loggea: el TurnExtraction validado, divergencias de extracción fact-por-fact
+    (5.3) y divergencias de escritura vs el valor guardado (5.4). NO persiste,
+    NO afecta el reply. Aislado: cualquier error se traga arriba.
+    """
+    from app.knowledge.turn_extractor import extract_turn, validate_extraction
+
+    known = {
+        f"{r['fact_group']}.{r['fact_key']}": r["fact_value"]
+        for r in (pre_memory.get("facts") or [])
+        if r.get("fact_group") and r.get("fact_key") and r.get("fact_value")
+    }
+    extraction = extract_turn(message, last_bot, known)
+    validated = validate_extraction(extraction, known)
+    unified_facts = {f"{f['fact_group']}.{f['fact_key']}": f["fact_value"] for f in validated}
+
+    # 5.3: divergencias de extracción (path actual vs unificado), ignorando claves de control
+    _ignore = {"location.is_local_laguna", "interest.payment", "interest.routes"}
+    cur = {k: v for k, v in (current_path_facts or {}).items() if k not in _ignore}
+    extraction_diffs = []
+    for k in set(cur) | set(unified_facts):
+        a, b = cur.get(k), unified_facts.get(k)
+        if str(a or "") != str(b or ""):
+            extraction_diffs.append({"key": k, "current": a, "unified": b})
+
+    # 5.4: divergencias de escritura — qué valor ganaría con política gobernada
+    write_diffs = []
+    for f in validated:
+        key = f"{f['fact_group']}.{f['fact_key']}"
+        saved = known.get(key)
+        if saved is not None and str(saved) != str(f["fact_value"]):
+            write_diffs.append({
+                "key": key, "saved": saved, "candidate": f["fact_value"],
+                "conf": f["confidence"], "correction": f["is_explicit_correction"],
+            })
+
+    print("[UNIFIED_SHADOW]", json.dumps({
+        "conversation_id": conversation_id,
+        "message": message[:200],
+        "unified_facts": unified_facts,
+        "embedded_question": extraction.embedded_question,
+        "extraction_diffs": extraction_diffs,
+        "write_diffs": write_diffs,
+    }, ensure_ascii=False), flush=True)
+
+
 @celery_app.task(name="chatwoot.process_debounced_message")
 def process_chatwoot_debounced_message(
     pending_key: str,
@@ -339,6 +394,20 @@ def process_chatwoot_debounced_message(
         )
 
         current_turn_facts = extract_current_turn_facts(combined_content, last_bot_message)
+
+        # ── SHADOW: unified-turn-extractor (log-only, no afecta reply ni persistencia) ──
+        try:
+            from app.settings import UNIFIED_EXTRACTOR_SHADOW
+            if UNIFIED_EXTRACTOR_SHADOW:
+                _run_unified_extractor_shadow(
+                    message=combined_content,
+                    last_bot=last_bot_message,
+                    pre_memory=pre_memory,
+                    current_path_facts=current_turn_facts,
+                    conversation_id=conversation_id,
+                )
+        except Exception as _shadow_exc:
+            print("[UNIFIED_SHADOW_ERROR]", str(_shadow_exc), flush=True)
 
         # Primer contacto con entrada de campaña/interés (p. ej. el mensaje
         # default de la publicación de Facebook): Mundo SIEMPRE recibe con su

@@ -28,11 +28,11 @@
 
 ## 5. Shadow mode (log-only)
 
-- [ ] 5.1 Feature flag `UNIFIED_EXTRACTOR_SHADOW` en `settings.py`
-- [ ] 5.2 En el worker, llamar `extract_turn` log-only en paralelo al path actual; loggear `TurnExtraction` + facts validados + confianza derivada
-- [ ] 5.3 Loggear divergencias de extracción fact-por-fact (actual vs unificado) sin afectar el reply
-- [ ] 5.4 Loggear divergencias de ESCRITURA (qué valor ganaría hoy vs con política nueva) sin persistir
-- [ ] 5.5 Verificación en producción: recolectar N turnos reales, medir paridad/mejora y costo/latencia (8b vs 70b)
+- [x] 5.1 Feature flag `UNIFIED_EXTRACTOR_SHADOW` en `settings.py`
+- [x] 5.2 En el worker, `_run_unified_extractor_shadow` llama `extract_turn`+`validate_extraction` log-only, gateado por flag, aislado en try/except
+- [x] 5.3 Loggea divergencias de extracción fact-por-fact (actual vs unificado); verificado que captura los 3 facts que el path actual pierde/confunde
+- [x] 5.4 Loggea divergencias de ESCRITURA (valor guardado vs candidato + confianza) sin persistir
+- [ ] 5.5 Verificación en producción: prender `UNIFIED_EXTRACTOR_SHADOW=true` en .env, recolectar N turnos reales, medir paridad/mejora y costo/latencia (8b vs 70b) — REQUIERE OBSERVACIÓN EN PROD
 
 ## 6. Corte al path único
 
