@@ -352,12 +352,18 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
         _last_question = normalize_text(_q_parts[-1]) if _q_parts else last_norm
 
         _ya_reclamo = getattr(turn_signals, "is_ya_reclamo", False)
-        _age_question = re.search(r"\bcuantos anos\b", _last_question) and "experiencia" not in _last_question
+        # Detectar pregunta de edad: "cuántos años", "su edad", "compartir su edad", etc.
+        _age_question = (
+            re.search(r"\bcuantos anos\b", _last_question)
+            or re.search(r"\b(su|tu)\s+edad\b", _last_question)
+            or "edad" in _last_question
+        ) and "experiencia" not in _last_question
         if _age_question and ("candidate.age" not in facts or _ya_reclamo):
             try:
                 raw = call_groq_json(text, _AGE_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
                 val = json.loads(raw).get("age")
-                if val is not None:
+                # Validar rango: evita que "quince mil" u otros números se tomen como edad
+                if val is not None and 18 <= int(val) <= 75:
                     facts["candidate.age"] = str(int(val))
             except Exception:
                 pass
