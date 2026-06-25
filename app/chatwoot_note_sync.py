@@ -387,12 +387,17 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         else:
             labels.update({"foraneo", "validar_traslado"})
 
-    accepted = facts.get("candidate.vacancy_accepted") in {"sí", "si", "yes", "true"}
+    # perfil_listo: todos los campos núcleo recolectados → Capital Humano toma el caso.
+    # La aceptación explícita de la vacante no es requisito; se asume implícita cuando
+    # el candidato completó el funnel sin abandonar (candidate.vacancy_accepted era un
+    # falso bloqueo: el bot ya preguntó todo, el candidato respondió).
+    has_city = bool(facts.get("candidate.city"))
     if (
         vehicle_confirmed
         and has_license
         and has_medical
-        and accepted
+        and has_experience
+        and has_city
         and not (has_non_target_experience or has_no_road_experience or has_reingreso)
     ):
         labels.update({"perfil_listo", "requiere_revision_ch"})

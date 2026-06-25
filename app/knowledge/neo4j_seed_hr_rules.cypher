@@ -125,7 +125,8 @@ UNWIND [
   {id:'candidate_dropoff_close', risk_level:'low', topic:null, route:'fallback'},
   {id:'ambiguous_slang_clarification', risk_level:'medium', topic:null, route:'clarification'},
   {id:'sensitive_handoff', risk_level:'high', topic:'safety', route:'human_handoff'},
-  {id:'driving_school', risk_level:'low', topic:'documents', route:'rag'}
+  {id:'driving_school', risk_level:'low', topic:'documents', route:'rag'},
+  {id:'process_location', risk_level:'low', topic:'routes', route:'rag'}
 ] AS row
 MERGE (intent:Intent {id: row.id})
 SET intent.risk_level = row.risk_level,
@@ -254,6 +255,14 @@ UNWIND [
     id:'smalltalk_joke', canonical:'chiste / humor ligero', category:'smalltalk',
     aliases:['chiste','un chiste','chistecito','una broma','cuenteme un chiste','cuentame un chiste','dime un chiste','cuentas un chiste','chiste de trailero','chiste de traileros'],
     intent:'candidate_profile_signal', reply:'static_joke', source:null
+  },
+  {
+    // Pregunta de ubicación del proceso de contratación / pruebas.
+    // Observado en prod: "donde voy a hacer las pruebas" → smalltalk (misroute).
+    // "pruebas" sin calificador de sustancias = proceso de contratación, no antidoping.
+    id:'process_location', canonical:'dónde se hace el proceso / pruebas de contratación', category:'process_info',
+    aliases:['donde se hace','dónde se hace','donde es','donde voy','dónde voy','donde me presento','dónde me presento','que procede','qué procede','que sigue','qué sigue','como es el proceso','cómo es el proceso','el proceso de contratacion','el proceso de contratación','donde se realizan','donde son las pruebas','dónde son las pruebas','donde hago las pruebas','dónde hago las pruebas','donde voy a hacer las pruebas','dónde voy a hacer las pruebas','siguiente paso','siguientes pasos','que procede despues','qué procede después','y despues que','y después qué'],
+    intent:'process_location', reply:null, source:'routes_policy'
   }
 ] AS row
 MERGE (term:Term {id: row.id})
