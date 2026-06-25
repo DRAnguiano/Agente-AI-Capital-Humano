@@ -11,6 +11,15 @@ from .knowledge.text_normalizer import normalize_text
 PENDING_TEXT = "Pendiente"
 
 
+def _apto_status_display(medical_status_raw: str, apto_exp_text: str) -> str:
+    """Muestra el estado del apto: vigente si hay texto de vencimiento real, Pendiente si no."""
+    if _is_vigente(medical_status_raw):
+        return "Vigente"
+    if apto_exp_text and apto_exp_text not in {"Pendiente", ""}:
+        return "Vigente"
+    return _human_fact(medical_status_raw)
+
+
 def _exp_display(exp_text: str) -> str:
     """Normaliza el texto de vencimiento para mostrarlo sin prefijo 'vence' duplicado."""
     t = (exp_text or "").strip()
@@ -295,7 +304,17 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         labels.add("riesgo_alto")
 
     has_license    = bool(facts.get("license.category"))
-    has_medical    = facts.get("medical.apto_status") in {"vigente", "sí", "si"}
+    # has_medical: vigente explícito O tiene texto de vencimiento (incluye "al mismo tiempo...")
+    _apto_exp_raw  = str(facts.get("medical.apto_expiration_text") or "").strip()
+    _apto_equality = any(h in _apto_exp_raw.lower() for h in (
+        "al mismo tiempo", "igual que", "mismo que", "igual a", "misma vigencia",
+        "los dos", "ambos", "igual", "lo mismo",
+    )) if _apto_exp_raw else False
+    has_medical    = (
+        facts.get("medical.apto_status") in {"vigente", "sí", "si"}
+        or bool(_apto_exp_raw and _apto_exp_raw not in {"Pendiente", ""})
+        or _apto_equality
+    )
     # Unidad confirmada solo si es exactamente full/sencillo; jerga ambigua
     # ("quinta rueda", "tráiler"…) no confirma — la aclara el pipeline de comprensión.
     vehicle_confirmed = facts.get("experience.vehicle_type") in VALID_VEHICLE_TYPES
@@ -312,8 +331,11 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
         or has_non_target_experience
         or has_no_road_experience
     )
-    has_letters    = facts.get("documents.labor_letters_status") in {"available", "sí", "si"} or \
-                     facts.get("documents.labor_letters") in {"available", "sí", "si"}
+    has_letters    = (
+        facts.get("documents.labor_letters_status") in {"available", "sí", "si"}
+        or facts.get("documents.labor_letters") in {"available", "sí", "si"}
+        or facts.get("documents.proof") in {"cartas", "semanas_imss", "sí", "si"}
+    )
 
     # Tricotomía mutuamente excluyente: objetivo > no-objetivo > sin experiencia.
     if vehicle_confirmed:
@@ -435,9 +457,7 @@ def _render_escuelita_note(lead: dict[str, Any], message: str, facts: dict[str, 
     return (
         "🤖 Nota IA: Seguimiento de candidato escuelita\n\n"
         f"Último mensaje: \"{message}\"\n\n"
-        "👤 Contacto\n"
-        f"Nombre: {_text(lead.get('display_name'))}\n"
-        f"Teléfono: {_text(lead.get('phone'))}\n\n"
+        f"{_nota_contacto(lead, facts)}\n\n"
         "📌 Estado del candidato\n"
         "Operador a considerar para Escuelita Transmontes\n\n"
         "✅ Lo que ya sabemos\n"
@@ -455,10 +475,12 @@ def _nota_header(scenario: str) -> str:
     return f"🤖 Nota IA: {scenario}"
 
 
-def _nota_contacto(lead: dict[str, Any]) -> str:
+def _nota_contacto(lead: dict[str, Any], facts: dict[str, Any] | None = None) -> str:
+    # Nombre solo desde facts['candidate.name']; nunca desde Telegram/WhatsApp display_name
+    name_val = (facts or {}).get("candidate.name") or "No disponible"
     return (
         "👤 Contacto\n"
-        f"Nombre: {_text(lead.get('display_name'))}\n"
+        f"Nombre: {name_val}\n"
         f"Teléfono: {_text(lead.get('phone'))}"
     )
 
@@ -508,12 +530,19 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     message = _text(fallback_last_message or last.get("message"), "Sin mensaje reciente")[:500]
 
     # ── Datos del perfil ──────────────────────────────────────────────────────
-    name = facts.get("candidate.name") or _text(lead.get("display_name"), "")
+    name = facts.get("candidate.name") or ""  # solo desde facts, nunca desde display_name
     vehicle_type_raw = _fact(facts, "experience.vehicle_type", default="")
     years = _fact(facts, "experience.years")
     license_category = _fact(facts, "license.category")
     license_exp_text = _fact(facts, "license.expiration_text", default="")
-    apto_exp_text = _fact(facts, "medical.apto_expiration_text", default="")
+    apto_exp_text_raw = _fact(facts, "medical.apto_expiration_text", default="")
+    # Fix 3: "al mismo tiempo / igual que / mismo que la licencia" → resolver al valor de licencia
+    _equality_hints = ("al mismo tiempo", "igual que", "mismo que", "igual a", "misma vigencia",
+                       "los dos", "ambos", "igual", "lo mismo", "los mismos")
+    if apto_exp_text_raw and any(h in apto_exp_text_raw.lower() for h in _equality_hints):
+        apto_exp_text = license_exp_text if license_exp_text else apto_exp_text_raw
+    else:
+        apto_exp_text = apto_exp_text_raw
     medical_status_raw = _fact(facts, "medical.apto_status", "document.apto_status", "documents.general_status")
     proof_raw = _fact(facts, "documents.proof", "documents.labor_letters_status", "documents.labor_letters")
     city = _fact(facts, "candidate.city")
@@ -566,7 +595,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header('Candidato referido a CECATI')}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             "Sin experiencia en tracto federal. Se orientó al CECATI Gómez Palacio para formación.\n\n"
             "✅ Lo que ya sabemos\n"
@@ -584,7 +613,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header('Candidato con Ruta B1/EUA')}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             "Interesado en ruta con cruce a EUA (B1). Requiere revisión de Capital Humano.\n\n"
             "✅ Lo que ya sabemos\n"
@@ -603,7 +632,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header('Candidato de Reingreso')}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             "Candidato que operó anteriormente con Transmontes y solicita reingreso.\n\n"
             "✅ Lo que ya sabemos\n"
@@ -622,7 +651,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header('Candidato Fuera de Perfil por Edad')}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             f"Edad fuera del rango requerido. Edad declarada: {age}.\n\n"
             "👥 Para Capital Humano\n"
@@ -637,7 +666,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header('Candidato con Señal de Riesgo')}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             "Conversación con señal de riesgo detectada. Requiere revisión humana.\n\n"
             "👥 Para Capital Humano\n"
@@ -653,14 +682,14 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header('Candidato con Licencia/Apto Vencido')}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             "Licencia o apto vencido. Sin comprobante de renovación en trámite.\n\n"
             "✅ Lo que ya sabemos\n"
             f"Ciudad: {city}\n"
             f"Unidad: {vt_display}\n"
             f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n"
-            f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n\n"
+            f"Apto médico: {_apto_status_display(medical_status_raw, apto_exp_text)}" + (f" · {_exp_display(apto_exp_text)}" if apto_exp_text else "") + "\n\n"
             "👥 Para Capital Humano\n"
             "Candidato invitado a retomar cuando renueve documentos. Sin acción inmediata.\n"
             "Requiere Agente: No\n\n"
@@ -678,14 +707,14 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header('Candidato con Trámite en Proceso')}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             f"Candidato con {', '.join(doc_tramite)}. Tiene comprobante de cita.\n\n"
             "✅ Lo que ya sabemos\n"
             f"Ciudad: {city}\n"
             f"Unidad: {vt_display}\n"
             f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n"
-            f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n\n"
+            f"Apto médico: {_apto_status_display(medical_status_raw, apto_exp_text)}" + (f" · {_exp_display(apto_exp_text)}" if apto_exp_text else "") + "\n\n"
             "👥 Para Capital Humano\n"
             "Continuar perfilamiento. Aclaración pendiente de validación de documentos.\n"
             "Requiere Agente: No\n\n"
@@ -701,7 +730,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
         return (
             f"{_nota_header(scenario)}\n\n"
             f"Último mensaje: \"{message}\"\n\n"
-            f"{_nota_contacto(lead)}\n\n"
+            f"{_nota_contacto(lead, facts)}\n\n"
             "📌 Estado del candidato\n"
             f"Perfil de operador completo. {'Local de ZM Laguna.' if is_local else 'Candidato foráneo.'}\n\n"
             "✅ Lo que ya sabemos\n"
@@ -710,7 +739,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             f"Unidad: {vt_display}\n"
             f"Experiencia: {years}\n"
             f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n"
-            f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n"
+            f"Apto médico: {_apto_status_display(medical_status_raw, apto_exp_text)}" + (f" · {_exp_display(apto_exp_text)}" if apto_exp_text else "") + "\n"
             f"Documento laboral: {doc_display}\n"
             f"{traslado_line}\n"
             + llamada_block +
@@ -739,9 +768,9 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             lic_line += f" · {_exp_display(license_exp_text)}"
         sabemos.append(lic_line)
     if has_apto:
-        apto_line = f"Apto médico: {_human_fact(medical_status_raw)}"
+        apto_line = f"Apto médico: {_apto_status_display(medical_status_raw, apto_exp_text)}"
         if apto_exp_text:
-            apto_line += f" · {apto_exp_text}"
+            apto_line += f" · {_exp_display(apto_exp_text)}"
         sabemos.append(apto_line)
     if has_doc:
         sabemos.append(f"Documentos: {_human_fact(proof_raw)}")
@@ -775,7 +804,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     return (
         f"{_nota_header(scenario)}\n\n"
         f"Último mensaje: \"{message}\"\n\n"
-        f"{_nota_contacto(lead)}\n\n"
+        f"{_nota_contacto(lead, facts)}\n\n"
         "📌 Estado del candidato\n"
         f"{estado}\n\n"
         + sabemos_block
