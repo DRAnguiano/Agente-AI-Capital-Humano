@@ -5,9 +5,7 @@
 Transcribir notas de voz de WhatsApp recibidas via Chatwoot usando Groq Whisper, convirtiendo
 el audio en texto antes de entrar al pipeline de extracción y orquestación. Permite que los
 candidatos respondan hablando sin causar abandono del funnel.
-
 ## Requirements
-
 ### Requirement: Transcripción de notas de voz vía Groq Whisper
 
 El sistema SHALL transcribir mensajes de audio de WhatsApp usando `client.audio.transcriptions.create`
@@ -52,3 +50,4 @@ o `None` si no hay audio.
 
 - **WHEN** el payload no contiene ningún adjunto
 - **THEN** `_detect_audio_url` devuelve `None`
+

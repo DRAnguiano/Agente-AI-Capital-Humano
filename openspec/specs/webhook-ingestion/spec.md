@@ -6,9 +6,7 @@ Recibir mensajes entrantes de Chatwoot (WhatsApp/Telegram) en `POST /chatwoot/we
 autenticarlos y filtrarlos de forma segura, protegerlos contra abuso por volumen, y
 encolarlos para procesamiento asíncrono. Es la única puerta de entrada de mensajes de
 candidatos al sistema.
-
 ## Requirements
-
 ### Requirement: Autenticación fail-closed del webhook
 
 El endpoint `POST /chatwoot/webhook` SHALL rechazar toda petición cuyo token no coincida
@@ -38,7 +36,7 @@ distinguir el tipo de adjunto:
   transcripción falla o produce texto vacío, SHALL responder con un mensaje específico de
   audio no procesable y NO encolar.
 - **No-audio** (imagen, documento, sticker, video u otro adjunto): el sistema SHALL
-  responder con el reply genérico de media guard y NO encolar.
+  responder con el reply genérico actual de media guard y NO encolar.
 - **Sin adjuntos**: el sistema SHALL requerir contenido de texto no vacío para continuar;
   si está vacío, ignora el evento.
 
@@ -52,25 +50,30 @@ distinguir el tipo de adjunto:
 
 - **WHEN** el payload contiene audio pero la descarga o transcripción falla, o el texto
   resultante tiene menos de 3 caracteres
-- **THEN** el sistema envía `_AUDIO_GUARD_REPLY` y responde `{"status": "audio_guard", "transcribed": false}`
+- **THEN** el sistema envía un reply específico ("recibí tu audio pero no pude entenderlo,
+  escríbeme en texto") y responde `{"status": "audio_guard", "transcribed": false}`
 
 #### Scenario: Adjunto no-audio (imagen, documento, sticker)
 
 - **WHEN** el payload contiene adjuntos de tipo no-audio
 - **THEN** el sistema envía el reply genérico de media guard y responde
-  `{"status": "media_guard", ...}` (comportamiento previo sin cambios)
+  `{"status": "media_guard", ...}` (comportamiento actual sin cambios)
 
 #### Scenario: Evento no procesable
-- **WHEN** el evento no es `message_created`, o el `message_type` no es `incoming`, o el contenido está vacío y no hay adjuntos
+
+- **WHEN** el evento no es `message_created`, o el `message_type` no es `incoming`, o el
+  contenido está vacío y no hay adjuntos
 - **THEN** el sistema responde `{"status":"ignored", "reason": <motivo>}` sin encolar nada
 
 #### Scenario: Faltan identificadores obligatorios
+
 - **WHEN** falta `account_id` o `conversation_id`
 - **THEN** el sistema responde HTTP 400 con `error: missing_account_or_conversation_id`
 
 #### Scenario: Mensaje entrante válido de texto
+
 - **WHEN** el evento es `message_created`, `incoming`, con texto no vacío e identificadores
-- **THEN** el sistema deriva `channel_user_id` (teléfono → contact_id → conversation_id) y continúa
+- **THEN** el sistema deriva `channel_user_id` y continúa (comportamiento actual sin cambios)
 
 ### Requirement: Rate limiting por usuario
 
@@ -105,3 +108,4 @@ deduplicación de mensajes rápidos.
 #### Scenario: Debounce inactivo
 - **WHEN** `INBOUND_DEBOUNCE_ENABLED` está desactivado
 - **THEN** el mensaje se procesa de forma síncrona en el mismo request, sin pasar por el worker
+
