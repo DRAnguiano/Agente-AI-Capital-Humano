@@ -49,6 +49,21 @@ Ejemplos:
 - "no sé" → {"age": null}
 - "25 años de experiencia" → {"age": null}"""
 
+_NAME_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de pedir el NOMBRE del candidato.
+Extrae el nombre propio del candidato de la respuesta. Ignora saludos, verbos y preguntas adicionales.
+Si el nombre aparece al inicio o en cualquier parte del mensaje, extráelo.
+Si no hay nombre claro, devuelve null.
+Responde SOLO JSON: {"name": "<Nombre Apellido>" | null}
+Ejemplos:
+- "ramon" → {"name": "Ramon"}
+- "me llamo Juan García" → {"name": "Juan García"}
+- "soy Pedro y cuánto pagan?" → {"name": "Pedro"}
+- "Juan Antonio Yañez de la xolithla" → {"name": "Juan Antonio Yañez"}
+- "hola" → {"name": null}
+- "si" → {"name": null}
+- "no sé" → {"name": null}
+- "tengo 30 años" → {"name": null}"""
+
 _EXPERIENCE_YEARS_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de preguntar los AÑOS DE EXPERIENCIA del candidato como operador.
 Extrae los años de experiencia de la respuesta. Normaliza a formato "N años".
 Convierte palabras a números: "diez" → "10 años", "año y medio" → "1 año", "una década" → "10 años".
@@ -410,13 +425,15 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
                 "listo", "entendido", "correcto", "anotado", "registrado",
                 "full", "sencillo", "tracto", "torton", "rabon",
             }
+            _name_found = False
             for _nm in _name_patterns:
                 if _nm:
                     _cand = _nm.group(1).strip().title()
                     if _cand.lower() not in _name_skip and len(_cand) >= 3:
                         facts["candidate.name"] = _cand
+                        _name_found = True
                     break
-            else:
+            if not _name_found:
                 # Respuesta corta sin verbo = nombre directo (ej: "Juan García")
                 _words = raw.strip().split()
                 _candidate_name = raw.strip().title()
@@ -425,6 +442,16 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
                         and _candidate_name.lower() not in _name_skip
                         and len(_candidate_name) >= 3):
                     facts["candidate.name"] = _candidate_name
+                    _name_found = True
+            if not _name_found:
+                # LLM fallback: nombre mezclado en mensaje más largo (ej: "ramon me puede decir...")
+                try:
+                    _name_raw = call_groq_json(raw, _NAME_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
+                    _name_val = json.loads(_name_raw).get("name")
+                    if _name_val and _name_val.lower() not in _name_skip and len(_name_val) >= 3:
+                        facts["candidate.name"] = _name_val.strip().title()
+                except Exception:
+                    pass
 
         # BUG-2: "No" bare como respuesta directa a pregunta de cartas/documentos
         _last_norm_docs = normalize_text(last_bot_message)
@@ -531,7 +558,7 @@ def should_prioritize_current_turn(message: str | None, last_bot_message: str | 
 
 def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if not facts.get("candidate.name"):
-        return "¿Me podría decir su nombre, por favor?"
+        return "¿Me podría decir su nombre y apellido, por favor?"
     if not facts.get("candidate.city"):
         return "Gracias. ¿En qué ciudad se encuentra actualmente?"
     if not facts.get("candidate.age"):

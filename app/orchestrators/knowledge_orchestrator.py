@@ -61,7 +61,7 @@ GREETING_REPLY = (
     "Con gusto le platico de la vacante de operador de tracto full o sencillo. "
     "Le haré unas preguntas breves para conocer su perfil; si antes tiene dudas "
     "de pago, rutas o requisitos, pregúnteme con confianza. "
-    "¿Me podría decir su nombre, por favor?"
+    "¿Me podría decir su nombre y apellido, por favor?"
 )
 
 def _greeting_reply(lead_memory: dict[str, Any]) -> str:
@@ -1336,7 +1336,7 @@ _FUNNEL_STEPS: list[dict] = [
     {
         "keys": {"candidate.name"},
         "variants": [
-            "¿Me podría decir su nombre, por favor?",
+            "¿Me podría decir su nombre y apellido, por favor?",
             "Para continuar, ¿cuál es su nombre?",
             "¿Cómo se llama usted, por favor?",
         ],

@@ -59,7 +59,7 @@ def _document_question(facts: dict[str, Any]) -> str:
 FUNNEL_STEPS: list[dict[str, Any]] = [
     {
         "field": "candidate.name",
-        "question": "¿Me podría decir su nombre, por favor?",
+        "question": "¿Me podría decir su nombre y apellido, por favor?",
         "complete": lambda f: _has(f, "candidate.name"),
     },
     {
