@@ -491,8 +491,15 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
     )
     if _name_m:
         _name_val = _name_m.group(1).strip().title()
-        # Descartar si parece ciudad, unidad o respuesta de sí/no
-        _skip_names = {"si", "no", "full", "sencillo", "torreon", "monterrey", "mexico", "tapachula"}
+        # Descartar saludos, respuestas afirmativas/negativas, ciudades, unidades, palabras coloquiales
+        _skip_names = {
+            "si", "no", "nel", "nop", "ok", "va", "dale", "sale", "claro", "exacto",
+            "hola", "ola", "buenas", "buenos", "buen", "hey", "gracias", "perfecto",
+            "listo", "entendido", "correcto", "anotado", "registrado",
+            "full", "sencillo", "tracto", "torton", "rabon",
+            "torreon", "monterrey", "mexico", "tapachula", "guadalajara", "chihuahua",
+            "matehuala", "laredo", "culiacan", "mazatlan", "hermosillo",
+        }
         if _name_val.lower() not in _skip_names and len(_name_val) >= 3:
             upsert("candidate", "name", _name_val, 0.85)
 

@@ -398,15 +398,27 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
                 re.search(r"\bsoy\s+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,})?)", raw, re.IGNORECASE),
                 re.search(r"\bmi\s+nombre\s+es\s+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,})?)", raw, re.IGNORECASE),
             ]
+            _name_skip = {
+                "si", "no", "nel", "nop", "ok", "va", "dale", "sale", "claro", "exacto",
+                "hola", "ola", "buenas", "buenos", "buen", "hey", "gracias", "perfecto",
+                "listo", "entendido", "correcto", "anotado", "registrado",
+                "full", "sencillo", "tracto", "torton", "rabon",
+            }
             for _nm in _name_patterns:
                 if _nm:
-                    facts["candidate.name"] = _nm.group(1).strip().title()
+                    _cand = _nm.group(1).strip().title()
+                    if _cand.lower() not in _name_skip and len(_cand) >= 3:
+                        facts["candidate.name"] = _cand
                     break
             else:
                 # Respuesta corta sin verbo = nombre directo (ej: "Juan García")
                 _words = raw.strip().split()
-                if 1 <= len(_words) <= 3 and all(w[0].isupper() or w[0].isalpha() for w in _words if w):
-                    facts["candidate.name"] = raw.strip().title()
+                _candidate_name = raw.strip().title()
+                if (1 <= len(_words) <= 3
+                        and all(w[0].isupper() or w[0].isalpha() for w in _words if w)
+                        and _candidate_name.lower() not in _name_skip
+                        and len(_candidate_name) >= 3):
+                    facts["candidate.name"] = _candidate_name
 
         # BUG-2: "No" bare como respuesta directa a pregunta de cartas/documentos
         _last_norm_docs = normalize_text(last_bot_message)
