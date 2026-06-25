@@ -27,7 +27,13 @@ from typing import Any
 
 from app.knowledge.turn_intent_classifier import TurnIntentSignals
 
-_EXTRACTOR_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
+# El extractor unificado usa su propio modelo: por defecto el de generación (70b),
+# más capaz para distinguir reclamo/negación de dato afirmado que el 8b clasificador.
+# Configurable vía UNIFIED_EXTRACTOR_MODEL sin afectar TIPC ni otros clasificadores.
+_EXTRACTOR_MODEL = os.getenv(
+    "UNIFIED_EXTRACTOR_MODEL",
+    os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+)
 
 # Campos de perfil que el extractor puede reportar (clave canónica).
 # Texto libre (sin Capa 2 que valide): name, license_expiration, apto_expiration.
