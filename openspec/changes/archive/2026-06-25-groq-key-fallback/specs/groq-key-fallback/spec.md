@@ -2,10 +2,10 @@
 
 ### Requirement: Reintento automático con clave de respaldo en cuota agotada
 
-Cuando `GROQ_API_KEY_BACKUP` está configurada y la clave primaria devuelve un error de cuota
-(`groq.RateLimitError`), el sistema SHALL reintentar la misma llamada con la clave de respaldo
-antes de propagar el error. El sistema SHALL emitir un log `[groq-fallback]` al activar este
-camino. Si la clave de respaldo también falla, el error se propaga al caller sin modificación.
+El sistema SHALL reintentar automáticamente con `GROQ_API_KEY_BACKUP` cuando la clave primaria
+devuelve `groq.RateLimitError` (cuota agotada), antes de propagar el error al caller. El sistema
+SHALL emitir un log `[groq-fallback]` al activar este camino. Si la clave de respaldo también
+falla, el error se propaga sin modificación.
 
 #### Scenario: Fallback exitoso con clave de respaldo
 
