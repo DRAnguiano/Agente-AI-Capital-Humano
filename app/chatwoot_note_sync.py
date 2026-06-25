@@ -10,6 +10,18 @@ from .knowledge.text_normalizer import normalize_text
 
 PENDING_TEXT = "Pendiente"
 
+
+def _exp_display(exp_text: str) -> str:
+    """Normaliza el texto de vencimiento para mostrarlo sin prefijo 'vence' duplicado."""
+    t = (exp_text or "").strip()
+    if not t or t == PENDING_TEXT:
+        return t
+    tl = t.lower()
+    # Ya contiene un verbo de vencimiento propio → mostrar tal cual
+    if tl.startswith("vence") or tl.startswith("vencid") or tl.startswith("al mismo"):
+        return t
+    return f"vence en {t}"
+
 OFFICIAL_LABELS: frozenset[str] = frozenset({
     "aclaracion_pendiente",
     "bot_activo",
@@ -578,7 +590,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             "✅ Lo que ya sabemos\n"
             f"Ciudad: {city}\n"
             f"Unidad: {vt_display}\n"
-            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n\n"
             "👥 Para Capital Humano\n"
             "Revisar vacante B1/EUA disponible y confirmar requisitos de cruce.\n"
             f"Requiere Agente: Sí\n\n"
@@ -597,7 +609,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             "✅ Lo que ya sabemos\n"
             f"Ciudad: {city}\n"
             f"Unidad: {vt_display}\n"
-            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n\n"
             "👥 Para Capital Humano\n"
             "Verificar historial del candidato en sistema antes de canalizar.\n"
             f"Requiere Agente: Sí\n\n"
@@ -647,7 +659,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             "✅ Lo que ya sabemos\n"
             f"Ciudad: {city}\n"
             f"Unidad: {vt_display}\n"
-            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n"
             f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n\n"
             "👥 Para Capital Humano\n"
             "Candidato invitado a retomar cuando renueve documentos. Sin acción inmediata.\n"
@@ -672,7 +684,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             "✅ Lo que ya sabemos\n"
             f"Ciudad: {city}\n"
             f"Unidad: {vt_display}\n"
-            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n"
             f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n\n"
             "👥 Para Capital Humano\n"
             "Continuar perfilamiento. Aclaración pendiente de validación de documentos.\n"
@@ -697,7 +709,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             f"Edad: {age}\n"
             f"Unidad: {vt_display}\n"
             f"Experiencia: {years}\n"
-            f"Licencia: {_human_fact(license_category)}" + (f" · vence {license_exp_text}" if license_exp_text else "") + "\n"
+            f"Licencia: {_human_fact(license_category)}" + (f" · {_exp_display(license_exp_text)}" if license_exp_text else "") + "\n"
             f"Apto médico: {_human_fact(medical_status_raw)}" + (f" · {apto_exp_text}" if apto_exp_text else "") + "\n"
             f"Documento laboral: {doc_display}\n"
             f"{traslado_line}\n"
@@ -724,7 +736,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     if has_lic:
         lic_line = f"Licencia: {_human_fact(license_category)}"
         if license_exp_text:
-            lic_line += f" · vence {license_exp_text}"
+            lic_line += f" · {_exp_display(license_exp_text)}"
         sabemos.append(lic_line)
     if has_apto:
         apto_line = f"Apto médico: {_human_fact(medical_status_raw)}"

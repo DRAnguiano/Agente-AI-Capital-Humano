@@ -397,6 +397,7 @@ def process_chatwoot_debounced_message(
                     k: v for k, v in current_turn_facts.items()
                     if k not in saved_facts
                     and k in {
+                        "candidate.name",
                         "candidate.age",
                         "medical.apto_status",
                         "medical.apto_expiration_text",

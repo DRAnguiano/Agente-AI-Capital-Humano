@@ -480,6 +480,22 @@ def extract_profile_facts(message: str, intent: str | None = None, turn_signals=
                                "al rato", "mas tarde", "más tarde")):
         upsert("candidate", "availability_status", "en_ruta_o_no_disponible_ahora", 0.80)
 
+    # ── Name ─────────────────────────────────────────────────────────────────
+    # Extracción de nombre: "me llamo X", "soy X", "mi nombre es X", o respuesta
+    # directa (1-3 palabras capitalizadas sin verbos de perfil).
+    import re as _re
+    _name_m = (
+        _re.search(r"\bme\s+llamo\s+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,})*)", message, _re.IGNORECASE)
+        or _re.search(r"\bmi\s+nombre\s+(?:es\s+)?([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑa-záéíóúüñ]{2,})*)", message, _re.IGNORECASE)
+        or _re.search(r"^([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]{1,}(?:\s+[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]{1,}){0,2})$", message.strip())
+    )
+    if _name_m:
+        _name_val = _name_m.group(1).strip().title()
+        # Descartar si parece ciudad, unidad o respuesta de sí/no
+        _skip_names = {"si", "no", "full", "sencillo", "torreon", "monterrey", "mexico", "tapachula"}
+        if _name_val.lower() not in _skip_names and len(_name_val) >= 3:
+            upsert("candidate", "name", _name_val, 0.85)
+
     # ── Age ──────────────────────────────────────────────────────────────────
     # Edad SOLO con señal explícita; nunca desde "N años" de experiencia.
     #   (a) con la palabra "edad" → siempre edad
