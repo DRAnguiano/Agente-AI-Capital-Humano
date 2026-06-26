@@ -28,6 +28,7 @@ import redis
 import app.tasks_seguimiento  # noqa: F401
 
 from app.celery_app import celery_app
+from app.knowledge.geo_utils import normalize_zm_laguna_city, is_zm_laguna_canonical
 
 
 def _env_int(name: str, default: int) -> int:
@@ -415,10 +416,12 @@ def process_chatwoot_debounced_message(
             _current_turn_facts["interest.payment"] = "asked"
         if any(t in _txt for t in ("que rutas", "rutas tienen", "bases", "cedis")):
             _current_turn_facts["interest.routes"] = "asked"
-        _city_n = _norm(_current_turn_facts.get("candidate.city") or "")
-        _current_turn_facts["location.is_local_laguna"] = _city_n in {
-            "torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"
-        }
+        _raw_city = _current_turn_facts.get("candidate.city") or ""
+        if _raw_city:
+            _current_turn_facts["candidate.city"] = normalize_zm_laguna_city(_raw_city)
+        _current_turn_facts["location.is_local_laguna"] = is_zm_laguna_canonical(
+            _current_turn_facts.get("candidate.city") or ""
+        )
 
         result = run_hr_graph_message(
             channel="chatwoot",

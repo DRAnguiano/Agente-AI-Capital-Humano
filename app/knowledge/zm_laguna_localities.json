@@ -1,0 +1,200 @@
+{
+  "_meta": {
+    "description": "Catálogo de municipios, ejidos y localidades de la Zona Metropolitana de La Laguna (ZML) y la Comarca Lagunera ampliada. Fuente primaria: INEGI 2020. Alias coloquiales: curados manualmente.",
+    "maintainer": "Capital Humano Transmontes",
+    "version": "1.0.0",
+    "last_updated": "2026-06-26",
+    "inclusion_criteria": "ZML estricta (CONAPO): Torreón, Gómez Palacio, Lerdo, Matamoros, Francisco I. Madero. Comarca ampliada: municipios contiguos con flujo laboral hacia la ZML (San Pedro, Tlahualilo, Mapimí, Viesca).",
+    "notes": "Para agregar localidades: añadir entrada en la lista del municipio correspondiente con 'canonical' (nombre oficial INEGI) y 'aliases' (variantes coloquiales). No usar nombres de colonias urbanas genéricas ('el centro', 'zona norte') que no identifican municipio."
+  },
+  "zm_laguna": [
+    {
+      "canonical": "Torreón",
+      "state": "Coahuila",
+      "zone": "zm_laguna",
+      "aliases": [
+        "torreon", "torreón", "torreoncito", "la laguna", "torreon coah",
+        "torreon coahuila", "torreón coahuila", "el torreon", "el torreón"
+      ],
+      "localities": [
+        {"canonical": "El Tajito",         "aliases": ["el tajito", "tajito"]},
+        {"canonical": "San Antonio de los Bravos", "aliases": ["san antonio", "los bravos", "san antonio bravos"]},
+        {"canonical": "San Agustín",       "aliases": ["san agustin", "san agustín"]},
+        {"canonical": "La Concha",         "aliases": ["la concha"]},
+        {"canonical": "La Unión",          "aliases": ["la union", "la unión"]},
+        {"canonical": "La Perla",          "aliases": ["la perla"]},
+        {"canonical": "La Rosita",         "aliases": ["la rosita", "rosita"]},
+        {"canonical": "Santa Fe",          "aliases": ["santa fe"]},
+        {"canonical": "La Partida",        "aliases": ["la partida"]},
+        {"canonical": "Rancho Alegre",     "aliases": ["rancho alegre"]},
+        {"canonical": "Los Rodríguez",     "aliases": ["los rodriguez", "los rodríguez"]},
+        {"canonical": "La Joya",           "aliases": ["la joya"]},
+        {"canonical": "La Paz",            "aliases": ["la paz torreon", "la paz torreón"]},
+        {"canonical": "El Águila",         "aliases": ["el aguila", "el águila"]},
+        {"canonical": "La Libertad",       "aliases": ["la libertad"]},
+        {"canonical": "La Palma",          "aliases": ["la palma"]},
+        {"canonical": "Ignacio Allende",   "aliases": ["ignacio allende", "allende"]},
+        {"canonical": "Los Arenales",      "aliases": ["los arenales", "arenales"]},
+        {"canonical": "El Pacífico",       "aliases": ["el pacifico", "el pacífico"]},
+        {"canonical": "Paso del Águila",   "aliases": ["paso del aguila", "paso del águila"]},
+        {"canonical": "Providencia",       "aliases": ["providencia"]},
+        {"canonical": "Ricardo Flores Magón", "aliases": ["flores magon", "rfm"]},
+        {"canonical": "San Luis",          "aliases": ["san luis torreon"]},
+        {"canonical": "La Conchita Roja",  "aliases": ["la conchita", "conchita roja"]},
+        {"canonical": "Los Ángeles",       "aliases": ["los angeles torreon"]},
+        {"canonical": "Anahuac",           "aliases": ["anahuac", "anáhuac"]}
+      ]
+    },
+    {
+      "canonical": "Gómez Palacio",
+      "state": "Durango",
+      "zone": "zm_laguna",
+      "aliases": [
+        "gomez palacio", "gómez palacio", "gomez", "gómez", "gp",
+        "gomis", "gomitos", "gomez paletas", "gómez paletas",
+        "palacio", "la palacio"
+      ],
+      "localities": [
+        {"canonical": "Dinamita",          "aliases": ["dinamita"]},
+        {"canonical": "Pueblo Nuevo",      "aliases": ["el siete", "pueblo nuevo", "siete"]},
+        {"canonical": "Guadalupe Victoria","aliases": ["guadalupe victoria", "guadalupe gp"]},
+        {"canonical": "El Seis",           "aliases": ["el seis", "seis"]},
+        {"canonical": "La Tlahuila",       "aliases": ["tlahuila", "la tlahuila"]},
+        {"canonical": "El Rodeo",          "aliases": ["el rodeo gp"]},
+        {"canonical": "Las Huertas",       "aliases": ["las huertas"]},
+        {"canonical": "El Saucito",        "aliases": ["el saucito", "saucito"]},
+        {"canonical": "Chapala",           "aliases": ["chapala gp"]},
+        {"canonical": "Villa Juárez",      "aliases": ["villa juarez", "villa juárez"]},
+        {"canonical": "El Vergel",         "aliases": ["vergel gp", "el vergel gp"]}
+      ]
+    },
+    {
+      "canonical": "Lerdo",
+      "state": "Durango",
+      "zone": "zm_laguna",
+      "aliases": [
+        "lerdo", "lerdito", "ciudad lerdo", "cd lerdo", "el lerdo",
+        "lerdo durango", "lerdito durango"
+      ],
+      "localities": [
+        {"canonical": "Ejido La Goma",     "aliases": ["la goma"]},
+        {"canonical": "Ejido Los Ángeles", "aliases": ["los angeles lerdo"]},
+        {"canonical": "El Potrero",        "aliases": ["el potrero lerdo"]},
+        {"canonical": "Las Huertas",       "aliases": ["las huertas lerdo"]},
+        {"canonical": "San Isidro",        "aliases": ["san isidro lerdo"]},
+        {"canonical": "Obetivo",           "aliases": ["obetivo"]}
+      ]
+    },
+    {
+      "canonical": "Matamoros",
+      "state": "Coahuila",
+      "zone": "zm_laguna",
+      "aliases": [
+        "matamoros", "matamoros coahuila", "matamoros coah",
+        "matamoros laguna", "mata", "matamoros de la laguna"
+      ],
+      "localities": [
+        {"canonical": "Los Meloneros",     "aliases": ["los meloneros", "meloneros", "meloneros de matamoros", "de los meloneros"]},
+        {"canonical": "El Vergel",         "aliases": ["el vergel matamoros", "el vergel"]},
+        {"canonical": "Las Norias",        "aliases": ["las norias", "norias"]},
+        {"canonical": "San Gregorio",      "aliases": ["san gregorio matamoros"]},
+        {"canonical": "La Constancia",     "aliases": ["la constancia"]},
+        {"canonical": "El Tule",           "aliases": ["el tule matamoros"]},
+        {"canonical": "Lucio Blanco",      "aliases": ["lucio blanco"]},
+        {"canonical": "El Llano",          "aliases": ["el llano matamoros"]},
+        {"canonical": "Santa Teresa",      "aliases": ["santa teresa matamoros"]}
+      ]
+    },
+    {
+      "canonical": "Francisco I. Madero",
+      "state": "Coahuila",
+      "zone": "zm_laguna",
+      "aliases": [
+        "francisco i madero", "francisco i. madero", "fco madero",
+        "fco i madero", "pancho madero", "madero coahuila",
+        "chávez", "chavez", "chavez coahuila"
+      ],
+      "localities": [
+        {"canonical": "San Ignacio",       "aliases": ["san ignacio madero"]},
+        {"canonical": "El Rayo",           "aliases": ["el rayo madero"]},
+        {"canonical": "Las Margaritas",    "aliases": ["las margaritas madero"]},
+        {"canonical": "Guadalupe",         "aliases": ["guadalupe madero"]},
+        {"canonical": "La Flor",           "aliases": ["la flor madero"]},
+        {"canonical": "El Porvenir",       "aliases": ["el porvenir madero"]},
+        {"canonical": "San Juan de la Vaquería", "aliases": ["san juan vaqueria", "la vaquería"]}
+      ]
+    }
+  ],
+  "comarca_ampliada": [
+    {
+      "canonical": "San Pedro de las Colonias",
+      "state": "Coahuila",
+      "zone": "comarca_ampliada",
+      "aliases": [
+        "san pedro", "san pedro coahuila", "las colonias",
+        "san pedro de las colonias", "san pedrito", "las colonias coahuila"
+      ],
+      "localities": [
+        {"canonical": "El Remolino",       "aliases": ["el remolino san pedro"]},
+        {"canonical": "La Joya",           "aliases": ["la joya san pedro"]},
+        {"canonical": "Emilio Carranza",   "aliases": ["emilio carranza"]},
+        {"canonical": "San Carlos",        "aliases": ["san carlos san pedro"]}
+      ]
+    },
+    {
+      "canonical": "Tlahualilo",
+      "state": "Durango",
+      "zone": "comarca_ampliada",
+      "aliases": [
+        "tlahualilo", "tlahualiloo", "tlahualillo", "tlahual"
+      ],
+      "localities": [
+        {"canonical": "La Concha",         "aliases": ["la concha tlahualilo"]},
+        {"canonical": "Aviación",          "aliases": ["aviacion tlahualilo"]}
+      ]
+    },
+    {
+      "canonical": "Mapimí",
+      "state": "Durango",
+      "zone": "comarca_ampliada",
+      "aliases": [
+        "mapimi", "mapimí", "mapimi durango"
+      ],
+      "localities": [
+        {"canonical": "Ceballos",          "aliases": ["ceballos", "ceballos durango"]},
+        {"canonical": "Las Nieves",        "aliases": ["las nieves mapimi"]}
+      ]
+    },
+    {
+      "canonical": "Viesca",
+      "state": "Coahuila",
+      "zone": "comarca_ampliada",
+      "aliases": [
+        "viesca", "viesca coahuila"
+      ],
+      "localities": [
+        {"canonical": "Sacramento",        "aliases": ["sacramento viesca"]},
+        {"canonical": "El Torreón",        "aliases": ["el torreoncito viesca"]}
+      ]
+    },
+    {
+      "canonical": "Guadalupe Victoria",
+      "state": "Durango",
+      "zone": "comarca_ampliada",
+      "aliases": [
+        "guadalupe victoria", "guadalupe victoria durango",
+        "el pueblito", "villa guadalupe"
+      ],
+      "localities": []
+    },
+    {
+      "canonical": "Nazas",
+      "state": "Durango",
+      "zone": "comarca_ampliada",
+      "aliases": [
+        "nazas", "nazas durango"
+      ],
+      "localities": []
+    }
+  ]
+}

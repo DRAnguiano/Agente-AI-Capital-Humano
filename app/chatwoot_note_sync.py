@@ -6,6 +6,7 @@ import httpx
 from .db import get_conn
 from .knowledge.business_route_schema import VALID_VEHICLE_TYPES
 from .knowledge.current_turn import LOCAL_LAGUNA
+from .knowledge.geo_utils import is_zm_laguna_canonical
 from .knowledge.text_normalizer import normalize_text
 
 PENDING_TEXT = "Pendiente"
@@ -376,13 +377,11 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     if facts.get("candidate.availability_status") == "en_ruta_o_no_disponible_ahora":
         labels.add("seguimiento")
 
-    # Ubicación core (10a.5): local_laguna / foraneo, mutuamente excluyentes. Usa el
-    # catálogo canónico de la Laguna (single source: current_turn.LOCAL_LAGUNA) y lo
-    # normaliza (sin acentos) con contención, para tolerar sufijos de estado
-    # ("Gómez Palacio, Durango") y variantes ("Cd. Lerdo").
-    city_norm = normalize_text(facts.get("candidate.city") or "")
-    if city_norm:
-        if any(local in city_norm for local in LOCAL_LAGUNA):
+    # Ubicación core (10a.5): local_laguna / foraneo, mutuamente excluyentes.
+    # Usa el catálogo ZML/Comarca (geo_utils) como fuente de verdad.
+    city_raw = facts.get("candidate.city") or ""
+    if city_raw:
+        if is_zm_laguna_canonical(city_raw):
             labels.add("local_laguna")
         else:
             labels.update({"foraneo", "validar_traslado"})
@@ -554,8 +553,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     city = _fact(facts, "candidate.city")
     age = _fact(facts, "candidate.age")
 
-    LOCAL_LAGUNA_NOTE = {"torreon", "gomez palacio", "lerdo", "matamoros"}
-    is_local = str(city).lower().strip() in LOCAL_LAGUNA_NOTE or facts.get("location.is_local_laguna") == "true"
+    is_local = is_zm_laguna_canonical(str(city)) or facts.get("location.is_local_laguna") == "true"
 
     if vehicle_type_raw == "full":
         vt_display = "Tracto full"

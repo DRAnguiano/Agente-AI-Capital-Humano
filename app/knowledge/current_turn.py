@@ -30,7 +30,8 @@ def _profile_complete_closing() -> str:
     return msg
 
 
-LOCAL_LAGUNA = ["torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"]
+from app.knowledge.geo_utils import normalize_zm_laguna_city, is_zm_laguna_canonical
+LOCAL_LAGUNA = ["torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"]  # legacy: kept for compat
 
 from app.settings import AGE_DISQUALIFICATION_LIMIT as AGE_LIMIT_EXCLUSIVE
 RENEWAL_PROOF_QUESTION = (
@@ -336,8 +337,10 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
     if any(t in text for t in ("que rutas", "rutas tienen", "bases", "cedis")):
         facts["interest.routes"] = "asked"
 
-    city_norm = normalize_text(facts.get("candidate.city") or "")
-    facts["location.is_local_laguna"] = city_norm in LOCAL_LAGUNA
+    raw_city = facts.get("candidate.city") or ""
+    if raw_city:
+        facts["candidate.city"] = normalize_zm_laguna_city(raw_city)
+    facts["location.is_local_laguna"] = is_zm_laguna_canonical(facts.get("candidate.city") or "")
 
     return facts
 

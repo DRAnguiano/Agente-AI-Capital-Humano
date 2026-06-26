@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.knowledge.turn_intent_classifier import TurnIntentSignals
+from app.knowledge.geo_utils import normalize_zm_laguna_city
 
 # El extractor unificado usa su propio modelo: por defecto el de generación (70b),
 # más capaz para distinguir reclamo/negación de dato afirmado que el 8b clasificador.
@@ -174,6 +175,8 @@ def extract_turn(
         for key in _PROFILE_FIELDS
         if fields_raw.get(key) and _parse_field(fields_raw.get(key)).value is not None
     }
+    if "candidate.city" in fields and fields["candidate.city"].value:
+        fields["candidate.city"].value = normalize_zm_laguna_city(fields["candidate.city"].value)
     embedded = data.get("embedded_question") or None
     return TurnExtraction(
         fields=fields,
