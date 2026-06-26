@@ -751,7 +751,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             + llamada_block +
             "👥 Para Capital Humano\n"
             "Validar documentos y continuar proceso de contratación.\n"
-            f"Requiere Agente: {requiere_agente}\n\n"
+            "Requiere Agente: Sí\n\n"
             "⏭️ Siguiente acción\n"
             f"{_next_action_dinamica(facts, is_local, lbl)}"
         )
