@@ -88,8 +88,10 @@ UNWIND [
 MERGE (topic:Topic {id: row.id});
 
 // `filename` = nombre de archivo real en data/ (el `source` que Chroma indexa). Los
-// preferred_sources se devuelven como filename para casar con `_source_where`; el `id` de
-// política se conserva para las referencias internas (ReplyTemplate/Topic).
+// preferred_sources se devuelven como filename; el emparejamiento con el `source`
+// indexado es por *stem* (`_source_stem` en context_builder), insensible a extensión,
+// así que aunque caiga al `id` sin .md sigue casando. El `id` de política se conserva
+// para las referencias internas (ReplyTemplate/Topic).
 UNWIND [
   {id:'payment_policy', kind:'rag_document', filename:'01_pago_prestaciones.md'},
   {id:'requirements_policy', kind:'rag_document', filename:'02_documentos_requisitos.md'},
@@ -125,7 +127,9 @@ UNWIND [
   {id:'candidate_dropoff_close', risk_level:'low', topic:null, route:'fallback'},
   {id:'ambiguous_slang_clarification', risk_level:'medium', topic:null, route:'clarification'},
   {id:'sensitive_handoff', risk_level:'high', topic:'safety', route:'human_handoff'},
-  {id:'driving_school', risk_level:'low', topic:'documents', route:'rag'}
+  {id:'driving_school', risk_level:'low', topic:'documents', route:'rag'},
+  {id:'process_location', risk_level:'low', topic:'routes', route:'rag'},
+  {id:'city_local_laguna', risk_level:'low', topic:null, route:'profile'}
 ] AS row
 MERGE (intent:Intent {id: row.id})
 SET intent.risk_level = row.risk_level,
@@ -254,6 +258,14 @@ UNWIND [
     id:'smalltalk_joke', canonical:'chiste / humor ligero', category:'smalltalk',
     aliases:['chiste','un chiste','chistecito','una broma','cuenteme un chiste','cuentame un chiste','dime un chiste','cuentas un chiste','chiste de trailero','chiste de traileros'],
     intent:'candidate_profile_signal', reply:'static_joke', source:null
+  },
+  {
+    // Pregunta de ubicación del proceso de contratación / pruebas.
+    // Observado en prod: "donde voy a hacer las pruebas" → smalltalk (misroute).
+    // "pruebas" sin calificador de sustancias = proceso de contratación, no antidoping.
+    id:'process_location', canonical:'dónde se hace el proceso / pruebas de contratación', category:'process_info',
+    aliases:['donde se hace','dónde se hace','donde es','donde voy','dónde voy','donde me presento','dónde me presento','que procede','qué procede','que sigue','qué sigue','como es el proceso','cómo es el proceso','el proceso de contratacion','el proceso de contratación','donde se realizan','donde son las pruebas','dónde son las pruebas','donde hago las pruebas','dónde hago las pruebas','donde voy a hacer las pruebas','dónde voy a hacer las pruebas','siguiente paso','siguientes pasos','que procede despues','qué procede después','y despues que','y después qué'],
+    intent:'process_location', reply:null, source:'routes_policy'
   }
 ] AS row
 MERGE (term:Term {id: row.id})
@@ -274,3 +286,27 @@ OPTIONAL MATCH (source:InternalSource {id: row.source})
 FOREACH (_ IN CASE WHEN source IS NULL THEN [] ELSE [1] END |
   MERGE (term)-[:PREFERS_SOURCE]->(source)
 );
+
+// -----------------------------------------------------------------------------
+// ZM Laguna — alias coloquiales (geo_utils.py es fuente primaria; Neo4j acelera
+// los alias más frecuentes antes de llegar al extractor de ciudad)
+// -----------------------------------------------------------------------------
+UNWIND [
+  {id:'city_lerdito',        canonical:'Lerdo (alias coloquial)',        aliases:['lerdito','ciudad lerdo','el lerdo','lerdo durango','cd lerdo']},
+  {id:'city_gomez_palacio',  canonical:'Gómez Palacio (alias coloquial)', aliases:['gomis','gomitos','gomez paletas','gómez paletas','gp','palacio','la palacio']},
+  {id:'city_torreon',        canonical:'Torreón (alias coloquial)',       aliases:['torreoncito','la laguna torreon','el torreon','torreon coah']},
+  {id:'city_francisco_madero', canonical:'Francisco I. Madero (alias coloquial)', aliases:['chávez','chavez','fco madero','fco i madero','pancho madero','madero coahuila']},
+  {id:'city_matamoros',      canonical:'Matamoros Laguna (alias)',        aliases:['matamoros laguna','matamoros coahuila','matamoros coah','mata','meloneros de matamoros']},
+  {id:'city_san_pedro',      canonical:'San Pedro de las Colonias',       aliases:['san pedro','san pedro coahuila','las colonias','san pedrito']},
+  {id:'city_dinamita',       canonical:'Dinamita (Gómez Palacio)',        aliases:['dinamita']},
+  {id:'city_el_siete',       canonical:'Pueblo Nuevo - El Siete (Gómez Palacio)', aliases:['el siete','pueblo nuevo gomez']}
+] AS row
+MERGE (term:Term {id: row.id})
+SET term.canonical = row.canonical,
+    term.category = 'city_alias',
+    term.aliases = row.aliases,
+    term.source = 'city_catalog',
+    term.updated_at = datetime()
+WITH term
+MATCH (intent:Intent {id: 'city_local_laguna'})
+MERGE (term)-[:SUGGESTS_INTENT]->(intent);

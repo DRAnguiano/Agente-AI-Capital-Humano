@@ -5,7 +5,7 @@ import httpx
 
 from .db import get_conn
 from .knowledge.business_route_schema import VALID_VEHICLE_TYPES
-from .knowledge.current_turn import LOCAL_LAGUNA
+from .knowledge.geo_utils import is_zm_laguna_canonical
 from .knowledge.text_normalizer import normalize_text
 
 PENDING_TEXT = "Pendiente"
@@ -149,7 +149,8 @@ def _is_truthy(value: Any) -> bool:
 
 def _age_disqualified(facts: dict[str, Any]) -> bool:
     try:
-        return int(str(facts.get("candidate.age") or "").strip()) >= 50
+        from app.settings import AGE_DISQUALIFICATION_LIMIT
+        return int(str(facts.get("candidate.age") or "").strip()) >= AGE_DISQUALIFICATION_LIMIT
     except ValueError:
         return False
 
@@ -375,23 +376,26 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     if facts.get("candidate.availability_status") == "en_ruta_o_no_disponible_ahora":
         labels.add("seguimiento")
 
-    # Ubicación core (10a.5): local_laguna / foraneo, mutuamente excluyentes. Usa el
-    # catálogo canónico de la Laguna (single source: current_turn.LOCAL_LAGUNA) y lo
-    # normaliza (sin acentos) con contención, para tolerar sufijos de estado
-    # ("Gómez Palacio, Durango") y variantes ("Cd. Lerdo").
-    city_norm = normalize_text(facts.get("candidate.city") or "")
-    if city_norm:
-        if any(local in city_norm for local in LOCAL_LAGUNA):
+    # Ubicación core (10a.5): local_laguna / foraneo, mutuamente excluyentes.
+    # Usa el catálogo ZML/Comarca (geo_utils) como fuente de verdad.
+    city_raw = facts.get("candidate.city") or ""
+    if city_raw:
+        if is_zm_laguna_canonical(city_raw):
             labels.add("local_laguna")
         else:
             labels.update({"foraneo", "validar_traslado"})
 
-    accepted = facts.get("candidate.vacancy_accepted") in {"sí", "si", "yes", "true"}
+    # perfil_listo: todos los campos núcleo recolectados → Capital Humano toma el caso.
+    # La aceptación explícita de la vacante no es requisito; se asume implícita cuando
+    # el candidato completó el funnel sin abandonar (candidate.vacancy_accepted era un
+    # falso bloqueo: el bot ya preguntó todo, el candidato respondió).
+    has_city = bool(facts.get("candidate.city"))
     if (
         vehicle_confirmed
         and has_license
         and has_medical
-        and accepted
+        and has_experience
+        and has_city
         and not (has_non_target_experience or has_no_road_experience or has_reingreso)
     ):
         labels.update({"perfil_listo", "requiere_revision_ch"})
@@ -548,8 +552,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     city = _fact(facts, "candidate.city")
     age = _fact(facts, "candidate.age")
 
-    LOCAL_LAGUNA_NOTE = {"torreon", "gomez palacio", "lerdo", "matamoros"}
-    is_local = str(city).lower().strip() in LOCAL_LAGUNA_NOTE or facts.get("location.is_local_laguna") == "true"
+    is_local = is_zm_laguna_canonical(str(city)) or facts.get("location.is_local_laguna") == "true"
 
     if vehicle_type_raw == "full":
         vt_display = "Tracto full"
@@ -745,7 +748,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
             + llamada_block +
             "👥 Para Capital Humano\n"
             "Validar documentos y continuar proceso de contratación.\n"
-            f"Requiere Agente: {requiere_agente}\n\n"
+            "Requiere Agente: Sí\n\n"
             "⏭️ Siguiente acción\n"
             f"{_next_action_dinamica(facts, is_local, lbl)}"
         )

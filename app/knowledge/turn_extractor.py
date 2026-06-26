@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.knowledge.turn_intent_classifier import TurnIntentSignals
+from app.knowledge.geo_utils import normalize_zm_laguna_city
 
 # El extractor unificado usa su propio modelo: por defecto el de generación (70b),
 # más capaz para distinguir reclamo/negación de dato afirmado que el 8b clasificador.
@@ -102,7 +103,7 @@ REGLAS DE VALOR (qué dijo el candidato — NO interpretes política de negocio)
 - candidate.city: ciudad de RESIDENCIA (no destinos ni rutas). Texto crudo, corrige typos evidentes. Sin marcador de residencia → null.
 - candidate.age: edad en años, entero como string. Convierte palabras ("cincuenta y uno"→"51"). NO de "N años de experiencia". Rango plausible 18-70, fuera de eso → null.
 - experience.vehicle_type: reporta el término CRUDO tal como lo dijo ("full","sencillo","torton","quinta rueda","trailer"). NO clasifiques si es objetivo o no — eso lo decide el sistema.
-- experience.years: años manejando, formato "N años". Distínguelo del vencimiento de licencia.
+- experience.years: años manejando como número o aproximación numérica ("10 años","más de 5","como 3 años"). Expresiones vagas sin número ("toda la vida","de siempre","muchos años","bastante","siempre") → null. Distínguelo del vencimiento de licencia.
 - license.category: tipo de licencia federal (A/B/E) tal como lo dijo.
 - license.expiration_text: cuánto falta para que venza la licencia ("2 años","6 meses","vencido"). Solo si habla de vigencia de LICENCIA.
 - medical.apto_expiration_text: vigencia del apto médico. Si dice "igual/lo mismo que mi licencia" y conoces license.expiration_text, usa ESE valor.
@@ -174,6 +175,15 @@ def extract_turn(
         for key in _PROFILE_FIELDS
         if fields_raw.get(key) and _parse_field(fields_raw.get(key)).value is not None
     }
+    if "candidate.city" in fields and fields["candidate.city"].value:
+        fields["candidate.city"].value = normalize_zm_laguna_city(fields["candidate.city"].value)
+    if "documents.proof" in fields and fields["documents.proof"].value:
+        from app.knowledge.current_turn import canonicalize_proof
+        _proof_canon = canonicalize_proof(fields["documents.proof"].value)
+        if _proof_canon is None:
+            del fields["documents.proof"]  # no mapeable → no persistir texto crudo
+        else:
+            fields["documents.proof"].value = _proof_canon
     embedded = data.get("embedded_question") or None
     return TurnExtraction(
         fields=fields,

@@ -56,13 +56,43 @@ FAREWELL_REPLY = (
 
 # Saludo/contrato de apertura aprobado por negocio (2026-06-12): anuncia el
 # perfilamiento, invita a preguntar primero, y adelanta documentación + agente.
-GREETING_REPLY = (
+_GREETING_INTRO = (
     "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
     "Con gusto le platico de la vacante de operador de tracto full o sencillo. "
     "Le haré unas preguntas breves para conocer su perfil; si antes tiene dudas "
     "de pago, rutas o requisitos, pregúnteme con confianza. "
-    "¿Me podría decir su nombre y apellido, por favor?"
 )
+
+GREETING_REPLY = _GREETING_INTRO + "¿Me podría decir su nombre y apellido, por favor?"
+
+
+def greeting_reply_for_facts(current_turn_facts: dict) -> str:
+    """Saludo inicial adaptado: si el candidato ya dio datos en el primer mensaje,
+    salta los campos conocidos y pregunta el siguiente faltante."""
+    from app.knowledge.current_turn import next_question_from_missing_facts
+    next_q = next_question_from_missing_facts(current_turn_facts)
+    if not next_q:
+        return (
+            _GREETING_INTRO
+            + "Con los datos que me compartió, su perfil está listo. "
+            "En breve nuestro equipo le contactará."
+        )
+    return _GREETING_INTRO + next_q
+
+def _greeting_followup_question(lead_memory: dict[str, Any]) -> str:
+    """Siguiente dato del funnel SIN el intro de saludo de Mundo.
+
+    Se usa cuando, en primer contacto, el mensaje trae una pregunta embebida cuya
+    respuesta ya saluda: evita repetir "Hola, soy Mundo…" dos veces (F1). Si no
+    queda nada por preguntar, devuelve cadena vacía (la respuesta embebida basta)."""
+    known = {
+        f"{row['fact_group']}.{row['fact_key']}": str(row["fact_value"])
+        for row in (lead_memory.get("facts") or [])
+        if row.get("fact_value")
+    }
+    from app.knowledge.current_turn import next_question_from_missing_facts
+    return next_question_from_missing_facts(known) or ""
+
 
 def _greeting_reply(lead_memory: dict[str, Any]) -> str:
     """Primera visita → GREETING_REPLY completo. Candidato que regresa → ack corto + siguiente campo."""
@@ -291,7 +321,18 @@ def _resolve_embedded_question(
         if not questions:
             return None
         q = questions[0]
-        answer_text, derive = _generate_rag_answer(q, message)
+        # Inyecta la residencia determinista (catálogo ZM Laguna) para que el LLM
+        # no deduzca local/foráneo del nombre crudo de la ciudad. Combina los facts
+        # persistidos con los extraídos en este mismo turno (mensaje compuesto).
+        _rag_facts = {
+            f"{row['fact_group']}.{row['fact_key']}": row['fact_value']
+            for row in ((lead_memory or {}).get("facts") or [])
+            if isinstance(row, dict) and row.get("fact_group") and row.get("fact_key")
+        }
+        for _ans in (enriched.get("answers_to_persist") or []):
+            if _ans.get("field") and _ans.get("value") is not None:
+                _rag_facts[str(_ans["field"])] = str(_ans["value"])
+        answer_text, derive = _generate_rag_answer(q, message, _rag_facts)
         if not answer_text:
             return None
         return {
@@ -1076,6 +1117,7 @@ def _store_lead_memory_updates(
     reply: str,
     asked_field_keys: list[str] | None = None,
     turn_signals=None,
+    pre_validated_facts: list | None = None,
 ) -> dict[str, Any]:
     """Write useful memory to v2 without letting it govern the conversation."""
     facts_written: list[str] = []
@@ -1110,32 +1152,58 @@ def _store_lead_memory_updates(
         external_metadata=assistant_metadata or None,
     )
 
-    # Extract profile facts from every message regardless of route/intent.
-    # Neo4j handles geo (city/state) and vehicle type; regex covers everything else.
-    try:
-        from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
-        from app.lead_memory.profile_extractor import extract_profile_facts
+    # 6.2: extractor unificado pre-computado en el worker → un solo escritor por turno.
+    # Fallback al path anterior (neo4j + regex) solo para el path API sin pre_validated.
+    if pre_validated_facts is not None:
+        for pf in pre_validated_facts:
+            try:
+                _fval = str(pf["fact_value"])
+                # Canonicaliza documents.proof en el límite de persistencia (todas
+                # las rutas): el contrato es {cartas|semanas_imss|ninguno}.
+                if pf["fact_group"] == "documents" and pf["fact_key"] == "proof":
+                    from app.knowledge.current_turn import canonicalize_proof
+                    _canon = canonicalize_proof(_fval)
+                    if _canon is None:
+                        continue  # no mapeable → no persistir texto crudo
+                    _fval = _canon
+                upsert_lead_fact(
+                    lead_key=lead_key,
+                    fact_group=pf["fact_group"],
+                    fact_key=pf["fact_key"],
+                    fact_value=_fval,
+                    confidence=float(pf.get("confidence") or 0.8),
+                    source_message_id=source_message_id,
+                    source_text=message,
+                    is_explicit_correction=bool(pf.get("is_explicit_correction", False)),
+                )
+                facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
+            except Exception as exc:
+                log.warning("[FACTS_WRITE] lead=%s key=%s.%s error=%s",
+                            lead_key, pf.get("fact_group"), pf.get("fact_key"), exc)
+    else:
+        try:
+            from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
+            from app.lead_memory.profile_extractor import extract_profile_facts
 
-        neo4j_facts = _drop_unanchored_neo4j_geo(extract_profile_facts_from_neo4j(message), message)
-        neo4j_keys = {(f["fact_group"], f["fact_key"]) for f in neo4j_facts}
-        regex_facts = [
-            f for f in extract_profile_facts(message, intent, turn_signals=turn_signals)
-            if (f["fact_group"], f["fact_key"]) not in neo4j_keys
-        ]
-
-        for pf in _drop_geo_facts_from_questions(neo4j_facts + regex_facts, message):
-            upsert_lead_fact(
-                lead_key=lead_key,
-                fact_group=pf["fact_group"],
-                fact_key=pf["fact_key"],
-                fact_value=str(pf["fact_value"]),
-                confidence=float(pf.get("confidence") or 0.8),
-                source_message_id=source_message_id,
-                source_text=message,
-            )
-            facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
-    except Exception as exc:
-        log.warning("[FACTS_EXTRACTION] lead=%s error=%s", lead_key, exc)
+            neo4j_facts = _drop_unanchored_neo4j_geo(extract_profile_facts_from_neo4j(message), message)
+            neo4j_keys = {(f["fact_group"], f["fact_key"]) for f in neo4j_facts}
+            regex_facts = [
+                f for f in extract_profile_facts(message, intent, turn_signals=turn_signals)
+                if (f["fact_group"], f["fact_key"]) not in neo4j_keys
+            ]
+            for pf in _drop_geo_facts_from_questions(neo4j_facts + regex_facts, message):
+                upsert_lead_fact(
+                    lead_key=lead_key,
+                    fact_group=pf["fact_group"],
+                    fact_key=pf["fact_key"],
+                    fact_value=str(pf["fact_value"]),
+                    confidence=float(pf.get("confidence") or 0.8),
+                    source_message_id=source_message_id,
+                    source_text=message,
+                )
+                facts_written.append(f"{pf['fact_group']}.{pf['fact_key']}")
+        except Exception as exc:
+            log.warning("[FACTS_EXTRACTION] lead=%s error=%s", lead_key, exc)
 
     if any(term in text for term in ("quinta rueda", "5ta rueda", "5ta", "kinta rueda")):
         upsert_lead_fact(
@@ -1469,6 +1537,7 @@ def _build_funnel_nudge(
     contract: dict[str, Any],
     lead_memory: dict[str, Any],
     turn_signals=None,
+    pre_validated_facts: list | None = None,
 ) -> tuple[str | None, list[str]]:
     """Return ``(question, asked_field_keys)`` for the next profiling step.
 
@@ -1497,29 +1566,28 @@ def _build_funnel_nudge(
         for row in (lead_memory.get("facts") or [])
         if row.get("fact_group") and row.get("fact_key") and row.get("fact_value")
     }
-    try:
-        from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
-        from app.lead_memory.profile_extractor import extract_profile_facts
-
-        # [RIESGO] extract_profile_facts_from_neo4j llama a fetch_profile_nodes()
-        # que hace una query completa a Neo4j. Este mismo método ya se llama en
-        # _store_lead_memory_updates para el mismo mensaje en el mismo request.
-        # Son 2 queries redundantes a Neo4j por mensaje.
-        # TODO: pasar los neo4j_facts ya calculados como parámetro desde
-        # handle_message para evitar la segunda query.
-        neo4j_facts = extract_profile_facts_from_neo4j(message)
-        neo4j_keys: set[str] = set()
-        for f in neo4j_facts:
+    if pre_validated_facts is not None:
+        # 6.2: usar extractor unificado pre-computado en lugar de re-extraer
+        for f in pre_validated_facts:
             k = f"{f['fact_group']}.{f['fact_key']}"
             active_facts[k] = str(f["fact_value"])
-            neo4j_keys.add(k)
+    else:
+        try:
+            from app.knowledge.neo4j_client import extract_profile_facts_from_neo4j
+            from app.lead_memory.profile_extractor import extract_profile_facts
 
-        for f in extract_profile_facts(message, intent or None, turn_signals=turn_signals):
-            k = f"{f['fact_group']}.{f['fact_key']}"
-            if k not in neo4j_keys:
+            neo4j_facts = extract_profile_facts_from_neo4j(message)
+            neo4j_keys: set[str] = set()
+            for f in neo4j_facts:
+                k = f"{f['fact_group']}.{f['fact_key']}"
                 active_facts[k] = str(f["fact_value"])
-    except Exception as exc:
-        log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
+                neo4j_keys.add(k)
+            for f in extract_profile_facts(message, intent or None, turn_signals=turn_signals):
+                k = f"{f['fact_group']}.{f['fact_key']}"
+                if k not in neo4j_keys:
+                    active_facts[k] = str(f["fact_value"])
+        except Exception as exc:
+            log.warning("[FUNNEL_NUDGE] extracción de hechos falló, nudge puede ser impreciso: %s", exc)
 
     # 3.3: vencido sin trámite → no emitir más nudges
     if active_facts.get("funnel.status") == "vencido_sin_tramite":
@@ -1533,7 +1601,7 @@ def _build_funnel_nudge(
     except (ValueError, ImportError):
         pass
 
-    _LOCAL_LAGUNA = {"torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"}
+    from app.knowledge.current_turn import residency_document_question
 
     # Leer último mensaje del bot (necesario para BUG-2 y BUG-3)
     _last_bot = ""
@@ -1592,34 +1660,14 @@ def _build_funnel_nudge(
         # 2.5 / P0-2: document question by residency; skip if candidate already answered
         if step["keys"] == {"documents.labor_letters_status"}:
             _proof = active_facts.get("documents.proof")
-            # Si ya hay un proof (positivo o "ninguno") el paso está resuelto → no nudge
+            # Si ya hay un proof positivo el paso está resuelto → no nudge
             if _proof in {"cartas", "semanas_imss", "sí", "si"}:
                 continue
-            city_norm = normalize_text(active_facts.get("candidate.city") or "")
-            is_local = active_facts.get("location.is_local_laguna") == "true" or city_norm in _LOCAL_LAGUNA
-            if _proof == "ninguno":
-                if is_local:
-                    return (
-                        "¿Cuenta con su documento de semanas cotizadas del IMSS?",
-                        _canonical_asked_keys(step["keys"]),
-                    )
-                else:
-                    return (
-                        "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
-                        "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para "
-                        "que Capital Humano le indique opciones al contactarle.",
-                        _canonical_asked_keys(step["keys"]),
-                    )
-            if is_local:
-                return (
-                    "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?",
-                    _canonical_asked_keys(step["keys"]),
-                )
-            else:
-                return (
-                    "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?",
-                    _canonical_asked_keys(step["keys"]),
-                )
+            # Regla de dominio única (residencia desde catálogo, incl. proof=ninguno)
+            return (
+                residency_document_question(active_facts),
+                _canonical_asked_keys(step["keys"]),
+            )
         return random.choice(step["variants"]), _canonical_asked_keys(step["keys"])
 
     return None, []  # All profile fields covered — no nudge needed
@@ -1705,11 +1753,17 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
 
     save_message(conversation_key, "user", message)
 
+    # 6.4: si el worker pre-computó la extracción unificada, sus señales reemplazan TIPC.
+    _pre_extraction = payload.get("_pre_extraction")
+    _pre_validated: list | None = payload.get("_pre_validated")
     from app.knowledge.turn_intent_classifier import TurnIntentSignals, classify_turn_intent
-    try:
-        turn_signals = classify_turn_intent(message)
-    except Exception:
-        turn_signals = TurnIntentSignals()
+    if _pre_extraction is not None:
+        turn_signals = _pre_extraction.signals
+    else:
+        try:
+            turn_signals = classify_turn_intent(message)
+        except Exception:
+            turn_signals = TurnIntentSignals()
 
     contract = resolve_message(message, conversation_state=conversation)
     contract = _apply_profile_guards(message, contract)
@@ -1736,7 +1790,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         if _has_be or _has_tramite:
             _esc_acuse = (
                 f"Gracias por compartir su experiencia. Con licencia tipo {_lic_now}, "
-                "Capital Humano revisará si hay generación disponible para Escuelita Transmontes. "
+                "nuestro equipo revisará si hay generación disponible para Escuelita Transmontes. "
                 "Lo dejo canalizado para que lo contacten."
             )
             contract = dict(contract)
@@ -1836,7 +1890,12 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         reply = friendly_result["reply"]
     elif contract.get("intent") == "greeting":
         # 2.3: candidato que regresa recibe ack corto + siguiente campo; primer turno → presentación completa
-        reply = _greeting_reply(lead_memory_before)
+        # F1: si el mensaje trae pregunta embebida (no derivada), su respuesta ya saluda;
+        # el saludo se reduce al siguiente dato del funnel para no duplicar el intro de Mundo.
+        if embedded_question and not embedded_question["derive_to_human"]:
+            reply = _greeting_followup_question(lead_memory_before)
+        else:
+            reply = _greeting_reply(lead_memory_before)
     elif contract.get("intent") == "candidate_profile_signal":
         ack = _build_profile_ack_reply(message)
         if ack:
@@ -1854,14 +1913,21 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     if embedded_question:
         if embedded_derived:
             reply = embedded_question["answer"]
-        else:
+        elif reply:
             reply = f'{embedded_question["answer"]}\n\n{reply}'
+        else:
+            # Saludo reducido a vacío (perfil completo o nada que preguntar): la
+            # respuesta embebida es el reply completo, sin "\n\n" colgando.
+            reply = embedded_question["answer"]
 
     # Append one funnel profiling question after RAG, friendly, or profile ack.
     # Capture which canonical field(s) the nudge asked about (passive metadata).
     asked_field_keys: list[str] = []
     if (rag_result is not None or friendly_result is not None or profile_ack_used) and not embedded_derived:
-        nudge, asked_field_keys = _build_funnel_nudge(message, contract, lead_memory_before, turn_signals=turn_signals)
+        nudge, asked_field_keys = _build_funnel_nudge(
+            message, contract, lead_memory_before,
+            turn_signals=turn_signals, pre_validated_facts=_pre_validated,
+        )
         if nudge:
             # 3.2: puente suave si el RAG respondió una duda en el primer turno (sin nombre aún)
             _facts_before = {
@@ -1929,6 +1995,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         reply=reply,
         asked_field_keys=asked_field_keys,
         turn_signals=turn_signals,
+        pre_validated_facts=_pre_validated,
     )
     lead_memory_after = lead_write.get("memory") or {}
 

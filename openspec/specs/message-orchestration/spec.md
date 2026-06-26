@@ -87,6 +87,23 @@ candidato no haya dicho, ni reutilizar valores de ejemplos internos del prompt.
 - **THEN** el sistema responde sin mencionar años ni ninguna cifra
 - **AND** no afirma datos de experiencia que el candidato no dio
 
+### Requirement: Escritor único de facts por turno
+
+En el camino worker, el sistema SHALL persistir los facts del turno exactamente una vez
+por turno, desde `_store_lead_memory_updates` usando los `pre_validated_facts` producidos
+por `validate_extraction`. SHALL NOT existir una segunda escritura de facts (guard o funnel
+nudge no persisten directamente). El guard y el funnel nudge consumen los facts validados
+del turno para tomar decisiones, sin re-extraer ni re-persistir.
+
+#### Scenario: Guard + orquestador sin escritura doble
+- **WHEN** en un turno el guard dispara y reemplaza la respuesta del orquestador
+- **THEN** los facts del turno se persisten una sola vez (por `_store_lead_memory_updates`)
+- **AND** no se persisten facts adicionales por el camino del guard
+
+#### Scenario: Funnel nudge consume facts del turno, no re-extrae
+- **WHEN** `_build_funnel_nudge` decide la siguiente pregunta del funnel
+- **THEN** lee los facts del turno de `pre_validated_facts`, no lanza un nuevo extractor
+
 ### Requirement: Respuesta de cara al candidato sin instrucciones internas
 
 El sistema SHALL responder al candidato con lenguaje de cara al usuario y SHALL NOT exponer
@@ -259,22 +276,22 @@ conversación en un bloqueo permanente sin ninguna vía de liberación.
 - **WHEN** una conversación entra en `HUMAN_REVIEW_REQUIRED`
 - **THEN** existe al menos una vía explícita (acción humana/operativa) para liberarla
 
-### Requirement: Edad temprana con descarte desde 50 años
+### Requirement: Edad temprana con descarte desde 57 años
 
 El funnel vivo SHALL preguntar la edad inmediatamente después de la ciudad. La
-edad SHALL ser menor a 50 años; con 50 años o más, el sistema SHALL responder
+edad SHALL ser menor a 57 años; con 57 años o más, el sistema SHALL responder
 el guion de descarte cortés aprobado y NO SHALL continuar el perfilamiento.
 
-#### Scenario: 50 o más se descarta
-- **WHEN** el candidato responde "tengo 52 años"
+#### Scenario: 57 o más se descarta
+- **WHEN** el candidato responde "tengo 57 años"
 - **THEN** el bot responde el guion de descarte y no emite más preguntas del funnel
 
 #### Scenario: Frontera exacta
-- **WHEN** el candidato responde "tengo 50"
-- **THEN** aplica el descarte (la regla es estrictamente menor a 50)
+- **WHEN** el candidato responde "tengo 57"
+- **THEN** aplica el descarte (la regla es estrictamente menor a 57)
 
-#### Scenario: Menor de 50 continúa
-- **WHEN** el candidato responde "tengo 49 años"
+#### Scenario: Menor de 57 continúa
+- **WHEN** el candidato responde "tengo 56 años"
 - **THEN** el funnel continúa con la siguiente pregunta (tipo de unidad)
 
 ### Requirement: Preguntas de vencimiento en lugar de vigencia
@@ -543,4 +560,70 @@ Mensajes por motivo (al menos):
 #### Scenario: Acuse de B1
 - **WHEN** el motivo de canalización es B1/EUA
 - **THEN** el acuse indica que es una vía distinta a la vacante publicada
+
+### Requirement: Punto único de extracción antes de bifurcar
+
+El sistema SHALL computar el `TurnExtraction` del mensaje **una sola vez al inicio del turno**,
+antes de bifurcar entre el orquestador y el guard del worker, y ambos caminos SHALL consumir
+ese mismo objeto. SHALL NOT re-extraer el mismo texto en múltiples puntos del turno.
+
+#### Scenario: Una extracción por turno
+- **WHEN** llega un mensaje del candidato
+- **THEN** la extracción del turno se realiza una vez y su resultado alimenta funnel, nudge, ack, labels y persistencia
+
+### Requirement: Autoridad única sobre la respuesta
+
+El reply de cara al candidato SHALL decidirse sobre el `TurnExtraction` único, no por el orden
+de ejecución de dos caminos. SHALL NOT existir un camino (guard) que pise incondicionalmente
+el reply ya producido por otro (orquestador) tras una segunda extracción del mismo turno.
+
+#### Scenario: Reply no depende de quién corre último
+- **WHEN** un turno produce facts y una posible duda embebida
+- **THEN** el reply se determina a partir del `TurnExtraction` único, de forma estable e independiente del orden interno de los componentes
+
+### Requirement: Disponibilidad del LLM durante el procesamiento de un turno
+
+El sistema SHALL procesar cada turno de candidato sin error de LLM siempre que al menos una
+clave Groq válida esté disponible (`GROQ_API_KEY` o `GROQ_API_KEY_BACKUP`). Si la clave
+primaria tiene la cuota agotada, el sistema SHALL recuperarse automáticamente usando la clave
+de respaldo, sin retornar un error al candidato ni dejar el turno sin procesar.
+
+#### Scenario: Turno procesado con clave primaria activa
+
+- **WHEN** el worker procesa un turno y la clave primaria de Groq tiene cuota disponible
+- **THEN** el turno se resuelve normalmente con la clave primaria; no hay impacto observable
+
+#### Scenario: Turno procesado con fallback a clave de respaldo
+
+- **WHEN** el worker procesa un turno y la clave primaria tiene cuota agotada
+- **THEN** el sistema usa automáticamente la clave de respaldo y entrega la respuesta al
+  candidato sin error visible; el turno se completa con `status: ok`
+
+#### Scenario: Sin claves disponibles
+
+- **WHEN** ambas claves Groq tienen la cuota agotada o no están configuradas
+- **THEN** el worker registra el error en el log y la tarea Celery falla; el candidato no
+  recibe respuesta en ese turno (comportamiento de fallo actual, sin degradación adicional)
+
+### Requirement: Saludo único en primer contacto con pregunta embebida
+
+En el primer contacto, cuando el mensaje del candidato trae una pregunta embebida (p. ej. "hola, me interesa la vacante, ¿qué necesito?"), la respuesta ensamblada SHALL contener el intro de saludo de Mundo **una sola vez**. El sistema MUST NOT concatenar la respuesta a la pregunta (que ya saluda) con el `GREETING_REPLY` completo (que vuelve a saludar): el nudge del funnel para un candidato sin nombre debe ser solo la pregunta del siguiente dato, sin repetir el intro.
+
+#### Scenario: Primer mensaje con saludo y pregunta
+- **WHEN** un candidato nuevo escribe "Hola buen día, me interesa la vacante, ¿qué necesito para que me contraten?"
+- **THEN** la respuesta incluye el intro "Hola, soy Mundo del equipo de reclutamiento de Transmontes…" exactamente una vez
+- **AND** cierra con una sola pregunta del funnel (p. ej. el nombre), sin un segundo bloque de saludo
+
+#### Scenario: Nudge del funnel tras responder la pregunta embebida
+- **WHEN** la respuesta a la pregunta embebida ya contiene el saludo y el sistema agrega el nudge del siguiente dato
+- **THEN** el nudge es solo la pregunta faltante, no el `GREETING_REPLY` con intro
+
+### Requirement: Respuesta de primer contacto concisa
+
+La respuesta de primer contacto SHALL ser concisa y MUST NOT repetir la misma promesa (p. ej. "nuestro equipo lo contactará") múltiples veces en el mismo mensaje.
+
+#### Scenario: Respuesta de bienvenida verbosa
+- **WHEN** se compone la respuesta de primer contacto
+- **THEN** la promesa de contacto del equipo aparece a lo sumo una vez
+- **AND** el mensaje no repite frases equivalentes de cierre
 

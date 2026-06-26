@@ -9,8 +9,10 @@ Tests deterministas, SIN Groq/LLM. Fijan los dos gaps de contrato (Fase 3 implem
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import app.db as db
+from app.settings import AGE_DISQUALIFICATION_LIMIT
 from app.persona_config import SYSTEM_PROMPT
 
 # Pistas de que una mención de "Capital Humano" es parte de la PROHIBICIÓN (permitida),
@@ -45,6 +47,20 @@ def test_system_prompt_keeps_voz_de_equipo_rule():
     low = SYSTEM_PROMPT.lower()
     assert "voz de equipo" in low
     assert "nuestro equipo" in low
+
+
+def test_live_specs_use_configured_age_limit():
+    """El contrato vivo no debe quedar con un umbral de edad obsoleto."""
+    spec_text = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "openspec/specs/message-orchestration/spec.md",
+            "openspec/specs/profile-extraction/spec.md",
+        )
+    )
+    assert f"{AGE_DISQUALIFICATION_LIMIT} años" in spec_text
+    assert "50 años o más" not in spec_text
+    assert "menor a 50" not in spec_text
 
 
 # ---------------------------------------------------------------------------

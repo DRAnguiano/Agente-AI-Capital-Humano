@@ -24,7 +24,7 @@ import chromadb
 import cohere
 import httpx
 from chromadb.config import Settings as ChromaSettings
-from groq import Groq
+from groq import Groq, RateLimitError as GroqRateLimitError
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 
@@ -93,6 +93,8 @@ COHERE_MAX_TOKENS = int(
 )
 
 TEMPERATURE = float(getattr(settings, "TEMPERATURE", os.getenv("TEMPERATURE", "0.15")))
+
+GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 
 # Cohere Rerank.
 # Flujo:
@@ -703,39 +705,91 @@ def _extract_cohere_text(response: Any) -> str:
     return ""
 
 
+def _groq_call(
+    api_key: str,
+    messages: list[dict],
+    model: str,
+    *,
+    json_mode: bool = False,
+    temperature: float = TEMPERATURE,
+    max_tokens: int = GROQ_MAX_TOKENS,
+    timeout_key: str = "GROQ_TIMEOUT_SECONDS",
+    timeout_default: str = "8",
+) -> str:
+    """Ejecuta una llamada a Groq y devuelve el contenido de la respuesta.
+
+    Punto único de construcción del cliente; los callers públicos implementan
+    el patrón de fallback (primary → backup) sobre este helper.
+    """
+    timeout_secs = float(os.getenv(timeout_key, timeout_default))
+    timeout = httpx.Timeout(timeout_secs, connect=5.0)
+    kwargs: dict = dict(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    with httpx.Client(timeout=timeout) as http_client:
+        client = Groq(api_key=api_key, http_client=http_client)
+        completion = client.chat.completions.create(**kwargs)
+    return completion.choices[0].message.content or ("" if not json_mode else "{}")
+
+
+def _groq_with_fallback(
+    primary_key: str,
+    backup_key: str | None,
+    fn_name: str,
+    messages: list[dict],
+    model: str,
+    *,
+    json_mode: bool = False,
+    temperature: float = TEMPERATURE,
+    max_tokens: int = GROQ_MAX_TOKENS,
+    timeout_key: str = "GROQ_TIMEOUT_SECONDS",
+    timeout_default: str = "8",
+) -> str:
+    """Llama a _groq_call con primary_key; si devuelve RateLimitError y hay
+    backup_key, reintenta con ella. Registra el fallback en el log.
+    """
+    call_kwargs = dict(
+        json_mode=json_mode,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout_key=timeout_key,
+        timeout_default=timeout_default,
+    )
+    try:
+        return _groq_call(primary_key, messages, model, **call_kwargs)
+    except GroqRateLimitError as exc:
+        if not backup_key:
+            raise
+        print(f"[groq-fallback] cuota primaria agotada, usando BACKUP — {fn_name}", flush=True)
+        try:
+            return _groq_call(backup_key, messages, model, **call_kwargs)
+        except GroqRateLimitError as exc2:
+            print(f"[groq-fallback] BACKUP también agotada — {fn_name}: {exc2}", flush=True)
+            raise exc2
+
+
 def call_groq_llm(prompt: str) -> str:
     api_key = os.environ.get("GROQ_API_KEY")
 
     if not api_key:
         return "Error: falta configurar GROQ_API_KEY."
 
+    backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    messages = [
+        {"role": "system", "content": _llm_system_message()},
+        {"role": "user", "content": prompt},
+    ]
+    print(f"[groq] Modelo: {GROQ_MODEL}", flush=True)
     try:
-        timeout_secs = float(os.getenv("GROQ_TIMEOUT_SECONDS", "8"))
-        timeout = httpx.Timeout(timeout_secs, connect=5.0)
-
-        with httpx.Client(timeout=timeout) as http_client:
-            client = Groq(api_key=api_key, http_client=http_client)
-
-            print(f"[groq] Modelo: {GROQ_MODEL}", flush=True)
-
-            completion = client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": _llm_system_message(),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-                temperature=TEMPERATURE,
-                max_tokens=GROQ_MAX_TOKENS,
-            )
-
-        return completion.choices[0].message.content or ""
-
+        return _groq_with_fallback(
+            api_key, backup_key, "call_groq_llm", messages, GROQ_MODEL,
+            temperature=TEMPERATURE, max_tokens=GROQ_MAX_TOKENS,
+        )
     except Exception as exc:
         print(f"[groq] Error: {type(exc).__name__}: {exc}", flush=True)
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
@@ -806,24 +860,17 @@ def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0
     if not api_key:
         return '{"error": "missing_groq_api_key"}'
 
+    backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    messages = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": prompt},
+    ]
     try:
-        timeout_secs = float(os.getenv("GROQ_JSON_TIMEOUT_SECONDS", "10"))
-        timeout = httpx.Timeout(timeout_secs, connect=5.0)
-
-        with httpx.Client(timeout=timeout) as http_client:
-            client = Groq(api_key=api_key, http_client=http_client)
-            completion = client.chat.completions.create(
-                model=model or GROQ_MODEL,
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=temperature,
-                max_tokens=GROQ_MAX_TOKENS,
-                response_format={"type": "json_object"},
-            )
-        return completion.choices[0].message.content or "{}"
-
+        return _groq_with_fallback(
+            api_key, backup_key, "call_groq_json", messages, model or GROQ_MODEL,
+            json_mode=True, temperature=temperature, max_tokens=GROQ_MAX_TOKENS,
+            timeout_key="GROQ_JSON_TIMEOUT_SECONDS", timeout_default="10",
+        )
     except Exception as exc:
         print(f"[groq_json] Error: {type(exc).__name__}: {exc}", flush=True)
         return f'{{"error": "{type(exc).__name__}"}}'
@@ -839,25 +886,61 @@ def call_groq_with_system(system: str, user: str, *, temperature: float | None =
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
+    backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    t = temperature if temperature is not None else TEMPERATURE
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
     try:
-        t = temperature if temperature is not None else TEMPERATURE
-        timeout_secs = float(os.getenv("GROQ_TIMEOUT_SECONDS", "8"))
-        timeout = httpx.Timeout(timeout_secs, connect=5.0)
-        with httpx.Client(timeout=timeout) as http_client:
-            client = Groq(api_key=api_key, http_client=http_client)
-            completion = client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                temperature=t,
-                max_tokens=max_tokens,
-            )
-        return completion.choices[0].message.content or ""
+        return _groq_with_fallback(
+            api_key, backup_key, "call_groq_with_system", messages, GROQ_MODEL,
+            temperature=t, max_tokens=max_tokens,
+        )
     except Exception as exc:
         print(f"[groq_with_system] Error: {type(exc).__name__}: {exc}", flush=True)
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
+
+
+def call_groq_transcribe(audio_bytes: bytes, filename: str = "audio.ogg") -> str:
+    """Transcribe un archivo de audio con Groq Whisper; devuelve el texto o '' si falla.
+
+    Sigue el mismo patrón de fallback a GROQ_API_KEY_BACKUP que las demás funciones Groq.
+    """
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        print("[groq_transcribe] Falta GROQ_API_KEY", flush=True)
+        return ""
+    if not audio_bytes:
+        return ""
+
+    backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+
+    def _transcribe(key: str) -> str:
+        with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0)) as http_client:
+            client = Groq(api_key=key, http_client=http_client)
+            result = client.audio.transcriptions.create(
+                file=(filename, audio_bytes),
+                model=GROQ_WHISPER_MODEL,
+                response_format="text",
+            )
+        # SDK devuelve str directamente con response_format="text"
+        return str(result).strip() if result else ""
+
+    try:
+        return _transcribe(api_key)
+    except GroqRateLimitError:
+        if not backup_key:
+            raise
+        print("[groq-fallback] cuota primaria agotada, usando BACKUP — call_groq_transcribe", flush=True)
+        try:
+            return _transcribe(backup_key)
+        except Exception as exc2:
+            print(f"[groq_transcribe] BACKUP falló: {type(exc2).__name__}: {exc2}", flush=True)
+            return ""
+    except Exception as exc:
+        print(f"[groq_transcribe] Error: {type(exc).__name__}: {exc}", flush=True)
+        return ""
 
 
 def call_llm(prompt: str) -> str:

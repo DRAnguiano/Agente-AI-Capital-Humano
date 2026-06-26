@@ -15,6 +15,7 @@ from typing import Any
 
 from app.indexer import call_groq_json
 from app.knowledge.text_normalizer import normalize_text
+from app.knowledge.geo_utils import normalize_zm_laguna_city
 
 # Modelo del clasificador. Chico por diseño: clasificar a JSON no necesita el 70B.
 # ~10x menos tokens y más rápido. La generación de respuestas sigue en el 70B.
@@ -105,7 +106,7 @@ INTENTS DE ESCALAMIENTO (primary_intent):
 CAMPOS para "answers" (datos de perfil que el candidato AFIRMA):
 - candidate.city (ciudad), experience.vehicle_type (sencillo|full|ambos|ninguno),
   license.type (B|E|A|C), license.status (vigente|vencida|tramite),
-  medical.apto_status (vigente|vencido|tramite), experience.years (número),
+  medical.apto_status (vigente|vencido|tramite), experience.years (número o aproximación numérica; expresiones vagas sin número como "toda la vida" o "siempre" → omitir),
   documents.proof (cartas|semanas_imss|ninguno).
 
 REGLAS:
@@ -142,6 +143,10 @@ CONTEXTO (última pregunta del bot): "¿Ha manejado sencillo, full o ambos?"
 Mensaje: "puro full siempre"
 {"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"experience.vehicle_type","value":"full","evidence":"puro full","confidence":0.92}],"questions":[]}
 
+CONTEXTO (última pregunta del bot): "¿Cuántos años tiene manejando?"
+Mensaje: "Yo manejo de toda la vida full señor."
+{"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"experience.vehicle_type","value":"full","evidence":"full","confidence":0.9}],"questions":[]}
+
 (sin contexto previo)
 
 Mensaje: "Sí me interesa, pero ¿cuánto pagan?"
@@ -149,6 +154,10 @@ Mensaje: "Sí me interesa, pero ¿cuánto pagan?"
 
 Mensaje: "soy de monterrey y manejo full"
 {"message_type":"compound","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"candidate.city","value":"monterrey","evidence":"soy de monterrey","confidence":0.95},{"field":"experience.vehicle_type","value":"full","evidence":"manejo full","confidence":0.95}],"questions":[]}
+
+CONTEXTO (última pregunta del bot): "¿De qué ciudad es usted?"
+Mensaje: "soy de lerdito"
+{"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"candidate.city","value":"lerdito","evidence":"soy de lerdito","confidence":0.95}],"questions":[]}
 
 Mensaje: "tengo licencia tipo E vigente, oiga hacen antidoping?"
 {"message_type":"compound","primary_intent":"candidate_answer","secondary_intents":["safety_intent"],"answers":[{"field":"license.type","value":"E","evidence":"licencia tipo E","confidence":0.95},{"field":"license.status","value":"vigente","evidence":"vigente","confidence":0.9}],"questions":[{"intent":"safety_intent","evidence":"hacen antidoping","is_admission":false}]}
@@ -235,9 +244,12 @@ def validate_classification(raw: dict[str, Any], message: str) -> dict[str, Any]
         if field not in ANSWER_FIELDS:
             continue
         evidence = str(ans.get("evidence") or "")
+        value = ans.get("value")
+        if field == "candidate.city" and value:
+            value = normalize_zm_laguna_city(str(value))
         result["answers"].append({
             "field": field,
-            "value": ans.get("value"),
+            "value": value,
             "evidence": evidence,
             "confidence": float(ans.get("confidence") or 0.0),
             "evidence_ok": _evidence_in_message(evidence, message),

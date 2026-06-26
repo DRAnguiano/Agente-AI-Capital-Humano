@@ -8,6 +8,8 @@ no mezclar temas no relacionados ("pago para sencillo" no jala paradas ni docume
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import app.knowledge.context_builder as CB
 
 
@@ -81,3 +83,26 @@ def test_focus_preserves_order_and_dominant_items():
 
 def test_focus_empty():
     assert CB._focus_items_by_source([]) == []
+
+def test_indexable_rag_corpus_has_no_operational_directives():
+    forbidden = [
+        "Mundo debe",
+        "Respuesta sugerida",
+        "Capital Humano confirma",
+        "Capital Humano debe",
+        "Capital Humano valida",
+        "debe pedir",
+        "debe confirmar",
+        "debe escalar",
+        "debe evitar",
+        "debe marcar",
+        "debe responder",
+    ]
+    offenders = []
+    for path in Path("data").glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        low = text.lower()
+        for item in forbidden:
+            if item.lower() in low:
+                offenders.append(f"{path}:{item}")
+    assert offenders == []

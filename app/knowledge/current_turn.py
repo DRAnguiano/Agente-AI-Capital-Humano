@@ -1,82 +1,10 @@
 import datetime
-import json
 import os
 import re
 from typing import Any
 
-from app.indexer import call_groq_json
 from app.knowledge.business_hours import is_business_hours
 from app.knowledge.text_normalizer import normalize_text
-
-_EXTRACTOR_MODEL = os.getenv("GROQ_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
-
-_EXPIRATION_SYSTEM = """Eres un extractor de datos de reclutamiento.
-Extrae la expresión de tiempo de vencimiento de un documento (licencia o apto médico) del mensaje del candidato.
-Reglas:
-- Si el candidato indica cuánto tiempo falta para que venza, devuélvela normalizada en español
-- Formatos aceptados: "N años", "N meses", "N días", mes/año (ej. "diciembre 2026")
-- Si el documento ya venció, devuelve "vencido"
-- Si el mensaje es solo "sí", "vigente", "está bien" sin dato de tiempo, devuelve null
-- Si no hay información de tiempo suficiente, devuelve null
-Responde SOLO JSON sin texto extra: {"expiration_text": "<expresión>" | null}
-Ejemplos:
-- "Se me vence en 3 años" → {"expiration_text": "3 años"}
-- "6 meses" → {"expiration_text": "6 meses"}
-- "para diciembre" → {"expiration_text": "diciembre"}
-- "al año" → {"expiration_text": "1 año"}
-- "me falta como un año y medio" → {"expiration_text": "18 meses"}
-- "ya vencida" → {"expiration_text": "vencido"}
-- "vigente" → {"expiration_text": null}
-- "sí" → {"expiration_text": null}"""
-
-_AGE_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de preguntar la EDAD del candidato.
-Extrae la edad en años enteros de la respuesta. Rango plausible de adulto: 18–70.
-Convierte palabras a números. Tabla de decenas en español:
-  treinta=30, cuarenta=40, cincuenta=50, sesenta=60, setenta=70.
-  "cincuenta y uno"=51, "cincuenta y dos"=52, "cincuenta y cinco"=55
-  "sesenta y uno"=61, "sesenta y dos"=62
-Si no hay edad clara o es ambiguo, devuelve null.
-Responde SOLO JSON: {"age": <entero 18-70> | null}
-Ejemplos:
-- "35" → {"age": 35}
-- "treinta y cinco años" → {"age": 35}
-- "como unos 40" → {"age": 40}
-- "tengo 28" → {"age": 28}
-- "52" → {"age": 52}
-- "cincuenta y un años" → {"age": 51}
-- "tengo la edad de cincuenta y un años" → {"age": 51}
-- "sesenta y dos" → {"age": 62}
-- "no sé" → {"age": null}
-- "25 años de experiencia" → {"age": null}"""
-
-_NAME_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de pedir el NOMBRE del candidato.
-Extrae el nombre propio del candidato de la respuesta. Ignora saludos, verbos y preguntas adicionales.
-Si el nombre aparece al inicio o en cualquier parte del mensaje, extráelo.
-Si no hay nombre claro, devuelve null.
-Responde SOLO JSON: {"name": "<Nombre Apellido>" | null}
-Ejemplos:
-- "ramon" → {"name": "Ramon"}
-- "me llamo Juan García" → {"name": "Juan García"}
-- "soy Pedro y cuánto pagan?" → {"name": "Pedro"}
-- "Juan Antonio Yañez de la xolithla" → {"name": "Juan Antonio Yañez"}
-- "hola" → {"name": null}
-- "si" → {"name": null}
-- "no sé" → {"name": null}
-- "tengo 30 años" → {"name": null}"""
-
-_EXPERIENCE_YEARS_SYSTEM = """Eres un extractor de datos de reclutamiento. El bot acaba de preguntar los AÑOS DE EXPERIENCIA del candidato como operador.
-Extrae los años de experiencia de la respuesta. Normaliza a formato "N años".
-Convierte palabras a números: "diez" → "10 años", "año y medio" → "1 año", "una década" → "10 años".
-Si no hay dato numérico claro, devuelve null.
-Responde SOLO JSON: {"years": "<N años>" | null}
-Ejemplos:
-- "10" → {"years": "10 años"}
-- "diez" → {"years": "10 años"}
-- "como 15 años" → {"years": "15 años"}
-- "25 años manejando" → {"years": "25 años"}
-- "10 y medio" → {"years": "10 años"}
-- "desde 2010" → {"years": null}
-- "poco tiempo" → {"years": null}"""
 
 
 
@@ -102,7 +30,46 @@ def _profile_complete_closing() -> str:
     return msg
 
 
-LOCAL_LAGUNA = ["torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"]
+from app.knowledge.geo_utils import normalize_zm_laguna_city, is_zm_laguna_canonical
+
+
+def residency_is_local(facts: dict[str, Any]) -> bool:
+    """Fuente ÚNICA de residencia local/foránea: el catálogo ZM Laguna.
+
+    Usa la señal canónica ``location.is_local_laguna`` (derivada del catálogo
+    aguas arriba) y, como respaldo robusto cuando esa señal no fue computada
+    (p. ej. en la ruta del orquestador), evalúa la ciudad directamente contra
+    el catálogo. No se usan listas de ciudades hardcodeadas.
+    """
+    if facts.get("location.is_local_laguna") == "true":
+        return True
+    # Normaliza alias coloquial → canónico antes de evaluar (p. ej. "Chávez" →
+    # Francisco I. Madero), para no depender de que la ciudad ya venga normalizada.
+    city = normalize_zm_laguna_city(facts.get("candidate.city") or "")
+    return is_zm_laguna_canonical(city)
+
+
+def residency_document_question(facts: dict[str, Any]) -> str:
+    """Pregunta de documento laboral según residencia (regla de dominio única).
+
+    Local ZM Laguna → acepta semanas cotizadas del IMSS; foráneo → 2 cartas
+    laborales membretadas. Si el candidato ya negó tener cartas
+    (``documents.proof == "ninguno"``) ofrece la alternativa local o cierra sin
+    loop para foráneo. Voz de equipo (sin "Capital Humano" como tercero).
+    """
+    is_local = residency_is_local(facts)
+    proof = facts.get("documents.proof")
+    if proof == "ninguno":
+        if is_local:
+            return "¿Cuenta con su documento de semanas cotizadas del IMSS?"
+        return (
+            "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
+            "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para que "
+            "nuestro equipo le indique opciones al contactarle."
+        )
+    if is_local:
+        return "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?"
+    return "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?"
 
 from app.settings import AGE_DISQUALIFICATION_LIMIT as AGE_LIMIT_EXCLUSIVE
 RENEWAL_PROOF_QUESTION = (
@@ -220,14 +187,33 @@ def _has_labor_document(facts: dict[str, Any]) -> bool:
     )
 
 
-def _contextual_expiration_text(norm_message: str) -> str | None:
-    try:
-        raw = call_groq_json(norm_message, _EXPIRATION_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-        data = json.loads(raw)
-        val = data.get("expiration_text")
-        return str(val).strip() if val else None
-    except Exception:
+def canonicalize_proof(value: Any) -> str | None:
+    """Normaliza cualquier valor de ``documents.proof`` al vocabulario canónico
+    ``{"cartas" | "semanas_imss" | "ninguno"}`` antes de persistir.
+
+    El contrato del extractor pide estos valores, pero el LLM a veces devuelve
+    texto libre ("cartas laborales", "semanas del IMSS"); sin esto, los
+    consumidores deterministas (``_has_labor_document``) no lo reconocen y el
+    paso documental nunca cierra (loop de re-pregunta). Devuelve ``None`` cuando
+    el valor no es mapeable, para no persistir texto crudo."""
+    if value is None:
         return None
+    v = normalize_text(str(value)).strip()
+    if not v:
+        return None
+    if v in {"cartas", "semanas_imss", "ninguno"}:
+        return v
+    # Negaciones explícitas → ninguno
+    if any(t in v for t in ("ninguno", "ninguna", "no tengo", "no cuento", "sin ")):
+        return "ninguno"
+    # Semanas cotizadas del IMSS
+    if "imss" in v or "semanas" in v or "cotizad" in v:
+        return "semanas_imss"
+    # Cartas laborales / membretadas / documento laboral
+    if any(t in v for t in ("carta", "membret", "documento laboral", "documentos laborales", "laboral")):
+        return "cartas"
+    return None
+
 
 # Detect the topic of the last bot question for context-aware "si" interpretation
 # Señal estructural de pregunta cuantitativa embebida: "cuántas necesita",
@@ -357,58 +343,24 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
             if k not in facts:
                 facts[k] = v
 
-        # Respuesta elíptica numérica: "10" / "10 años" tras pregunta de edad o experiencia.
-        # Usa solo la última frase interrogativa del mensaje del bot para evitar
-        # que el acuse previo ("registro 30 años de experiencia. ¿Cuántos años tiene?")
-        # contamine el contexto de la pregunta real.
-        last_norm = normalize_text(last_bot_message)
-        # Extraer la última pregunta del mensaje del bot (texto del último "?" hacia atrás).
-        _q_parts = re.split(r"[.!]", last_norm)
-        _last_question = normalize_text(_q_parts[-1]) if _q_parts else last_norm
+        # BUG-2: bare negation after docs/cartas question → proof = ninguno (deterministic)
+        _bare_neg = text in {"no", "nop", "nel", "nope", "para nada", "tampoco", "negativo", "no tengo", "no cuento"}
+        _last_norm_docs = normalize_text(last_bot_message)
+        if (_bare_neg
+                and any(w in _last_norm_docs for w in ("cartas", "membretadas", "documentos laborales", "documento laboral"))
+                and "documents.proof" not in facts):
+            facts["documents.proof"] = "ninguno"
 
-        _ya_reclamo = getattr(turn_signals, "is_ya_reclamo", False)
-        # Detectar pregunta de edad: "cuántos años", "su edad", "compartir su edad", etc.
-        _age_question = (
-            re.search(r"\bcuantos anos\b", _last_question)
-            or re.search(r"\b(su|tu)\s+edad\b", _last_question)
-            or "edad" in _last_question
-        ) and "experiencia" not in _last_question
-        if _age_question and ("candidate.age" not in facts or _ya_reclamo):
-            try:
-                raw = call_groq_json(text, _AGE_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-                val = json.loads(raw).get("age")
-                # Validar rango: evita que "quince mil" u otros números se tomen como edad
-                if val is not None and 18 <= int(val) <= 75:
-                    facts["candidate.age"] = str(int(val))
-            except Exception:
-                pass
-
-        if "experience.years" not in facts:
-            if re.search(r"\bcuantos anos\b", _last_question) and "experiencia" in _last_question:
-                try:
-                    raw = call_groq_json(text, _EXPERIENCE_YEARS_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-                    val = json.loads(raw).get("years")
-                    if val:
-                        facts["experience.years"] = str(val)
-                except Exception:
-                    pass
-
-        # P0-1: solo llamar al extractor LLM si el candidato mencionó algo de vencimiento.
-        # Sin esta guarda el modelo alucina "vencido" sobre mensajes vacíos de fechas.
-        _expiry_hints = ("vence", "vencen", "vencimiento", "caduca", "caduco",
-                         "se me acaba", "me queda", "año", "anos", "meses", "mes")
-        _has_expiry_context = (
-            getattr(turn_signals, "has_expiry_context", False)
-            or any(h in text for h in _expiry_hints)
-        )
-        if _has_expiry_context:
-            exp_text = _contextual_expiration_text(text)
-            if exp_text:
-                last_norm = normalize_text(last_bot_message)
-                if "license.expiration_text" not in facts and "licencia" in last_norm and "vence" in last_norm:
-                    facts["license.expiration_text"] = exp_text
-                if "medical.apto_expiration_text" not in facts and "apto" in last_norm and "vence" in last_norm:
-                    facts["medical.apto_expiration_text"] = exp_text
+        # BUG-3: "igual / los dos" after apto question → inherit license expiration (deterministic)
+        _last_norm_apto = normalize_text(last_bot_message)
+        _asks_apto = "apto" in _last_norm_apto and ("vence" in _last_norm_apto or "vigencia" in _last_norm_apto)
+        _same_as_hints = ("igual", "mismo", "los dos", "ambos", "los 2", "tambien", "también",
+                          "al mismo tiempo", "igual que", "igualmente", "los dos vencen")
+        if (_asks_apto and any(h in text for h in _same_as_hints)
+                and "medical.apto_expiration_text" not in facts):
+            _lic_exp = facts.get("license.expiration_text")
+            if _lic_exp:
+                facts["medical.apto_expiration_text"] = _lic_exp
 
         # 3.1: extracción de nombre cuando last_bot lo pidió
         _last_norm_name = normalize_text(last_bot_message)
@@ -443,34 +395,7 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
                         and len(_candidate_name) >= 3):
                     facts["candidate.name"] = _candidate_name
                     _name_found = True
-            if not _name_found:
-                # LLM fallback: nombre mezclado en mensaje más largo (ej: "ramon me puede decir...")
-                try:
-                    _name_raw = call_groq_json(raw, _NAME_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
-                    _name_val = json.loads(_name_raw).get("name")
-                    if _name_val and _name_val.lower() not in _name_skip and len(_name_val) >= 3:
-                        facts["candidate.name"] = _name_val.strip().title()
-                except Exception:
-                    pass
-
-        # BUG-2: "No" bare como respuesta directa a pregunta de cartas/documentos
-        _last_norm_docs = normalize_text(last_bot_message)
-        _asks_cartas = any(t in _last_norm_docs for t in ("cartas", "membretadas", "documentos laborales", "documento laboral"))
-        _bare_negation = text in {"no", "nop", "nel", "nope", "para nada", "tampoco", "negativo", "no tengo", "no cuento"}
-        if _asks_cartas and _bare_negation and "documents.proof" not in facts:
-            facts["documents.proof"] = "ninguno"
-
-        # BUG-3: "al mismo tiempo / igual / los dos" tras pregunta de apto → heredar vencimiento de licencia
-        _last_norm_apto = normalize_text(last_bot_message)
-        _asks_apto = "apto" in _last_norm_apto and ("vence" in _last_norm_apto or "vigencia" in _last_norm_apto)
-        _same_as_hints = ("igual", "mismo", "los dos", "ambos", "los 2", "tambien", "también",
-                          "al mismo tiempo", "igual que", "igualmente", "los dos vencen")
-        _says_same = any(h in text for h in _same_as_hints)
-        if _asks_apto and _says_same and "medical.apto_expiration_text" not in facts:
-            # Heredar desde licencia si ya está conocida
-            _lic_exp = (merged_facts or {}).get("license.expiration_text") or facts.get("license.expiration_text")
-            if _lic_exp:
-                facts["medical.apto_expiration_text"] = _lic_exp
+            # no LLM fallback — unified extractor (worker path) handles mixed messages
 
     # Fields only needed by the debounce guard, not persisted to lead_memory.
     if any(t in text for t in ("cuanto pagan", "pago", "sueldo", "compensacion", "kilometro", "km")):
@@ -478,8 +403,10 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
     if any(t in text for t in ("que rutas", "rutas tienen", "bases", "cedis")):
         facts["interest.routes"] = "asked"
 
-    city_norm = normalize_text(facts.get("candidate.city") or "")
-    facts["location.is_local_laguna"] = city_norm in LOCAL_LAGUNA
+    raw_city = facts.get("candidate.city") or ""
+    if raw_city:
+        facts["candidate.city"] = normalize_zm_laguna_city(raw_city)
+    facts["location.is_local_laguna"] = "true" if is_zm_laguna_canonical(facts.get("candidate.city") or "") else "false"
 
     return facts
 
@@ -595,25 +522,8 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if not facts.get("experience.years"):
         return "Perfecto. ¿Cuántos años de experiencia tiene como operador?"
     if not _has_labor_document(facts):
-        # 2.5: documento por residencia (local ZM Laguna acepta IMSS; foráneo exige membretadas)
-        is_local = facts.get("location.is_local_laguna") == "true" or (
-            normalize_text(facts.get("candidate.city") or "") in LOCAL_LAGUNA
-        )
-        _proof = facts.get("documents.proof")
-        # P0-2: candidato negó tener cartas — ofrecer alternativa o cerrar sin loop
-        if _proof == "ninguno":
-            if is_local:
-                return "¿Cuenta con su documento de semanas cotizadas del IMSS?"
-            else:
-                return (
-                    "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
-                    "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para que "
-                    "Capital Humano le indique opciones al contactarle."
-                )
-        if is_local:
-            return "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?"
-        else:
-            return "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?"
+        # 2.5: documento por residencia — regla de dominio única (incl. P0-2 proof=ninguno)
+        return residency_document_question(facts)
     return _profile_complete_closing()
 
 
@@ -692,8 +602,13 @@ def _join_ack_and_question(prefix: str, question: str | None) -> str:
     return f"{prefix} {question}".strip()
 
 
-def build_current_turn_ack(message: str | None, merged_facts: dict[str, Any] | None = None, last_bot_message: str | None = None) -> str:
-    current = extract_current_turn_facts(message, last_bot_message)
+def build_current_turn_ack(
+    message: str | None,
+    merged_facts: dict[str, Any] | None = None,
+    last_bot_message: str | None = None,
+    pre_current_facts: dict[str, Any] | None = None,
+) -> str:
+    current = pre_current_facts if pre_current_facts is not None else extract_current_turn_facts(message, last_bot_message)
     # Full profile for deciding what to ask next; only current turn for the ack prefix.
     facts = {**(merged_facts or {}), **current}
 

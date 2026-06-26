@@ -1,6 +1,8 @@
 """Plantillas de mensajes de seguimiento por etapa e intento."""
 from __future__ import annotations
 
+from app.knowledge.business_hours import is_business_hours
+
 # ---------------------------------------------------------------------------
 # Etiquetas en español para Chatwoot
 # ---------------------------------------------------------------------------
@@ -147,10 +149,40 @@ _PLANTILLAS: dict[str, list[str]] = {
 # que envía un mensaje genérico en lugar de uno apropiado para esa etapa.
 # [MEJORA] Agregar plantillas específicas o excluirlas explícitamente del scheduler.
 
+# Política de horario (decisión #15): dentro del horario de oficina hay personal,
+# así que el equipo contacta al candidato — NO se le pide coordinar/agendar una
+# llamada. Sólo fuera del horario aplica el copy de coordinación de llamada (que
+# vive en _PLANTILLAS arriba). Variantes "en horario" para profile_ready/human_review:
+_PLANTILLAS_EN_HORARIO: dict[str, list[str]] = {
+    "profile_ready": [
+        "Hola {nombre}, su información ya está lista para revisión. "
+        "Nuestro equipo la revisa y se pondrá en contacto con usted dentro del "
+        "horario de atención. No necesita hacer nada más por ahora.",
+
+        "Hola {nombre}, seguimos con su proceso. Nuestro equipo le contactará "
+        "dentro del horario de atención en cuanto avance la revisión.",
+    ],
+    "human_review": [
+        "Hola {nombre}, su perfil está listo para revisión. Nuestro equipo lo "
+        "revisa y se pondrá en contacto con usted dentro del horario de atención.",
+
+        "Hola {nombre}, su caso sigue en revisión con nuestro equipo, que le "
+        "contactará dentro del horario de atención. Gracias por su paciencia.",
+    ],
+}
+
 
 def get_template(etapa: str, intento: int) -> str | None:
-    """Devuelve el texto de plantilla para la etapa e intento dados (intento 1-based)."""
-    variantes = _PLANTILLAS.get(etapa) or _PLANTILLAS.get("followup_pending", [])
+    """Devuelve el texto de plantilla para la etapa e intento dados (intento 1-based).
+
+    Para las etapas de llamada (profile_ready / human_review), el copy depende del
+    horario de oficina: dentro de horario el equipo contacta al candidato; fuera de
+    horario se coordina una llamada (variantes en _PLANTILLAS).
+    """
+    if etapa in _PLANTILLAS_EN_HORARIO and is_business_hours():
+        variantes = _PLANTILLAS_EN_HORARIO[etapa]
+    else:
+        variantes = _PLANTILLAS.get(etapa) or _PLANTILLAS.get("followup_pending", [])
     if not variantes:
         return None
     idx = min(intento - 1, len(variantes) - 1)
