@@ -105,7 +105,7 @@ INTENTS DE ESCALAMIENTO (primary_intent):
 CAMPOS para "answers" (datos de perfil que el candidato AFIRMA):
 - candidate.city (ciudad), experience.vehicle_type (sencillo|full|ambos|ninguno),
   license.type (B|E|A|C), license.status (vigente|vencida|tramite),
-  medical.apto_status (vigente|vencido|tramite), experience.years (número),
+  medical.apto_status (vigente|vencido|tramite), experience.years (número o aproximación numérica; expresiones vagas sin número como "toda la vida" o "siempre" → omitir),
   documents.proof (cartas|semanas_imss|ninguno).
 
 REGLAS:
@@ -141,6 +141,10 @@ Mensaje: "si claro"
 CONTEXTO (última pregunta del bot): "¿Ha manejado sencillo, full o ambos?"
 Mensaje: "puro full siempre"
 {"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"experience.vehicle_type","value":"full","evidence":"puro full","confidence":0.92}],"questions":[]}
+
+CONTEXTO (última pregunta del bot): "¿Cuántos años tiene manejando?"
+Mensaje: "Yo manejo de toda la vida full señor."
+{"message_type":"simple","primary_intent":"candidate_answer","secondary_intents":[],"answers":[{"field":"experience.vehicle_type","value":"full","evidence":"full","confidence":0.9}],"questions":[]}
 
 (sin contexto previo)
 
