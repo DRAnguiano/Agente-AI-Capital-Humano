@@ -56,13 +56,28 @@ FAREWELL_REPLY = (
 
 # Saludo/contrato de apertura aprobado por negocio (2026-06-12): anuncia el
 # perfilamiento, invita a preguntar primero, y adelanta documentación + agente.
-GREETING_REPLY = (
+_GREETING_INTRO = (
     "Hola, soy Mundo del equipo de reclutamiento de Transmontes. "
     "Con gusto le platico de la vacante de operador de tracto full o sencillo. "
     "Le haré unas preguntas breves para conocer su perfil; si antes tiene dudas "
     "de pago, rutas o requisitos, pregúnteme con confianza. "
-    "¿Me podría decir su nombre y apellido, por favor?"
 )
+
+GREETING_REPLY = _GREETING_INTRO + "¿Me podría decir su nombre y apellido, por favor?"
+
+
+def greeting_reply_for_facts(current_turn_facts: dict) -> str:
+    """Saludo inicial adaptado: si el candidato ya dio datos en el primer mensaje,
+    salta los campos conocidos y pregunta el siguiente faltante."""
+    from app.knowledge.current_turn import next_question_from_missing_facts
+    next_q = next_question_from_missing_facts(current_turn_facts)
+    if not next_q:
+        return (
+            _GREETING_INTRO
+            + "Con los datos que me compartió, su perfil está listo. "
+            "En breve el equipo de Capital Humano le contactará."
+        )
+    return _GREETING_INTRO + next_q
 
 def _greeting_reply(lead_memory: dict[str, Any]) -> str:
     """Primera visita → GREETING_REPLY completo. Candidato que regresa → ack corto + siguiente campo."""

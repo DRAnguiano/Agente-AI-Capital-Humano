@@ -443,12 +443,19 @@ def process_chatwoot_debounced_message(
             and is_campaign_or_interest_entry(combined_content)
         )
         if first_contact_greeting:
-            from app.orchestrators.knowledge_orchestrator import GREETING_REPLY
-
+            from app.orchestrators.knowledge_orchestrator import GREETING_REPLY, greeting_reply_for_facts
+            _has_funnel_data = any(
+                k.startswith(("candidate.", "license.", "medical.", "documents.", "experience."))
+                and k not in {"candidate.vacancy_accepted", "location.is_local_laguna"}
+                for k in _current_turn_facts
+            )
+            _greeting_text = (
+                greeting_reply_for_facts(_current_turn_facts) if _has_funnel_data else GREETING_REPLY
+            )
             result.update(
                 {
-                    "reply": GREETING_REPLY,
-                    "text": GREETING_REPLY,
+                    "reply": _greeting_text,
+                    "text": _greeting_text,
                     "selected_route": "profile",
                     "route": "profile",
                     "intent": "greeting",
