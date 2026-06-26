@@ -1064,7 +1064,10 @@ async def chatwoot_webhook(
                     resp.raise_for_status()
                     audio_bytes = resp.content
                 # filename con extensión para que Whisper detecte el codec
+                # .oga (WhatsApp) no está en la lista de Groq; se normaliza a .ogg (mismo codec)
                 fname = _audio_url.split("?")[0].split("/")[-1] or "audio.ogg"
+                if fname.endswith(".oga"):
+                    fname = fname[:-4] + ".ogg"
                 transcribed_text = await asyncio.to_thread(
                     call_groq_transcribe, audio_bytes, fname
                 )
