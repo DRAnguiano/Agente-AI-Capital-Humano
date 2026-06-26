@@ -2,11 +2,9 @@
 
 ### Requirement: Normalización de alias coloquiales ZML en la extracción de ciudad
 
-Después de que el LLM o el catálogo devuelven un valor crudo para `candidate.city`, el sistema
-SHALL aplicar `normalize_zm_laguna_city` antes de persistir el hecho.
-Si el valor crudo es un alias coloquial del catálogo ZML, SHALL almacenarse el nombre canónico,
-no el alias.
-Esta normalización SHALL aplicarse tanto en `turn_extractor.py` como en `intent_classifier.py`.
+El sistema SHALL aplicar `normalize_zm_laguna_city` al valor crudo de `candidate.city` antes de persistirlo,
+tanto en `turn_extractor.py` como en `intent_classifier.py`. Si el valor crudo es un alias coloquial
+del catálogo ZML, SHALL almacenarse el nombre canónico, no el alias.
 
 #### Scenario: "lerdito" se almacena como "Lerdo"
 
