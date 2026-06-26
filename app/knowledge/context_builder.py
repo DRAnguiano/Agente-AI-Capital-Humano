@@ -46,13 +46,27 @@ def _get_cached_collection():
     return _COLLECTION_CACHE
 
 
-def _source_where(preferred_sources: list[str]) -> dict[str, Any] | None:
-    clean = [str(item).strip() for item in preferred_sources or [] if str(item).strip()]
-    if not clean:
-        return None
-    if len(clean) == 1:
-        return {"source": clean[0]}
-    return {"source": {"$in": clean}}
+# Extensiones de archivo de corpus conocidas; el emparejamiento de fuente las
+# ignora para casar un `preferred_source` del grafo (sin extensión) con el
+# `source` indexado (con extensión).
+_KNOWN_SOURCE_EXTS = (".md", ".markdown", ".txt")
+
+
+def _source_stem(value: Any) -> str:
+    """Normaliza un nombre de fuente a su *stem* para emparejar sin importar
+    extensión (.md/.markdown/.txt) ni prefijo de ruta. Devuelve "" si vacío.
+
+    Un `preferred_source` del grafo ("01_pago_prestaciones") y el `source`
+    indexado ("01_pago_prestaciones.md") deben colapsar al mismo stem.
+    """
+    s = str(value or "").strip().lower()
+    if not s:
+        return ""
+    s = s.replace("\\", "/").rsplit("/", 1)[-1]  # basename, sin prefijo de ruta
+    for ext in _KNOWN_SOURCE_EXTS:
+        if s.endswith(ext):
+            return s[: -len(ext)]
+    return s
 
 
 def _score_from_distance(distance: Any) -> float:
@@ -188,21 +202,23 @@ def retrieve_preferred_context(
     max_context_chars = settings.RAG_MAX_CONTEXT_CHARS
     max_chars_per_doc = settings.RAG_MAX_CHARS_PER_DOC
     source_filter = [str(item).strip() for item in preferred_sources or [] if str(item).strip()]
+    # Allowlist por stem: empareja sin importar extensión/ruta (fuentes del grafo
+    # vienen sin .md y no casarían con el `source` indexado por igualdad exacta).
+    source_stems = {stem for s in source_filter if (stem := _source_stem(s))}
 
     try:
         collection = _get_cached_collection()
         query_embedding = _embed_texts([query])[0]
-        where = _source_where(source_filter)
+        # El filtrado por fuente se hace en Python por stem (Chroma sólo admite
+        # igualdad exacta); cuando hay filtro recuperamos más candidatos para que,
+        # tras descartar fuentes no preferidas, queden al menos `requested_k`.
+        query_n = max(requested_k * 8, 24) if source_stems else requested_k
 
-        query_kwargs: dict[str, Any] = {
-            "query_embeddings": [query_embedding],
-            "n_results": requested_k,
-            "include": ["documents", "distances", "metadatas"],
-        }
-        if where:
-            query_kwargs["where"] = where
-
-        results = collection.query(**query_kwargs)
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=query_n,
+            include=["documents", "distances", "metadatas"],
+        )
     except Exception as exc:
         return {
             "items": [],
@@ -225,7 +241,9 @@ def retrieve_preferred_context(
         score = _score_from_distance(distance)
         if score < min_score:
             continue
-        if source_filter and source not in source_filter:
+        # Allowlist por stem (insensible a extensión/ruta): el item entra sólo si
+        # su fuente está entre las preferidas; nunca por defecto.
+        if source_stems and _source_stem(source) not in source_stems:
             continue
         items.append(
             {

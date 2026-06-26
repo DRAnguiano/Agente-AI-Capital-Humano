@@ -88,8 +88,10 @@ UNWIND [
 MERGE (topic:Topic {id: row.id});
 
 // `filename` = nombre de archivo real en data/ (el `source` que Chroma indexa). Los
-// preferred_sources se devuelven como filename para casar con `_source_where`; el `id` de
-// política se conserva para las referencias internas (ReplyTemplate/Topic).
+// preferred_sources se devuelven como filename; el emparejamiento con el `source`
+// indexado es por *stem* (`_source_stem` en context_builder), insensible a extensión,
+// así que aunque caiga al `id` sin .md sigue casando. El `id` de política se conserva
+// para las referencias internas (ReplyTemplate/Topic).
 UNWIND [
   {id:'payment_policy', kind:'rag_document', filename:'01_pago_prestaciones.md'},
   {id:'requirements_policy', kind:'rag_document', filename:'02_documentos_requisitos.md'},
