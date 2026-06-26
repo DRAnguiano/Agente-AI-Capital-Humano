@@ -284,6 +284,7 @@ def build_generation_prompt(
     message: str,
     knowledge_contract: dict[str, Any],
     context_text: str,
+    residency_note: str = "",
 ) -> str:
     policies = knowledge_contract.get("policies") or []
     policy_text = "\n".join(
@@ -291,6 +292,10 @@ def build_generation_prompt(
     ) or "- No prometas contratación, sueldo exacto ni condiciones no confirmadas."
 
     preferred_sources = ", ".join(knowledge_contract.get("preferred_sources") or []) or "N/D"
+
+    residency_block = (
+        f"\nDATOS DETERMINISTAS DEL SISTEMA:\n{residency_note}\n" if residency_note else ""
+    )
 
     return f"""
 Eres Mundo, del equipo de reclutamiento de Transmontes.
@@ -304,7 +309,7 @@ CONTEXTO DE CONTROL DESDE NEO4J:
 
 POLÍTICAS A RESPETAR:
 {policy_text}
-
+{residency_block}
 CONTEXTO INTERNO RECUPERADO:
 {context_text or 'No se encontró contexto interno suficiente.'}
 
@@ -319,6 +324,8 @@ INSTRUCCIONES:
 5. Si el contexto ya tiene el dato, respóndelo directo. Si genuinamente no lo tienes, di que el equipo lo confirma o que llamen a oficina.
 6. No inventes pagos, prestaciones, rutas, requisitos, horarios ni condiciones. No prometas contratación.
 7. Responde en español natural, breve y profesional. No cierres con frases genéricas tipo "si tienes otra duda" o "estoy aquí para ayudarte".
+8. RESIDENCIA: nunca clasifiques al candidato como local o foráneo por tu cuenta ni lo deduzcas del nombre de su ciudad. Usa SOLO la clasificación de "DATOS DETERMINISTAS DEL SISTEMA". Si no hay ese dato, no afirmes residencia ni qué documentos aplican por residencia.
+9. HORARIO: si "DATOS DETERMINISTAS DEL SISTEMA" indica que es horario de atención, NO sugieras que el candidato llame ni que agende una llamada; di que nuestro equipo lo contactará. Solo fuera del horario de atención puedes referir a llamar a oficina (8:00–17:30 hrs).
 
 RESPUESTA (informa, no preguntes):
 """.strip()

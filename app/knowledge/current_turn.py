@@ -31,7 +31,45 @@ def _profile_complete_closing() -> str:
 
 
 from app.knowledge.geo_utils import normalize_zm_laguna_city, is_zm_laguna_canonical
-LOCAL_LAGUNA = ["torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"]  # legacy: kept for compat
+
+
+def residency_is_local(facts: dict[str, Any]) -> bool:
+    """Fuente ÚNICA de residencia local/foránea: el catálogo ZM Laguna.
+
+    Usa la señal canónica ``location.is_local_laguna`` (derivada del catálogo
+    aguas arriba) y, como respaldo robusto cuando esa señal no fue computada
+    (p. ej. en la ruta del orquestador), evalúa la ciudad directamente contra
+    el catálogo. No se usan listas de ciudades hardcodeadas.
+    """
+    if facts.get("location.is_local_laguna") == "true":
+        return True
+    # Normaliza alias coloquial → canónico antes de evaluar (p. ej. "Chávez" →
+    # Francisco I. Madero), para no depender de que la ciudad ya venga normalizada.
+    city = normalize_zm_laguna_city(facts.get("candidate.city") or "")
+    return is_zm_laguna_canonical(city)
+
+
+def residency_document_question(facts: dict[str, Any]) -> str:
+    """Pregunta de documento laboral según residencia (regla de dominio única).
+
+    Local ZM Laguna → acepta semanas cotizadas del IMSS; foráneo → 2 cartas
+    laborales membretadas. Si el candidato ya negó tener cartas
+    (``documents.proof == "ninguno"``) ofrece la alternativa local o cierra sin
+    loop para foráneo. Voz de equipo (sin "Capital Humano" como tercero).
+    """
+    is_local = residency_is_local(facts)
+    proof = facts.get("documents.proof")
+    if proof == "ninguno":
+        if is_local:
+            return "¿Cuenta con su documento de semanas cotizadas del IMSS?"
+        return (
+            "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
+            "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para que "
+            "nuestro equipo le indique opciones al contactarle."
+        )
+    if is_local:
+        return "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?"
+    return "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?"
 
 from app.settings import AGE_DISQUALIFICATION_LIMIT as AGE_LIMIT_EXCLUSIVE
 RENEWAL_PROOF_QUESTION = (
@@ -456,25 +494,8 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if not facts.get("experience.years"):
         return "Perfecto. ¿Cuántos años de experiencia tiene como operador?"
     if not _has_labor_document(facts):
-        # 2.5: documento por residencia (local ZM Laguna acepta IMSS; foráneo exige membretadas)
-        is_local = facts.get("location.is_local_laguna") == "true" or (
-            normalize_text(facts.get("candidate.city") or "") in LOCAL_LAGUNA
-        )
-        _proof = facts.get("documents.proof")
-        # P0-2: candidato negó tener cartas — ofrecer alternativa o cerrar sin loop
-        if _proof == "ninguno":
-            if is_local:
-                return "¿Cuenta con su documento de semanas cotizadas del IMSS?"
-            else:
-                return (
-                    "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
-                    "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para que "
-                    "Capital Humano le indique opciones al contactarle."
-                )
-        if is_local:
-            return "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?"
-        else:
-            return "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?"
+        # 2.5: documento por residencia — regla de dominio única (incl. P0-2 proof=ninguno)
+        return residency_document_question(facts)
     return _profile_complete_closing()
 
 

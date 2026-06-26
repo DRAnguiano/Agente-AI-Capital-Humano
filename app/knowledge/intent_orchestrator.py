@@ -28,14 +28,34 @@ def _has(facts: dict[str, Any], key: str) -> bool:
     return bool(facts.get(key))
 
 
-_LOCAL_LAGUNA = {"torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"}
-
-
 def _is_local(facts: dict[str, Any]) -> bool:
+    # Fuente única de residencia: catálogo ZM Laguna (sin listas hardcodeadas).
     if facts.get("location.is_local_laguna") == "true":
         return True
-    from app.knowledge.text_normalizer import normalize_text
-    return normalize_text(facts.get("candidate.city") or "") in _LOCAL_LAGUNA
+    from app.knowledge.geo_utils import is_zm_laguna_canonical, normalize_zm_laguna_city
+    city = normalize_zm_laguna_city(facts.get("candidate.city") or "")
+    return is_zm_laguna_canonical(city)
+
+
+def _residency_prompt_note(facts: dict[str, Any] | None) -> str:
+    """Nota determinista de residencia para inyectar al prompt RAG/LLM.
+
+    Si hay ciudad o señal `location.is_local_laguna`, entrega la clasificación
+    ya resuelta (local/foráneo) desde el catálogo. Si no hay dato, instruye al
+    LLM a no afirmar residencia. Evita que el LLM deduzca "foráneo" del nombre
+    crudo de una ciudad que sí es local (p. ej. Chávez → Francisco I. Madero).
+    """
+    facts = facts or {}
+    city = (facts.get("candidate.city") or "").strip()
+    has_signal = facts.get("location.is_local_laguna") in {"true", "false"} or bool(city)
+    if not has_signal:
+        return (
+            "Residencia del candidato: SIN DETERMINAR. No afirmes si es local o "
+            "foráneo, ni qué documentos aplican por residencia."
+        )
+    estado = "LOCAL de la ZM Laguna (Comarca Lagunera)" if _is_local(facts) else "FORÁNEO"
+    ubic = f" (ciudad declarada: {city})" if city else ""
+    return f"Residencia del candidato: {estado}{ubic}."
 
 
 def _vehicle_type_question(facts: dict[str, Any]) -> str:
@@ -168,7 +188,9 @@ _MEMORY_CONFLICT_REPLY = (
 _NO_FUNNEL_SIGNALS = {"greeting", "on_route", "farewell", "dropoff", "out_of_scope", "complaint", "reingreso"}
 
 
-def _generate_rag_answer(question: dict[str, Any], message: str) -> tuple[str, bool]:
+def _generate_rag_answer(
+    question: dict[str, Any], message: str, facts: dict[str, Any] | None = None
+) -> tuple[str, bool]:
     """Genera la respuesta a una pregunta usando el RAG existente.
 
     Devuelve (texto, derive_to_human). Fase 5.2, fail-closed: para intents con
@@ -177,6 +199,9 @@ def _generate_rag_answer(question: dict[str, Any], message: str) -> tuple[str, b
     inventa: deriva a Capital Humano con el handoff genérico. Los demás intents
     RAG conservan el fallback telefónico.
     """
+    from app.knowledge.business_hours import is_business_hours
+
+    en_horario = is_business_hours()
     conditional = bool(question.get("requires_human_if_no_authorized_source"))
     context = retrieve_preferred_context(
         message, preferred_sources=question.get("preferred_sources") or []
@@ -184,6 +209,10 @@ def _generate_rag_answer(question: dict[str, Any], message: str) -> tuple[str, b
     if not context.get("items"):
         if conditional:
             return _HANDOFF_REPLY, True
+        # Política de horario: en horario el equipo confirma (no se pide llamar);
+        # fuera de horario se refiere a llamar a oficina.
+        if en_horario:
+            return ("Ese dato lo confirma nuestro equipo; lo dejo anotado para que se lo verifiquen.", False)
         return ("Para ese dato le recomiendo llamarnos de 8:00 a 17:30 hrs y se lo confirmamos.", False)
 
     contract = {
@@ -194,10 +223,17 @@ def _generate_rag_answer(question: dict[str, Any], message: str) -> tuple[str, b
         "preferred_sources": question.get("preferred_sources") or [],
         "policies": [],
     }
+    hours_note = (
+        "Horario de atención: ACTIVO (hay personal). El equipo contacta al candidato."
+        if en_horario
+        else "Horario de atención: FUERA DE HORARIO. Puede referir a llamar a oficina (8:00–17:30)."
+    )
+    system_facts_note = f"{_residency_prompt_note(facts)}\n{hours_note}"
     prompt = build_generation_prompt(
         message=message,
         knowledge_contract=contract,
         context_text=context.get("context_text") or "",
+        residency_note=system_facts_note,
     )
     answer = (call_llm(prompt) or "").strip()
     if conditional and not answer:
@@ -251,7 +287,7 @@ def plan_and_respond(
     # 2. Responder preguntas (RAG) — prioriza la primera; ofrece la segunda
     if questions:
         action_order.append("answer_primary_question")
-        answer_text, derive_to_human = _generate_rag_answer(questions[0], message)
+        answer_text, derive_to_human = _generate_rag_answer(questions[0], message, merged)
         # Fase 5.2 — fail-closed: intent condicional sin fuente autorizada (o sin
         # generación). No inventar; derivar a Capital Humano y cortar como handoff
         # (sin encimar pregunta de funnel sobre la derivación).

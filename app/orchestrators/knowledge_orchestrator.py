@@ -75,7 +75,7 @@ def greeting_reply_for_facts(current_turn_facts: dict) -> str:
         return (
             _GREETING_INTRO
             + "Con los datos que me compartió, su perfil está listo. "
-            "En breve el equipo de Capital Humano le contactará."
+            "En breve nuestro equipo le contactará."
         )
     return _GREETING_INTRO + next_q
 
@@ -306,7 +306,18 @@ def _resolve_embedded_question(
         if not questions:
             return None
         q = questions[0]
-        answer_text, derive = _generate_rag_answer(q, message)
+        # Inyecta la residencia determinista (catálogo ZM Laguna) para que el LLM
+        # no deduzca local/foráneo del nombre crudo de la ciudad. Combina los facts
+        # persistidos con los extraídos en este mismo turno (mensaje compuesto).
+        _rag_facts = {
+            f"{row['fact_group']}.{row['fact_key']}": row['fact_value']
+            for row in ((lead_memory or {}).get("facts") or [])
+            if isinstance(row, dict) and row.get("fact_group") and row.get("fact_key")
+        }
+        for _ans in (enriched.get("answers_to_persist") or []):
+            if _ans.get("field") and _ans.get("value") is not None:
+                _rag_facts[str(_ans["field"])] = str(_ans["value"])
+        answer_text, derive = _generate_rag_answer(q, message, _rag_facts)
         if not answer_text:
             return None
         return {
@@ -1566,7 +1577,7 @@ def _build_funnel_nudge(
     except (ValueError, ImportError):
         pass
 
-    _LOCAL_LAGUNA = {"torreon", "torreon coahuila", "gomez palacio", "lerdo", "matamoros"}
+    from app.knowledge.current_turn import residency_document_question
 
     # Leer último mensaje del bot (necesario para BUG-2 y BUG-3)
     _last_bot = ""
@@ -1625,34 +1636,14 @@ def _build_funnel_nudge(
         # 2.5 / P0-2: document question by residency; skip if candidate already answered
         if step["keys"] == {"documents.labor_letters_status"}:
             _proof = active_facts.get("documents.proof")
-            # Si ya hay un proof (positivo o "ninguno") el paso está resuelto → no nudge
+            # Si ya hay un proof positivo el paso está resuelto → no nudge
             if _proof in {"cartas", "semanas_imss", "sí", "si"}:
                 continue
-            city_norm = normalize_text(active_facts.get("candidate.city") or "")
-            is_local = active_facts.get("location.is_local_laguna") == "true" or city_norm in _LOCAL_LAGUNA
-            if _proof == "ninguno":
-                if is_local:
-                    return (
-                        "¿Cuenta con su documento de semanas cotizadas del IMSS?",
-                        _canonical_asked_keys(step["keys"]),
-                    )
-                else:
-                    return (
-                        "Para candidatos foráneos necesitamos 2 cartas laborales membretadas. "
-                        "Si consigue ese documento, con gusto retomamos. Lo dejo anotado para "
-                        "que Capital Humano le indique opciones al contactarle.",
-                        _canonical_asked_keys(step["keys"]),
-                    )
-            if is_local:
-                return (
-                    "¿Cuenta con cartas laborales o semanas cotizadas del IMSS?",
-                    _canonical_asked_keys(step["keys"]),
-                )
-            else:
-                return (
-                    "¿Cuenta con 2 cartas laborales membretadas de sus empleos anteriores?",
-                    _canonical_asked_keys(step["keys"]),
-                )
+            # Regla de dominio única (residencia desde catálogo, incl. proof=ninguno)
+            return (
+                residency_document_question(active_facts),
+                _canonical_asked_keys(step["keys"]),
+            )
         return random.choice(step["variants"]), _canonical_asked_keys(step["keys"])
 
     return None, []  # All profile fields covered — no nudge needed
@@ -1775,7 +1766,7 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         if _has_be or _has_tramite:
             _esc_acuse = (
                 f"Gracias por compartir su experiencia. Con licencia tipo {_lic_now}, "
-                "Capital Humano revisará si hay generación disponible para Escuelita Transmontes. "
+                "nuestro equipo revisará si hay generación disponible para Escuelita Transmontes. "
                 "Lo dejo canalizado para que lo contacten."
             )
             contract = dict(contract)

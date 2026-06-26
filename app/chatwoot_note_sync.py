@@ -5,7 +5,6 @@ import httpx
 
 from .db import get_conn
 from .knowledge.business_route_schema import VALID_VEHICLE_TYPES
-from .knowledge.current_turn import LOCAL_LAGUNA
 from .knowledge.geo_utils import is_zm_laguna_canonical
 from .knowledge.text_normalizer import normalize_text
 

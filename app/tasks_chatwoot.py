@@ -125,7 +125,7 @@ def _maybe_prepend_first_reply_intro(
 
     intro = os.getenv(
         "ASSISTANT_PUBLIC_INTRO",
-        "Hola, soy Mundo, asistente de Capital Humano.",
+        "Hola, soy Mundo, del equipo de reclutamiento de Transmontes.",
     ).strip()
 
     if not intro:
