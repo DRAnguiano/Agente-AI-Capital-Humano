@@ -187,6 +187,34 @@ def _has_labor_document(facts: dict[str, Any]) -> bool:
     )
 
 
+def canonicalize_proof(value: Any) -> str | None:
+    """Normaliza cualquier valor de ``documents.proof`` al vocabulario canónico
+    ``{"cartas" | "semanas_imss" | "ninguno"}`` antes de persistir.
+
+    El contrato del extractor pide estos valores, pero el LLM a veces devuelve
+    texto libre ("cartas laborales", "semanas del IMSS"); sin esto, los
+    consumidores deterministas (``_has_labor_document``) no lo reconocen y el
+    paso documental nunca cierra (loop de re-pregunta). Devuelve ``None`` cuando
+    el valor no es mapeable, para no persistir texto crudo."""
+    if value is None:
+        return None
+    v = normalize_text(str(value)).strip()
+    if not v:
+        return None
+    if v in {"cartas", "semanas_imss", "ninguno"}:
+        return v
+    # Negaciones explícitas → ninguno
+    if any(t in v for t in ("ninguno", "ninguna", "no tengo", "no cuento", "sin ")):
+        return "ninguno"
+    # Semanas cotizadas del IMSS
+    if "imss" in v or "semanas" in v or "cotizad" in v:
+        return "semanas_imss"
+    # Cartas laborales / membretadas / documento laboral
+    if any(t in v for t in ("carta", "membret", "documento laboral", "documentos laborales", "laboral")):
+        return "cartas"
+    return None
+
+
 # Detect the topic of the last bot question for context-aware "si" interpretation
 # Señal estructural de pregunta cuantitativa embebida: "cuántas necesita",
 # "cuánto pagan", etc. OR-fallback para cuando TIPC no clasifica has_embedded_question.
@@ -378,7 +406,7 @@ def extract_current_turn_facts(message: str | None, last_bot_message: str | None
     raw_city = facts.get("candidate.city") or ""
     if raw_city:
         facts["candidate.city"] = normalize_zm_laguna_city(raw_city)
-    facts["location.is_local_laguna"] = is_zm_laguna_canonical(facts.get("candidate.city") or "")
+    facts["location.is_local_laguna"] = "true" if is_zm_laguna_canonical(facts.get("candidate.city") or "") else "false"
 
     return facts
 

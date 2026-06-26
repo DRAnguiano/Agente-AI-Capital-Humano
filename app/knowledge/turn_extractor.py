@@ -177,6 +177,13 @@ def extract_turn(
     }
     if "candidate.city" in fields and fields["candidate.city"].value:
         fields["candidate.city"].value = normalize_zm_laguna_city(fields["candidate.city"].value)
+    if "documents.proof" in fields and fields["documents.proof"].value:
+        from app.knowledge.current_turn import canonicalize_proof
+        _proof_canon = canonicalize_proof(fields["documents.proof"].value)
+        if _proof_canon is None:
+            del fields["documents.proof"]  # no mapeable → no persistir texto crudo
+        else:
+            fields["documents.proof"].value = _proof_canon
     embedded = data.get("embedded_question") or None
     return TurnExtraction(
         fields=fields,

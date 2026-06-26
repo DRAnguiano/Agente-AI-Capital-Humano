@@ -79,6 +79,21 @@ def greeting_reply_for_facts(current_turn_facts: dict) -> str:
         )
     return _GREETING_INTRO + next_q
 
+def _greeting_followup_question(lead_memory: dict[str, Any]) -> str:
+    """Siguiente dato del funnel SIN el intro de saludo de Mundo.
+
+    Se usa cuando, en primer contacto, el mensaje trae una pregunta embebida cuya
+    respuesta ya saluda: evita repetir "Hola, soy Mundo…" dos veces (F1). Si no
+    queda nada por preguntar, devuelve cadena vacía (la respuesta embebida basta)."""
+    known = {
+        f"{row['fact_group']}.{row['fact_key']}": str(row["fact_value"])
+        for row in (lead_memory.get("facts") or [])
+        if row.get("fact_value")
+    }
+    from app.knowledge.current_turn import next_question_from_missing_facts
+    return next_question_from_missing_facts(known) or ""
+
+
 def _greeting_reply(lead_memory: dict[str, Any]) -> str:
     """Primera visita → GREETING_REPLY completo. Candidato que regresa → ack corto + siguiente campo."""
     known: dict[str, str] = {
@@ -1142,11 +1157,20 @@ def _store_lead_memory_updates(
     if pre_validated_facts is not None:
         for pf in pre_validated_facts:
             try:
+                _fval = str(pf["fact_value"])
+                # Canonicaliza documents.proof en el límite de persistencia (todas
+                # las rutas): el contrato es {cartas|semanas_imss|ninguno}.
+                if pf["fact_group"] == "documents" and pf["fact_key"] == "proof":
+                    from app.knowledge.current_turn import canonicalize_proof
+                    _canon = canonicalize_proof(_fval)
+                    if _canon is None:
+                        continue  # no mapeable → no persistir texto crudo
+                    _fval = _canon
                 upsert_lead_fact(
                     lead_key=lead_key,
                     fact_group=pf["fact_group"],
                     fact_key=pf["fact_key"],
-                    fact_value=str(pf["fact_value"]),
+                    fact_value=_fval,
                     confidence=float(pf.get("confidence") or 0.8),
                     source_message_id=source_message_id,
                     source_text=message,
@@ -1866,7 +1890,12 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         reply = friendly_result["reply"]
     elif contract.get("intent") == "greeting":
         # 2.3: candidato que regresa recibe ack corto + siguiente campo; primer turno → presentación completa
-        reply = _greeting_reply(lead_memory_before)
+        # F1: si el mensaje trae pregunta embebida (no derivada), su respuesta ya saluda;
+        # el saludo se reduce al siguiente dato del funnel para no duplicar el intro de Mundo.
+        if embedded_question and not embedded_question["derive_to_human"]:
+            reply = _greeting_followup_question(lead_memory_before)
+        else:
+            reply = _greeting_reply(lead_memory_before)
     elif contract.get("intent") == "candidate_profile_signal":
         ack = _build_profile_ack_reply(message)
         if ack:
@@ -1884,8 +1913,12 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     if embedded_question:
         if embedded_derived:
             reply = embedded_question["answer"]
-        else:
+        elif reply:
             reply = f'{embedded_question["answer"]}\n\n{reply}'
+        else:
+            # Saludo reducido a vacío (perfil completo o nada que preguntar): la
+            # respuesta embebida es el reply completo, sin "\n\n" colgando.
+            reply = embedded_question["answer"]
 
     # Append one funnel profiling question after RAG, friendly, or profile ack.
     # Capture which canonical field(s) the nudge asked about (passive metadata).

@@ -419,8 +419,10 @@ def process_chatwoot_debounced_message(
         _raw_city = _current_turn_facts.get("candidate.city") or ""
         if _raw_city:
             _current_turn_facts["candidate.city"] = normalize_zm_laguna_city(_raw_city)
-        _current_turn_facts["location.is_local_laguna"] = is_zm_laguna_canonical(
-            _current_turn_facts.get("candidate.city") or ""
+        _current_turn_facts["location.is_local_laguna"] = (
+            "true"
+            if is_zm_laguna_canonical(_current_turn_facts.get("candidate.city") or "")
+            else "false"
         )
 
         result = run_hr_graph_message(
