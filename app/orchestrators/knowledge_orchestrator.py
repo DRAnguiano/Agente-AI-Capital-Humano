@@ -199,11 +199,13 @@ def _clean_reply(text: str) -> str:
     return clean_reply(text)
 
 
-# ── Humor LLM con barda (decisión 2026-06-12) ────────────────────────────────
-# El Term smalltalk_joke detecta el chiste de forma determinista; la respuesta
-# la genera el LLM bajo reglas estrictas. La plantilla del seed es el FALLBACK
-# si el LLM falla, devuelve vacío o el chiste viola la barda. El puente al
-# funnel lo agrega el código (no el modelo) para que sea idéntico siempre.
+# ── Humor LLM con barda (decisión 2026-06-12; debanking 2026-06-24) ──────────
+# El Term smalltalk_joke detecta el chiste de forma determinista; el chiste lo
+# genera el LLM (variado) bajo reglas estrictas. NO hay banco de chistes: si el
+# LLM falla, devuelve vacío o el chiste viola la barda, se OMITE con cortesía
+# (no se repite un chiste enlatado, que reintroduciría el tono robótico —
+# ver memoria feedback-llm-generated-variety). El puente al funnel lo agrega el
+# código (transición determinista, no contenido) para retomar la pregunta.
 
 _JOKE_PROMPT = (
     "Eres Mundo, asistente de reclutamiento de Transmontes. Cuenta UN chiste "
@@ -216,8 +218,12 @@ _JOKE_PROMPT = (
 
 _JOKE_BRIDGE = "🚛 Ahora sí, seguimos con su registro."
 
+# Omisión cortés cuando el LLM no puede entregar un chiste seguro. NO es un
+# chiste: es un puente al funnel para no repetir contenido enlatado.
+_JOKE_SKIP = f"Mejor sigamos avanzando, que para eso estamos. {_JOKE_BRIDGE}"
+
 # Términos vetados (sobre texto normalizado): si el chiste generado toca
-# cualquiera, se usa el fallback determinista del seed.
+# cualquiera, se OMITE el chiste (validador de seguridad, no banco de contenido).
 _JOKE_BANNED = (
     "drog", "alcohol", "cerveza", "borrach", "muert", "accident", "choc",
     "sexo", "sexual", "albur", "desnud", "matar", "pistol", "narco",
@@ -225,16 +231,19 @@ _JOKE_BANNED = (
 )
 
 
-def _generate_joke_reply(fallback: str) -> str:
+def _generate_joke_reply() -> str:
+    """El chiste lo genera el LLM (variado). Si falla, devuelve vacío, no cumple
+    longitud o viola la barda, se OMITE con cortesía sin repetir un chiste
+    almacenado (ver memoria feedback-llm-generated-variety)."""
     try:
         joke = (call_llm(_JOKE_PROMPT) or "").strip().strip('"').strip()
     except Exception:
-        return fallback
+        return _JOKE_SKIP
     if not (10 <= len(joke) <= 240):
-        return fallback
+        return _JOKE_SKIP
     normalized = normalize_text(joke)
     if any(term in normalized for term in _JOKE_BANNED):
-        return fallback
+        return _JOKE_SKIP
     return f"{joke} {_JOKE_BRIDGE}"
 
 
@@ -243,7 +252,9 @@ def _controlled_reply_from_contract(contract: dict[str, Any]) -> str:
     if isinstance(template, dict) and template.get("text"):
         text = str(template["text"])
         if template.get("id") == "static_joke":
-            return _generate_joke_reply(fallback=text)
+            # El chiste lo genera el LLM (variado); el texto del seed ya no se
+            # sirve como chiste enlatado.
+            return _generate_joke_reply()
         return text
     if contract.get("requires_clarification"):
         return CONTROLLED_CLARIFICATION_REPLY

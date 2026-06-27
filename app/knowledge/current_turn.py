@@ -602,18 +602,31 @@ def _join_ack_and_question(prefix: str, question: str | None) -> str:
     return f"{prefix} {question}".strip()
 
 
-def build_current_turn_ack(
+def current_turn_ack_parts(
     message: str | None,
     merged_facts: dict[str, Any] | None = None,
     last_bot_message: str | None = None,
     pre_current_facts: dict[str, Any] | None = None,
-) -> str:
+) -> tuple[str | None, str, str]:
+    """Descompone el ack del turno en sus partes deterministas.
+
+    Devuelve `(override, prefix, question)`:
+    - `override`: respuesta de política (p. ej. descarte por edad) que NO debe
+      decorarse; cuando no es None, es la respuesta completa.
+    - `prefix`: frases canónicas de confirmación (el bloque conversacional que la
+      capa controlada puede reescribir con tono).
+    - `question`: la siguiente pregunta canónica del funnel (siempre de Python).
+
+    Puro: no persiste ni decide estado. `build_current_turn_ack` delega aquí para
+    garantizar que el ack determinista y la capa de composición compartan exactamente
+    la misma lógica.
+    """
     current = pre_current_facts if pre_current_facts is not None else extract_current_turn_facts(message, last_bot_message)
     # Full profile for deciding what to ask next; only current turn for the ack prefix.
     facts = {**(merged_facts or {}), **current}
 
     if is_age_disqualified(facts):
-        return age_disqualification_reply(_to_int(facts.get("candidate.age")))
+        return age_disqualification_reply(_to_int(facts.get("candidate.age"))), "", ""
 
     # Frases de confirmación naturales por tipo de dato (P2-5)
     confirms = []
@@ -651,4 +664,18 @@ def build_current_turn_ack(
     else:
         prefix = "Gracias, lo dejo registrado."
 
-    return _join_ack_and_question(prefix, next_question_from_missing_facts(facts))
+    return None, prefix, (next_question_from_missing_facts(facts) or "")
+
+
+def build_current_turn_ack(
+    message: str | None,
+    merged_facts: dict[str, Any] | None = None,
+    last_bot_message: str | None = None,
+    pre_current_facts: dict[str, Any] | None = None,
+) -> str:
+    override, prefix, question = current_turn_ack_parts(
+        message, merged_facts, last_bot_message, pre_current_facts
+    )
+    if override is not None:
+        return override
+    return _join_ack_and_question(prefix, question)
