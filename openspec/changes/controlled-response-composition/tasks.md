@@ -56,13 +56,13 @@
 
 ## 8. Migración incremental
 
-- [ ] 8.1 Fase 0 (shadow): activar `KNOWLEDGE_RESPONSE_COMPOSER_SHADOW` en prod, recolectar `[COMPOSER_SHADOW]`. (Operacional — pendiente de despliegue.)
+- [x] 8.1 Fase 0 (shadow): `KNOWLEDGE_RESPONSE_COMPOSER_SHADOW=true` + `ENABLED=false` en prod desde 2026-06-24. Shadow NO bloqueante (hilo daemon) → cero latencia al candidato. Smoke-test en worker desplegado: candidato recibe determinista; `[COMPOSER_SHADOW]` se emite (ej. real: tono humor → guarda `fabricated_number` disparó, `composed:null`). Recolectando de tráfico real. (Operacional, ACTIVO.)
 - [ ] 8.2 Fase 1 (canary): activar `KNOWLEDGE_RESPONSE_COMPOSER_ENABLED` por subconjunto; criterio = tasa de fallback baja + QA de naturalidad. (Operacional.)
 - [ ] 8.3 Fase 2 (on): default ON; determinista como fallback permanente. (Operacional.)
 
 ## 9. Verificación y cierre
 
-- [ ] 9.1 `docker compose build worker api && docker compose up -d worker api`. (Outward — pendiente de OK del usuario.)
+- [x] 9.1 `docker compose build worker api && docker compose up -d worker api` (2026-06-24, OK del usuario). Ambos `Up`; flags confirmados en el worker; smoke-test del módulo desplegado OK. Despliega el código de la rama `feat/controlled-response-composition` (PR #5, sin merge a main aún).
 - [ ] 9.2 End-to-end por endpoint (casos 6.2, 6.3, 6.4, 6.8, 6.12) con user único; capturar request/respuesta. (Tras 9.1.)
 - [x] 9.3 Regresión verde: `test_response_composer.py` (18 passed, 3 xfailed), `TestHumorLLMConBarda` (8 passed), `test_reply_cleaner.py`, `test_friendly_grounding.py` + `test_route1_contextual.py` (53 passed). NOTA: 3 fallas preexistentes en `test_current_turn_ack.py` (`*_single_perfecto`, `*_experience_years_not_duplicated_as_age`) — fallan idéntico contra HEAD (probado con stash), ajenas a este cambio (tests esperan redacción de confirm vieja "20 años de experiencia"). El refactor de `build_current_turn_ack` es byte-idéntico.
 - [x] 9.4 `openspec validate controlled-response-composition --strict` → "Change is valid".
