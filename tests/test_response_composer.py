@@ -207,6 +207,22 @@ class TestValidadores:
         assert reason is None
 
 
+# ── 6. Modo shadow (no bloqueante) ───────────────────────────────────────────
+
+class TestShadow:
+    def test_shadow_devuelve_determinista(self, monkeypatch):
+        # Con SHADOW ON y ENABLED OFF el candidato SIEMPRE recibe el determinista.
+        monkeypatch.setenv("KNOWLEDGE_RESPONSE_COMPOSER_SHADOW", "1")
+        monkeypatch.setattr(RC, "call_llm", lambda _p: "Listo, tomé nota.")
+        rc = _rc()
+        assert compose_reply(rc) == rc.deterministic_ack
+
+    def test_shadow_run_loguea_sin_excepcion(self, monkeypatch, capsys):
+        monkeypatch.setattr(RC, "call_llm", lambda _p: "Listo, tomé nota.")
+        RC._shadow_run(_rc())  # core síncrono del shadow
+        assert "[COMPOSER_SHADOW]" in capsys.readouterr().out
+
+
 # ── 7. Límites reales declarados (xfail) ─────────────────────────────────────
 
 class TestLimitesReales:

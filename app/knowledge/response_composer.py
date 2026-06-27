@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -248,8 +249,16 @@ def compose_reply(rc: ResponseComposition) -> str:
 
 
 def _shadow(rc: ResponseComposition) -> None:
-    """Modo shadow: genera y loguea la versión compuesta sin enviarla (QA de
-    naturalidad), conservando el determinista de cara al candidato."""
+    """Modo shadow NO bloqueante: lanza la generación+log en un hilo daemon para
+    QA de naturalidad SIN añadir latencia a la respuesta del candidato (que recibe
+    el determinista de inmediato). Fire-and-forget; cualquier fallo se traga."""
+    try:
+        threading.Thread(target=_shadow_run, args=(rc,), daemon=True).start()
+    except Exception:
+        pass
+
+
+def _shadow_run(rc: ResponseComposition) -> None:
     started = time.perf_counter()
     try:
         block, reason = _validate_ack_block(_generate_ack_block(rc), rc)
