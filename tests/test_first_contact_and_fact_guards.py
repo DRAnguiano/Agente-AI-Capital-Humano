@@ -350,41 +350,55 @@ class TestPreguntaDeCartas:
         assert CT.has_embedded_business_question("cuantas cartas piden") is True
 
 
-# ── 9. Humor LLM con barda (fallback determinista del seed) ───────────────────
+# ── 9. Humor LLM con barda (chiste generado por LLM; sin banco enlatado) ──────
+# debanking 2026-06-24 (memoria feedback-llm-generated-variety): el chiste lo
+# genera el LLM; si falla, se OMITE con cortesía, NO se sirve un chiste guardado.
 
-FALLBACK_JOKE = "Va uno rapidito: ¿por qué los traileros no juegan a las escondidas? Porque siempre los hallan en su ruta. 🚛 Ahora sí, seguimos con su registro."
+STORED_JOKE = "Va uno rapidito: ¿por qué los traileros no juegan a las escondidas? Porque siempre los hallan en su ruta. 🚛 Ahora sí, seguimos con su registro."
 
 
 class TestHumorLLMConBarda:
     def test_chiste_valido_lleva_puente(self, monkeypatch):
         monkeypatch.setattr(KO, "call_llm", lambda prompt: "¿Qué le dijo un tracto a otro? Nos vemos en la báscula, compa.")
-        out = KO._generate_joke_reply(fallback=FALLBACK_JOKE)
+        out = KO._generate_joke_reply()
         assert out.endswith(KO._JOKE_BRIDGE)
         assert "báscula" in out
 
-    def test_llm_vacio_usa_fallback(self, monkeypatch):
+    def test_llm_vacio_omite_chiste(self, monkeypatch):
         monkeypatch.setattr(KO, "call_llm", lambda prompt: "")
-        assert KO._generate_joke_reply(fallback=FALLBACK_JOKE) == FALLBACK_JOKE
+        out = KO._generate_joke_reply()
+        assert out == KO._JOKE_SKIP
+        assert "escondidas" not in out  # no se filtra un chiste guardado
 
-    def test_llm_error_usa_fallback(self, monkeypatch):
+    def test_llm_error_omite_chiste(self, monkeypatch):
         def _boom(prompt):
             raise RuntimeError("timeout")
         monkeypatch.setattr(KO, "call_llm", _boom)
-        assert KO._generate_joke_reply(fallback=FALLBACK_JOKE) == FALLBACK_JOKE
+        assert KO._generate_joke_reply() == KO._JOKE_SKIP
 
-    def test_chiste_vetado_usa_fallback(self, monkeypatch):
+    def test_chiste_vetado_omite_chiste(self, monkeypatch):
         monkeypatch.setattr(KO, "call_llm", lambda prompt: "Un trailero borracho llegó a la báscula...")
-        assert KO._generate_joke_reply(fallback=FALLBACK_JOKE) == FALLBACK_JOKE
+        assert KO._generate_joke_reply() == KO._JOKE_SKIP
 
-    def test_chiste_kilometrico_usa_fallback(self, monkeypatch):
+    def test_chiste_kilometrico_omite_chiste(self, monkeypatch):
         monkeypatch.setattr(KO, "call_llm", lambda prompt: "x" * 400)
-        assert KO._generate_joke_reply(fallback=FALLBACK_JOKE) == FALLBACK_JOKE
+        assert KO._generate_joke_reply() == KO._JOKE_SKIP
 
     def test_template_static_joke_pasa_por_llm(self, monkeypatch):
         monkeypatch.setattr(KO, "call_llm", lambda prompt: "¿Cuál es el colmo de un trailero? Que su novia lo traiga cortito.")
-        contract = {"reply_template": {"id": "static_joke", "text": FALLBACK_JOKE}}
+        contract = {"reply_template": {"id": "static_joke", "text": STORED_JOKE}}
         out = KO._controlled_reply_from_contract(contract)
         assert out.endswith(KO._JOKE_BRIDGE)
+
+    def test_template_static_joke_no_filtra_texto_guardado_en_fallo(self, monkeypatch):
+        # Si el LLM falla, el texto del seed NO debe servirse como chiste enlatado.
+        def _boom(prompt):
+            raise RuntimeError("timeout")
+        monkeypatch.setattr(KO, "call_llm", _boom)
+        contract = {"reply_template": {"id": "static_joke", "text": STORED_JOKE}}
+        out = KO._controlled_reply_from_contract(contract)
+        assert out == KO._JOKE_SKIP
+        assert "escondidas" not in out
 
     def test_otros_templates_no_pasan_por_llm(self, monkeypatch):
         def _boom(prompt):

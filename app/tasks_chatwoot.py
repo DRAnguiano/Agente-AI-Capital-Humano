@@ -500,10 +500,23 @@ def process_chatwoot_debounced_message(
                 or conversation_key_for_facts
             )
             merged_facts = {**saved_facts, **_current_turn_facts}
-            guarded_reply = build_current_turn_ack(
-                combined_content, merged_facts, last_bot_message,
-                pre_current_facts=_current_turn_facts,
+            # Capa de respuesta contextual controlada (Opción B): el LLM solo
+            # decora el prefijo de tono; Python conserva la pregunta canónica que
+            # produce build_current_turn_ack. Flag OFF (default) ⇒ ack determinista
+            # idéntico. Cualquier fallo del LLM cae al determinista.
+            # openspec/changes/controlled-response-composition
+            from app.knowledge.response_composer import (
+                build_response_composition,
+                compose_reply,
             )
+            _response_composition = build_response_composition(
+                combined_content,
+                merged_facts,
+                _current_turn_facts,
+                _pre_validated,
+                last_bot_message,
+            )
+            guarded_reply = compose_reply(_response_composition)
 
             # Persist current-turn facts so funnel doesn't re-ask
             if lead_key_for_ctx:
