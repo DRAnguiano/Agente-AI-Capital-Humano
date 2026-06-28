@@ -23,9 +23,17 @@ def _ctx(facts=None, requires_human=False, risk_level=None):
     }
 
 
+# Perfil COMPLETO según el funnel (gate de perfil_listo = funnel agotado): incluye
+# nombre, edad y vencimientos VÁLIDOS de licencia y apto, además de unidad, años y
+# documento. (Antes estos fixtures omitían name/age/vencimientos y dependían del
+# gate laxo —el bug que corrige funnel-objection-handling-and-ready-gating.)
 FULL_FACTS = {
+    "candidate.name": "Juan Pérez",
+    "candidate.age": "35",
     "license.category": "E",
+    "license.expiration_text": "vence en 2 años",
     "medical.apto_status": "vigente",
+    "medical.apto_expiration_text": "vence en 2 años",
     "experience.vehicle_type": "full",
     "experience.years": "10 años",
     "documents.labor_letters_status": "available",
@@ -34,8 +42,12 @@ FULL_FACTS = {
 }
 
 SENCILLO_FACTS = {
+    "candidate.name": "Juan Pérez",
+    "candidate.age": "35",
     "license.category": "E",
+    "license.expiration_text": "vence en 2 años",
     "medical.apto_status": "vigente",
+    "medical.apto_expiration_text": "vence en 2 años",
     "experience.vehicle_type": "sencillo",
     "experience.years": "8 años",
     "documents.labor_letters_status": "available",
@@ -634,8 +646,12 @@ def test_non_target_no_permite_perfil_listo():
 def test_perfil_listo_no_depende_de_disponible_acudir():
     """disponible_acudir no debe completar perfil_listo."""
     facts_sin_disponible = {
+        "candidate.name": "Juan Pérez",
+        "candidate.age": "35",
         "license.category": "E",
+        "license.expiration_text": "vence en 2 años",
         "medical.apto_status": "vigente",
+        "medical.apto_expiration_text": "vence en 2 años",
         "experience.vehicle_type": "full",
         "experience.years": "10 años",
         "documents.labor_letters_status": "available",

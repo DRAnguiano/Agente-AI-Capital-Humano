@@ -1,19 +1,19 @@
 ## 1. Fuente única de "funnel completo"
 
-- [ ] 1.1 Exponer `profile_funnel_complete(facts) -> bool` en `app/knowledge/current_turn.py`, equivalente a "`next_question_from_missing_facts` devolvería `_profile_complete_closing()`" (sin texto, solo el predicado). Reutiliza los mismos predicados ya existentes (years explícito + `_has_labor_document`).
-- [ ] 1.2 Verificación unitaria del helper: facts con unidad+licencia+apto+ciudad pero SIN years → `False`; con years pero SIN documento → `False`; completo → `True`.
+- [x] 1.1 `profile_funnel_complete(facts)` en `current_turn.py`, derivado de `_next_funnel_question_or_none` (fuente única; `next_question_from_missing_facts` también delega ahí → sin divergencia).
+- [x] 1.2 Unitarias en `tests/test_expiration_validation_and_ready_gating.py` (drop de cada campo núcleo → `False`; completo → `True`).
 
 ## 2. Endurecer el gate de `perfil_listo`
 
-- [ ] 2.1 En `app/chatwoot_note_sync.py:392-401` reemplazar la condición laxa por `profile_funnel_complete(facts)` (más las exclusiones de no-aptitud ya presentes: `has_non_target_experience`, `has_no_road_experience`, `has_reingreso`).
-- [ ] 2.2 Separar el uso de `has_experience` (329-334): sigue alimentando `falta_experiencia`/`documentos`, pero NO satisface el gate de listo (que exige `experience.years` explícito).
-- [ ] 2.3 Aplicar el mismo criterio en la ruta degradada `app/app.py:597-613` (usar el helper, no duplicar predicados).
-- [ ] 2.4 Confirmar que `perfil_listo` nunca se emite en un turno donde `next_question_from_missing_facts` aún devolvería pregunta (invariante del spec).
+- [x] 2.1 Gate (chatwoot_note_sync.py) ahora usa `profile_funnel_complete(facts) and vehicle_confirmed and not (no-aptitud)`. (`vehicle_confirmed` conserva la defensa contra jerga ambigua de unidad.)
+- [x] 2.2 `has_experience` (329-334) ya NO satisface el gate (lo hace `profile_funnel_complete`, que exige `experience.years`); sigue alimentando `falta_experiencia`/`documentos`.
+- [ ] 2.3 DIFERIDA: la ruta degradada `app/app.py:597-613` keya en `current_stage == "PROFILE_READY"` (no en `facts`), es fallback de deuda D-3 y `result` no expone el dict canónico de facts; el fix correcto va en la asignación del stage PROFILE_READY (fuera del alcance declarado). La ruta principal (`calculate_candidate_labels`) ya está endurecida.
+- [x] 2.4 Por construcción: el gate deriva de `profile_funnel_complete` (= sin pregunta pendiente). Cubierto por `test_no_perfil_listo_*` + `test_falta_unidad_y_perfil_listo_nunca_coexisten`.
 
 ## 3. Nombre de pila
 
-- [ ] 3.1 Helper `first_name(facts) -> str` (en `current_turn.py` o util compartida): primer token de `candidate.name`, capitalizado; cadena vacía si no hay nombre.
-- [ ] 3.2 Verificar: "Joaquín Ramos" → "Joaquín"; "" → "" (sin fallo).
+- [x] 3.1 `first_name(facts)` en `current_turn.py` (primer token capitalizado; "" si no hay nombre).
+- [x] 3.2 Unitaria: "Joaquín Ramos"→"Joaquín", "DAVID ramos"→"David", {}→"", ""→"".
 
 ## 4. Rama de objeción empática
 
@@ -24,12 +24,12 @@
 
 ## 5. Validación de texto de vencimiento (no-respuesta = faltante)
 
-- [ ] 5.1 Helper `is_valid_expiration_text(text) -> bool` en `app/knowledge/current_turn.py`: válido si denota fecha/plazo (reusa la detección de `_expiry_within_three_months`) o estado ("vigente"/"al corriente"/"vencido"/"vencida"); inválido para no-respuestas/evasivas (`"no sabría decirle"`, `"no sé"`, `"no me acuerdo"`, `"al rato le digo"`, vacío). Lista de no-respuestas acotada y normalizada (`normalize_text`).
-- [ ] 5.2 En la escritura de facts (extracción/`_store_lead_memory_updates` o el punto donde se persiste `*_expiration_text`): NO persistir un `license.expiration_text`/`medical.apto_expiration_text` inválido (queda faltante), análogo a `canonicalize_proof` devolviendo `None`.
-- [ ] 5.3 `_apto_status`/`_is_vigente` (chatwoot_note_sync.py:14-19, 142-143): devolver "Vigente" solo si el texto es válido por `is_valid_expiration_text`, no por presencia de caracteres.
-- [ ] 5.4 Confirm-ack de `current_turn.py`: NO eco-imprimir el literal ni afirmar "vigente" cuando el texto es inválido; tratar el campo como faltante (vuelve a pedir el vencimiento) o derivar a la rama de objeción (sección 4) si es evasiva.
-- [ ] 5.5 El gate de `perfil_listo`/`profile_funnel_complete` (D1) MUST validar el vencimiento de documentos núcleo vía `is_valid_expiration_text`, no por presencia de texto.
-- [ ] 5.6 Unitarias: `is_valid_expiration_text` (válidos: "en dos años", "vence en 3 meses", "vigente", "vencido"; inválidos: "no sabría decirle", "", "al rato le digo"); y que un apto con texto inválido NO produce "Vigente" ni satisface el gate.
+- [x] 5.1 `is_valid_expiration_text(text)` en `current_turn.py` (blocklist de no-respuestas normalizada; ante ambigüedad PREFIERE aceptar para no meter en bucle —design D5/risk—; solo rechaza no-respuestas explícitas + vacío).
+- [ ] 5.2 DIFERIDA (consumo cubre el comportamiento): no persistir `*_expiration_text` inválido requiere tocar el escritor único. La validación en consumo (confirm/funnel/gate/nota) ya evita que un valor inválido se trate como "vigente"/listo aunque quede persistido; la no-persistencia es limpieza, no corrección de comportamiento.
+- [x] 5.3 `_apto_status_display`, `has_medical` y `has_apto` (chatwoot_note_sync.py) ahora exigen `is_valid_expiration_text`, no mera presencia.
+- [x] 5.4 Confirm-ack (`build_current_turn_ack`): no afirma "vigente" ni eco-imprime el literal sobre vencimiento inválido; el funnel vuelve a pedir el dato.
+- [x] 5.5 `_next_funnel_question_or_none` valida licencia/apto vía `is_valid_expiration_text` → el gate (que deriva de ahí) también.
+- [x] 5.6 Unitarias en `tests/test_expiration_validation_and_ready_gating.py` (válidos/ inválidos; apto no-respuesta → no "vigente", no `perfil_listo`, `falta_apto` presente; regresión conv 128).
 
 ## 6. Verificación (runtime, end-to-end)
 
