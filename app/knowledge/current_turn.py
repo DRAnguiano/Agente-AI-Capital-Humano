@@ -156,6 +156,42 @@ def _expiry_within_three_months(expiration_text: Any) -> bool:
     return False
 
 
+# No-respuestas / evasivas que NO constituyen un vencimiento válido. Se tratan como
+# dato faltante: el confirm no afirma "vigente", el funnel vuelve a pedir el dato y
+# perfil_listo no se activa. Lista acotada y normalizada; ante texto ambiguo se
+# PREFIERE aceptar para no meter al candidato en bucle (design D5/risk) — solo se
+# rechaza lo que es claramente una no-respuesta.
+_EXPIRATION_NON_ANSWERS = (
+    "no sabria", "no se", "no lo se", "no sabe", "no me acuerdo", "no recuerdo",
+    "ni idea", "quien sabe", "sabra dios", "no estoy segur", "no tengo idea",
+    "al rato", "mas al rato", "luego le digo", "luego te digo", "despues le digo",
+    "despues te digo", "ahorita le digo", "ahorita te digo", "te digo al rato",
+)
+
+
+def is_valid_expiration_text(text: Any) -> bool:
+    """True si ``text`` puede contar como respuesta de vencimiento (fecha/plazo,
+    estado de vigencia, o cualquier texto que NO sea una no-respuesta explícita).
+    Una no-respuesta/evasiva ("no sabría decirle", "al rato le digo", vacío) es
+    inválida → el dato se trata como faltante: no se afirma "vigente", el funnel lo
+    vuelve a pedir y perfil_listo no se activa. No inventa fechas a partir de plazos."""
+    t = normalize_text(str(text or "")).strip()
+    if not t:
+        return False
+    return not any(na in t for na in _EXPIRATION_NON_ANSWERS)
+
+
+def first_name(facts: dict[str, Any]) -> str:
+    """Primer token de ``candidate.name`` capitalizado para trato natural
+    ("Joaquín Ramos" → "Joaquín"); cadena vacía si no hay nombre (omite el vocativo
+    en vez de fallar)."""
+    raw = str((facts or {}).get("candidate.name") or "").strip()
+    if not raw:
+        return ""
+    token = raw.split()[0]
+    return token[:1].upper() + token[1:].lower() if token else ""
+
+
 def _renewal_proof_state(facts: dict[str, Any], document_key: str) -> str:
     specific = facts.get(f"{document_key}.renewal_proof")
     general = facts.get("documents.renewal_proof")
@@ -483,7 +519,10 @@ def should_prioritize_current_turn(message: str | None, last_bot_message: str | 
     return has_current_turn_profile_signal(message, last_bot_message)
 
 
-def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
+def _next_funnel_question_or_none(facts: dict[str, Any]) -> str | None:
+    """Fuente única del estado del funnel: devuelve la siguiente pregunta pendiente,
+    o ``None`` cuando el perfilamiento conversacional está agotado. `next_question_
+    from_missing_facts` y `profile_funnel_complete` derivan de aquí para no divergir."""
     if not facts.get("candidate.name"):
         return "¿Me podría decir su nombre y apellido, por favor?"
     if not facts.get("candidate.city"):
@@ -509,12 +548,12 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
             )
     if not facts.get("license.category"):
         return "Gracias. ¿Qué tipo de licencia federal tiene y cuándo vence?"
-    if not facts.get("license.expiration_text"):
+    if not is_valid_expiration_text(facts.get("license.expiration_text")):
         return "¿En cuánto tiempo se le vence su licencia federal?"
     renewal_question = _renewal_question_for_short_expiry(facts)
     if renewal_question:
         return renewal_question
-    if not facts.get("medical.apto_expiration_text"):
+    if not is_valid_expiration_text(facts.get("medical.apto_expiration_text")):
         return "¿Cuándo vence su apto médico?"
     renewal_question = _renewal_question_for_short_expiry(facts)
     if renewal_question:
@@ -524,7 +563,20 @@ def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
     if not _has_labor_document(facts):
         # 2.5: documento por residencia — regla de dominio única (incl. P0-2 proof=ninguno)
         return residency_document_question(facts)
-    return _profile_complete_closing()
+    return None
+
+
+def next_question_from_missing_facts(facts: dict[str, Any]) -> str:
+    """Siguiente pregunta del funnel, o el mensaje de cierre si ya no hay pregunta."""
+    question = _next_funnel_question_or_none(facts)
+    return question if question is not None else _profile_complete_closing()
+
+
+def profile_funnel_complete(facts: dict[str, Any]) -> bool:
+    """True si el funnel conversacional está agotado (no queda pregunta pendiente).
+    Fuente única para el gate de `perfil_listo`: equivale a que
+    `next_question_from_missing_facts` devolvería el cierre, no una pregunta."""
+    return _next_funnel_question_or_none(facts) is None
 
 
 def next_prehandoff_question(branch: str, facts: dict[str, Any]) -> str | None:
@@ -631,13 +683,13 @@ def build_current_turn_ack(
     if current.get("license.category"):
         confirms.append(f"Queda anotado: licencia federal tipo {current['license.category']}.")
     _lic_exp = current.get("license.expiration_text")
-    if _lic_exp and _lic_exp != "vencido":
+    if _lic_exp and _lic_exp != "vencido" and is_valid_expiration_text(_lic_exp):
         confirms.append(f"Tomamos nota, licencia vigente ({_lic_exp}).")
     _apto_exp = current.get("medical.apto_expiration_text")
-    if _apto_exp and _apto_exp != "vencido":
+    if _apto_exp and _apto_exp != "vencido" and is_valid_expiration_text(_apto_exp):
         confirms.append(f"Bien, apto médico vigente ({_apto_exp}).")
     if current.get("medical.apto_status") == "vigente":
-        if not _apto_exp:
+        if not (_apto_exp and is_valid_expiration_text(_apto_exp)):
             confirms.append("Bien, apto médico vigente.")
     if current.get("experience.years"):
         confirms.append(f"Esa experiencia es valiosa. Con ese perfil nos interesa conocerle.")

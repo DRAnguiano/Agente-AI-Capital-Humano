@@ -130,8 +130,8 @@ RERANK_MAX_CHARS_PER_DOC = _env_int("RERANK_MAX_CHARS_PER_DOC", 2500)
 # =========================
 
 REINDEX_API_KEY = os.getenv("REINDEX_API_KEY", "")
-# Clave para proteger endpoints internos (/ask, /orchestrate/message).
-# Si está vacía, los endpoints siguen abiertos (modo demo). Configúrala en producción.
+# Clave para proteger endpoints internos (/ask, /orchestrate/message, /classify, /admin/*).
+# Fail-closed: si está vacía, los endpoints devuelven 401. REQUERIDA en producción.
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 INCLUDE_ERROR_DETAILS = _env_bool("INCLUDE_ERROR_DETAILS", False)
 REINDEX_CLEAN = _env_bool("REINDEX_CLEAN", False)

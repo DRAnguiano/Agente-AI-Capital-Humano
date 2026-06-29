@@ -39,6 +39,36 @@ from .chatwoot_note_sync import (
 
 app = FastAPI(default_response_class=ORJSONResponse)
 
+_DEV_WEBHOOK_TOKEN = "dev_chatwoot_webhook_token_123"
+_IS_PRODUCTION = os.getenv("APP_ENV", "").lower() == "production"
+
+
+@app.on_event("startup")
+def _validate_security_config() -> None:
+    """Valida configuración de seguridad al arrancar.
+
+    En producción (APP_ENV=production) falla con RuntimeError si faltan secretos
+    críticos. En otros entornos solo emite warnings.
+    """
+    from .settings import INTERNAL_API_KEY, REINDEX_API_KEY
+    chatwoot_token = os.getenv("CHATWOOT_WEBHOOK_TOKEN", "")
+    issues = []
+    if not INTERNAL_API_KEY:
+        issues.append("INTERNAL_API_KEY está vacía — endpoints internos denegarán todo acceso")
+    if not REINDEX_API_KEY:
+        issues.append("REINDEX_API_KEY está vacía — /reindex denegará todo acceso")
+    if not chatwoot_token:
+        issues.append("CHATWOOT_WEBHOOK_TOKEN está vacío — webhook denegará todo acceso")
+    elif chatwoot_token == _DEV_WEBHOOK_TOKEN:
+        issues.append("CHATWOOT_WEBHOOK_TOKEN usa el valor de desarrollo — rotar antes de producción")
+    if issues:
+        msg = "[SECURITY] Configuración insegura detectada:\n" + "\n".join(f"  - {i}" for i in issues)
+        if _IS_PRODUCTION:
+            raise RuntimeError(msg)
+        else:
+            print(msg, flush=True)
+
+
 _rl_redis_client = None
 
 
@@ -168,7 +198,7 @@ def reindex(
     k: int | None = Query(default=None),
     x_api_key: str | None = Header(default=None),
 ):
-    if REINDEX_API_KEY and x_api_key != REINDEX_API_KEY:
+    if not REINDEX_API_KEY or x_api_key != REINDEX_API_KEY:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
 
     started = time.time()
@@ -220,7 +250,7 @@ def ask(body: AskBody, x_api_key: str | None = Header(default=None)):
     # lee ni escribe lead_memory.
     # [MEJORA] Documentar en README que este endpoint está deprecado.
     # No eliminar aún hasta confirmar que ninguna integración externa lo usa.
-    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+    if not INTERNAL_API_KEY or x_api_key != INTERNAL_API_KEY:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         question = body.q.strip()
@@ -292,7 +322,7 @@ def orchestrate(body: OrchestrateMessageBody, x_api_key: str | None = Header(def
     - guarda eventos analíticos
     - devuelve respuesta lista para Telegram/Chatwoot/WhatsApp
     """
-    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+    if not INTERNAL_API_KEY or x_api_key != INTERNAL_API_KEY:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         result = run_hr_graph_message(
@@ -322,7 +352,7 @@ def classify(body: ClassifyBody, x_api_key: str | None = Header(default=None)):
     Aislado: no persiste ni envía a Chatwoot. Devuelve clasificación, enriquecimiento
     y el plan+respuesta. known_facts simula los campos ya conocidos del lead.
     """
-    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+    if not INTERNAL_API_KEY or x_api_key != INTERNAL_API_KEY:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         from .knowledge.intent_classifier import classify_message
@@ -352,7 +382,7 @@ def release_human_review_endpoint(
     ÚNICA vía explícita de regreso, pensada para que un agente u operación la invoque
     tras tomar y resolver el caso. Protegido con `INTERNAL_API_KEY`.
     """
-    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+    if not INTERNAL_API_KEY or x_api_key != INTERNAL_API_KEY:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     try:
         from .db import release_human_review
@@ -1198,14 +1228,11 @@ async def chatwoot_webhook(
         except Exception:
             pass  # never block the webhook on rate limit errors
 
-    # [NOTA] INBOUND_DEBOUNCE_ENABLED está OFF por defecto (valor "false").
-    # Cuando está OFF, el mensaje va directo al orquestador en este mismo request
-    # y se bypasea toda la lógica del worker: current_turn guard, deduplicación
-    # de mensajes rápidos y el manejo especial del primer mensaje.
-    # [MEJORA] Activar en .env: INBOUND_DEBOUNCE_ENABLED=true
-    # Esto mueve el procesamiento al worker Celery (tasks_chatwoot.py), que tiene
-    # la lógica más completa, y libera el webhook para responder en <100ms.
-    if os.getenv("INBOUND_DEBOUNCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "y", "on"}:
+    # INBOUND_DEBOUNCE_ENABLED controla si el procesamiento es async (worker Celery)
+    # o síncrono en el mismo request. El default es "true" (async): el webhook
+    # responde en <100ms y el worker aplica deduplicación y current_turn guard.
+    # Solo deshabilitar explícitamente con INBOUND_DEBOUNCE_ENABLED=false para diagnóstico.
+    if os.getenv("INBOUND_DEBOUNCE_ENABLED", "true").strip().lower() not in {"0", "false", "no", "n", "off"}:
         try:
             from .tasks_chatwoot import enqueue_chatwoot_message
 

@@ -9,9 +9,6 @@ services:
       # No usar env_file aquí — Neo4j 5 interpreta todas las vars NEO4J_* como
       # config y las vars extra del .env (HEAP_INITIAL, etc.) causan error.
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
-    ports:
-      - "7474:7474"
-      - "7687:7687"
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -36,12 +33,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-hrdb}
       POSTGRES_USER: ${POSTGRES_USER:-hr_david}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hr_password}
-    ports:
-      # [RIESGO] El puerto 5432 está expuesto al host. En desarrollo está bien,
-      # pero en un servidor compartido o VPS esto expone la BD directamente.
-      # TODO: en producción remover esta sección ports: y acceder solo
-      # desde la red interna de Docker (los contenedores ya se ven entre sí).
-      - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -143,9 +134,10 @@ services:
     command:
       - sh
       - -c
-      - celery -A app.tasks_seguimiento beat --loglevel=INFO -s /tmp/celerybeat-schedule
+      - celery -A app.tasks_seguimiento beat --loglevel=INFO -s /var/lib/beat/celerybeat-schedule
     volumes:
       - ./.cache:/app/.cache
+      - beat_schedule:/var/lib/beat
     depends_on:
       - postgres
       - chatwoot_redis
@@ -201,7 +193,7 @@ services:
       POSTGRES_PASSWORD: chatwoot_password
       REDIS_URL: redis://chatwoot_redis:6379
       ACTIVE_STORAGE_SERVICE: local
-      ENABLE_ACCOUNT_SIGNUP: "true"
+      ENABLE_ACCOUNT_SIGNUP: "false"
     command:
       - sh
       - -c
@@ -325,3 +317,4 @@ volumes:
   chatwoot_pg_data:
   chatwoot_redis_data:
   chatwoot_storage:
+  beat_schedule:

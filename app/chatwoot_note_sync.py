@@ -5,6 +5,7 @@ import httpx
 
 from .db import get_conn
 from .knowledge.business_route_schema import VALID_VEHICLE_TYPES
+from .knowledge.current_turn import is_valid_expiration_text, profile_funnel_complete
 from .knowledge.geo_utils import is_zm_laguna_canonical
 from .knowledge.text_normalizer import normalize_text
 
@@ -15,7 +16,7 @@ def _apto_status_display(medical_status_raw: str, apto_exp_text: str) -> str:
     """Muestra el estado del apto: vigente si hay texto de vencimiento real, Pendiente si no."""
     if _is_vigente(medical_status_raw):
         return "Vigente"
-    if apto_exp_text and apto_exp_text not in {"Pendiente", ""}:
+    if apto_exp_text not in {"Pendiente", ""} and is_valid_expiration_text(apto_exp_text):
         return "Vigente"
     return _human_fact(medical_status_raw)
 
@@ -313,7 +314,7 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     )) if _apto_exp_raw else False
     has_medical    = (
         facts.get("medical.apto_status") in {"vigente", "sí", "si"}
-        or bool(_apto_exp_raw and _apto_exp_raw not in {"Pendiente", ""})
+        or bool(_apto_exp_raw not in {"Pendiente", ""} and is_valid_expiration_text(_apto_exp_raw))
         or _apto_equality
     )
     # Unidad confirmada solo si es exactamente full/sencillo; jerga ambigua
@@ -390,12 +391,12 @@ def calculate_candidate_labels(context: dict[str, Any]) -> list[str]:
     # el candidato completó el funnel sin abandonar (candidate.vacancy_accepted era un
     # falso bloqueo: el bot ya preguntó todo, el candidato respondió).
     has_city = bool(facts.get("candidate.city"))
+    # perfil_listo deriva de la fuente única del funnel (D1): solo cuando NO queda
+    # pregunta pendiente (incluye years explícito, documento laboral y vencimientos
+    # VÁLIDOS — una no-respuesta de vencimiento no lo activa).
     if (
-        vehicle_confirmed
-        and has_license
-        and has_medical
-        and has_experience
-        and has_city
+        profile_funnel_complete(facts)
+        and vehicle_confirmed  # unidad canónica (full/sencillo), no jerga ambigua
         and not (has_non_target_experience or has_no_road_experience or has_reingreso)
     ):
         labels.update({"perfil_listo", "requiere_revision_ch"})
@@ -507,9 +508,9 @@ def _next_action_dinamica(facts: dict[str, str], is_local: bool, labels: list[st
         return "Confirmar tipo de unidad (tracto full o sencillo)."
     if not facts.get("license.category"):
         return "Solicitar tipo y vigencia de licencia federal."
-    if not facts.get("license.expiration_text"):
+    if not is_valid_expiration_text(facts.get("license.expiration_text")):
         return "Confirmar vigencia de licencia federal."
-    if not facts.get("medical.apto_expiration_text"):
+    if not is_valid_expiration_text(facts.get("medical.apto_expiration_text")):
         return "Confirmar vigencia del apto médico."
     if not facts.get("experience.years"):
         return "Confirmar años de experiencia como operador."
@@ -566,7 +567,7 @@ def render_candidate_note(context: dict[str, Any], labels: list[str], fallback_l
     age_disq = _age_disqualified(facts)
     has_vt = bool(vehicle_type_raw)
     has_lic = license_category not in {PENDING_TEXT, "", None}
-    has_apto = bool(apto_exp_text and apto_exp_text not in {PENDING_TEXT, ""}) or _is_vigente(medical_status_raw)
+    has_apto = bool(apto_exp_text not in {PENDING_TEXT, ""} and is_valid_expiration_text(apto_exp_text)) or _is_vigente(medical_status_raw)
     has_years = years not in {PENDING_TEXT, "", None}
     has_city = city not in {PENDING_TEXT, "", None}
     has_doc = proof_raw in {"cartas", "semanas_imss", "sí", "si", "available"}
