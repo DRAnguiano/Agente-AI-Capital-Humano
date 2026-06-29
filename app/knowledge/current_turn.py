@@ -526,9 +526,9 @@ def _next_funnel_question_or_none(facts: dict[str, Any]) -> str | None:
     if not facts.get("candidate.name"):
         return "¿Me podría decir su nombre y apellido, por favor?"
     if not facts.get("candidate.city"):
-        return "Gracias. ¿En qué ciudad se encuentra actualmente?"
+        return "¿En qué ciudad se encuentra actualmente?"
     if not facts.get("candidate.age"):
-        return "Gracias. ¿Cuántos años tiene?"
+        return "¿Cuántos años tiene?"
     if is_age_disqualified(facts):
         return age_disqualification_reply(_to_int(facts.get("candidate.age")))
     if not facts.get("experience.vehicle_type"):
@@ -547,7 +547,7 @@ def _next_funnel_question_or_none(facts: dict[str, Any]) -> str | None:
                 "Las vacantes disponibles son para operadores de tracto full o sencillo."
             )
     if not facts.get("license.category"):
-        return "Gracias. ¿Qué tipo de licencia federal tiene y cuándo vence?"
+        return "¿Qué tipo de licencia federal tiene y cuándo vence?"
     if not is_valid_expiration_text(facts.get("license.expiration_text")):
         return "¿En cuánto tiempo se le vence su licencia federal?"
     renewal_question = _renewal_question_for_short_expiry(facts)
@@ -624,23 +624,28 @@ def next_prehandoff_question(branch: str, facts: dict[str, Any]) -> str | None:
     return None
 
 
-# Quita un "Perfecto" inicial (+ puntuación de cierre, sin tocar ¿/¡) de la pregunta
-# cuando el ack ya abre con "Perfecto", para no duplicar el prefijo.
+# Quita un prefijo de cortesía inicial (+ puntuación de cierre, sin tocar ¿/¡) de la
+# pregunta cuando el ack ya empieza con la misma palabra, para no duplicarla.
 _LEADING_PERFECTO = re.compile(r"^perfecto\s*[,.:;!]*\s*", re.IGNORECASE)
+_LEADING_GRACIAS = re.compile(r"^gracias\s*[,.:;!]*\s*", re.IGNORECASE)
 
 
-def _strip_leading_perfecto(text: str) -> str:
-    stripped = _LEADING_PERFECTO.sub("", text, count=1)
+def _strip_leading_word(pattern: re.Pattern, text: str) -> str:
+    stripped = pattern.sub("", text, count=1)
     if stripped and stripped[0].isalpha() and stripped[0].islower():
         stripped = stripped[0].upper() + stripped[1:]
     return stripped
 
 
+def _strip_leading_perfecto(text: str) -> str:
+    return _strip_leading_word(_LEADING_PERFECTO, text)
+
+
 def _join_ack_and_question(prefix: str, question: str | None) -> str:
-    """Une el ack y la siguiente pregunta evitando un doble prefijo "Perfecto".
+    """Une el ack y la siguiente pregunta evitando prefijos de cortesía duplicados.
 
     Puro: no extrae facts ni mete lógica de negocio. Si el ack ya abre con
-    "Perfecto" y la pregunta también, se quita el "Perfecto" inicial de la
+    "Perfecto" o "Gracias" y la pregunta también, se quita ese prefijo de la
     pregunta. Sin ack (prefix vacío), la pregunta se conserva tal cual.
     """
     prefix = (prefix or "").strip()
@@ -650,7 +655,12 @@ def _join_ack_and_question(prefix: str, question: str | None) -> str:
     if not question:
         return prefix
     if prefix.lower().startswith("perfecto") and question.lower().startswith("perfecto"):
-        question = _strip_leading_perfecto(question)
+        question = _strip_leading_word(_LEADING_PERFECTO, question)
+    if (
+        re.match(r"^gracias", prefix, re.IGNORECASE)
+        and question.lower().startswith("gracias")
+    ):
+        question = _strip_leading_word(_LEADING_GRACIAS, question)
     return f"{prefix} {question}".strip()
 
 

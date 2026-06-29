@@ -749,9 +749,12 @@ def _groq_with_fallback(
     max_tokens: int = GROQ_MAX_TOKENS,
     timeout_key: str = "GROQ_TIMEOUT_SECONDS",
     timeout_default: str = "8",
+    org2_key: str | None = None,
 ) -> str:
     """Llama a _groq_call con primary_key; si devuelve RateLimitError y hay
-    backup_key, reintenta con ella. Registra el fallback en el log.
+    backup_key, reintenta con ella. Si backup también falla y hay org2_key
+    (organización Groq distinta con cuota TPD independiente), reintenta una vez más.
+    Registra cada fallback en el log.
     """
     call_kwargs = dict(
         json_mode=json_mode,
@@ -770,6 +773,9 @@ def _groq_with_fallback(
             return _groq_call(backup_key, messages, model, **call_kwargs)
         except GroqRateLimitError as exc2:
             print(f"[groq-fallback] BACKUP también agotada — {fn_name}: {exc2}", flush=True)
+            if org2_key:
+                print(f"[groq-fallback] usando ORG2 — {fn_name}", flush=True)
+                return _groq_call(org2_key, messages, model, **call_kwargs)
             raise exc2
 
 
@@ -780,6 +786,12 @@ def call_groq_llm(prompt: str) -> str:
         return "Error: falta configurar GROQ_API_KEY."
 
     backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
+    # GROQ_LLM_HISTORY_TURNS: el orquestador ya acota el historial a messages[-4:]
+    # con 180 chars por mensaje, por lo que el prompt no crece sin cota. Esta
+    # variable queda disponible para documentación/ajuste futuro; no se aplica
+    # truncado adicional aquí porque el historial ya es bounded por diseño.
+    # _history_turns = _to_int(os.environ.get("GROQ_LLM_HISTORY_TURNS"), 6)
     messages = [
         {"role": "system", "content": _llm_system_message()},
         {"role": "user", "content": prompt},
@@ -789,6 +801,7 @@ def call_groq_llm(prompt: str) -> str:
         return _groq_with_fallback(
             api_key, backup_key, "call_groq_llm", messages, GROQ_MODEL,
             temperature=TEMPERATURE, max_tokens=GROQ_MAX_TOKENS,
+            org2_key=org2_key,
         )
     except Exception as exc:
         print(f"[groq] Error: {type(exc).__name__}: {exc}", flush=True)
@@ -861,6 +874,7 @@ def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0
         return '{"error": "missing_groq_api_key"}'
 
     backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
     messages = [
         {"role": "system", "content": system_message},
         {"role": "user", "content": prompt},
@@ -870,7 +884,10 @@ def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0
             api_key, backup_key, "call_groq_json", messages, model or GROQ_MODEL,
             json_mode=True, temperature=temperature, max_tokens=GROQ_MAX_TOKENS,
             timeout_key="GROQ_JSON_TIMEOUT_SECONDS", timeout_default="10",
+            org2_key=org2_key,
         )
+    except GroqRateLimitError:
+        raise
     except Exception as exc:
         print(f"[groq_json] Error: {type(exc).__name__}: {exc}", flush=True)
         return f'{{"error": "{type(exc).__name__}"}}'
@@ -887,6 +904,7 @@ def call_groq_with_system(system: str, user: str, *, temperature: float | None =
     if not api_key:
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
     backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
     t = temperature if temperature is not None else TEMPERATURE
     messages = [
         {"role": "system", "content": system},
@@ -896,6 +914,7 @@ def call_groq_with_system(system: str, user: str, *, temperature: float | None =
         return _groq_with_fallback(
             api_key, backup_key, "call_groq_with_system", messages, GROQ_MODEL,
             temperature=t, max_tokens=max_tokens,
+            org2_key=org2_key,
         )
     except Exception as exc:
         print(f"[groq_with_system] Error: {type(exc).__name__}: {exc}", flush=True)
