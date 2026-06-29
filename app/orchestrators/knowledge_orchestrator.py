@@ -951,6 +951,63 @@ Tu comentario (afirmación corta, sin preguntas):
     }
 
 
+def _answer_objection_message(
+    message: str,
+    lead_memory: dict[str, Any] | None,
+    field_label: str = "el documento",
+) -> str:
+    """Emite acuse empático ante negativa/alternativa de un campo del funnel (D3).
+
+    Estructura: nombre de pila + validación empática + encuadre protocolo/expediente +
+    desbloqueo "por lo pronto no se lo pedimos" + invitación a retomar.
+    Copy generado por LLM bajo guardas deterministas; nunca inventa mínimos ni promete vacante.
+    """
+    from app.knowledge.current_turn import first_name
+
+    facts: dict[str, Any] = {}
+    if lead_memory:
+        for row in (lead_memory.get("facts") or []):
+            if row.get("fact_group") and row.get("fact_key") and row.get("fact_value"):
+                facts[f"{row['fact_group']}.{row['fact_key']}"] = row["fact_value"]
+
+    nombre = first_name(facts)
+    vocativo = f"{nombre}, " if nombre else ""
+    memory_text = _format_lead_memory_for_prompt(lead_memory) if lead_memory else "(sin datos previos)"
+
+    prompt = f"""
+Eres Mundo, del equipo de reclutamiento de Transmontes. Reclutador mexicano: directo, cálido, breve.
+
+El candidato no cuenta (todavía) con {field_label} o propone una alternativa.
+Tu tarea: responder con empatía usando EXACTAMENTE esta estructura (4 partes en 3-4 oraciones):
+1. Valida empáticamente lo que el candidato dice o su situación.
+2. Encuadra {field_label} como parte del protocolo de su expediente (no como un rechazo).
+3. Aclara que por lo pronto no se lo pedimos como condición para continuar.
+4. Invita a retomar en cuanto lo tenga o resuelva su situación.
+
+Reglas:
+- Si el nombre de pila es "{nombre}", úsalo naturalmente (p.ej. "{vocativo}lo anotamos...").
+- Si no hay nombre disponible, omite el vocativo; no uses placeholders como "[nombre]".
+- NUNCA inventes mínimos de años, sueldos, ni condiciones que no se hayan mencionado.
+- NUNCA prometas la vacante ni uses "Capital Humano" como tercero; usa "nuestro equipo".
+- Máximo 3 oraciones. Sin preguntas al final.
+
+Contexto del lead: {memory_text}
+Mensaje del candidato: {message!r}
+Campo del funnel involucrado: {field_label}
+
+Tu acuse empático (3 oraciones, sin pregunta final):
+""".strip()
+
+    if not _env_bool("KNOWLEDGE_FRIENDLY_LLM_GENERATION_ENABLED", True):
+        return f"{vocativo}lo anotamos. Cuando cuente con {field_label}, con gusto lo retomamos."
+
+    raw = call_llm(prompt)
+    reply = _clean_reply(raw)
+    if not reply:
+        reply = f"{vocativo}lo anotamos. En cuanto lo tenga, nuestro equipo lo retoma sin problema."
+    return reply
+
+
 def _answer_rag_message(message: str, contract: dict[str, Any]) -> dict[str, Any]:
     started = time.perf_counter()
     rag_enabled = _env_bool("KNOWLEDGE_RAG_GENERATION_ENABLED", True)
@@ -1957,10 +2014,67 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         log.warning("[ROUTE1] omitido por error: %s", exc)
 
+    # Rama de objeción empática (D3): cuando el candidato declara no tener documento
+    # (o propone alternativa) para un campo del funnel, emitir acuse empático y avanzar
+    # el funnel al siguiente paso, sin re-preguntar el mismo campo en seco.
+    # Detecta: documents.proof=ninguno en pre_validated (turno actual) + ruta no terminal.
+    _objection_fired = False
+    _TERMINAL_INTENTS = {"cecati_sugerido", "considerar_escuelita_transmontes", "reingreso_verificar"}
+    _current_intent = str(contract.get("intent") or "")
+    if (
+        not _r1_confirmed
+        and not embedded_derived
+        and not contract.get("requires_human")
+        and _current_intent not in _TERMINAL_INTENTS
+    ):
+        _pv_facts = {
+            f"{f['fact_group']}.{f['fact_key']}": str(f["fact_value"])
+            for f in (_pre_validated or [])
+            if f.get("fact_group") and f.get("fact_key") and f.get("fact_value")
+        }
+        # Si _pre_validated no aporta la señal, detectar inline desde el texto del mensaje
+        if "documents.proof" not in _pv_facts:
+            _msg_lc = normalize_text(message)
+            _neg_doc_hints = ("no tengo", "no cuento", "sin cartas", "no tengo cartas",
+                              "no tengo membretadas", "no cuento con cartas")
+            _doc_hints = ("carta", "cartas", "membretada", "membretadas", "documento laboral")
+            if any(h in _msg_lc for h in _neg_doc_hints) and any(h in _msg_lc for h in _doc_hints):
+                _pv_facts["documents.proof"] = "ninguno"
+        _has_proof_ninguno = _pv_facts.get("documents.proof") == "ninguno"
+        if _has_proof_ninguno:
+            _objection_fired = True
+            _FIELD_LABELS = {
+                "documents.proof": "las cartas laborales membretadas",
+                "documents.labor_letters_status": "las cartas laborales",
+            }
+            _field_label = _FIELD_LABELS.get("documents.proof", "el documento")
+            reply = _answer_objection_message(message, lead_memory_before, _field_label)
+            # Marcar como pendiente de envío para avanzar el funnel
+            _pre_validated = list(_pre_validated or []) + [{
+                "fact_group": "documents",
+                "fact_key": "submission_status",
+                "fact_value": "pending_candidate_will_send",
+            }]
+            friendly_result = None
+            log.warning("[OBJECTION] lead=%s field=documents.proof → acuse empático + seguimiento", lead_key)
+            try:
+                from app.lead_memory.repository import upsert_lead_fact
+                upsert_lead_fact(
+                    lead_key=lead_key,
+                    fact_group="documents",
+                    fact_key="submission_status",
+                    fact_value="pending_candidate_will_send",
+                    confidence=0.90,
+                    source="objection_empathic_branch",
+                    source_text=message[:200],
+                )
+            except Exception:
+                pass
+
     # Append one funnel profiling question after RAG, friendly, or profile ack.
     # Capture which canonical field(s) the nudge asked about (passive metadata).
     asked_field_keys: list[str] = []
-    if (rag_result is not None or friendly_result is not None or profile_ack_used or _r1_confirmed) and not embedded_derived:
+    if (rag_result is not None or friendly_result is not None or profile_ack_used or _r1_confirmed or _objection_fired) and not embedded_derived:
         nudge, asked_field_keys = _build_funnel_nudge(
             message, contract, lead_memory_before,
             turn_signals=turn_signals, pre_validated_facts=_pre_validated,
@@ -1968,6 +2082,11 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         if _r1_confirmed:
             # Ack del dato confirmado + siguiente pregunta (o solo ack si perfil completo)
             reply = f"{_r1_ack}\n\n{nudge}" if nudge else (_r1_ack or "")
+        elif _objection_fired:
+            # Acuse empático ya está en reply; agregar siguiente pregunta del funnel si hay
+            if nudge:
+                reply = f"{reply}\n\n{nudge}"
+            # Si no hay nudge, el acuse es la respuesta completa (perfil avanza al cierre)
         elif nudge:
             # 3.2: puente suave si el RAG respondió una duda en el primer turno (sin nombre aún)
             _facts_before = {
