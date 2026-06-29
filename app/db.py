@@ -261,7 +261,8 @@ def save_message(conversation_key: str, role: str, message: str) -> None:
                     %(role)s,
                     %(message)s,
                     now()
-                );
+                )
+                ON CONFLICT (conversation_key, role, message) DO NOTHING;
                 """,
                 {
                     "conversation_key": conversation_key,

@@ -26,7 +26,8 @@ celery_app.conf.update(
     enable_utc=True,
     task_default_queue="inbound",
     worker_prefetch_multiplier=1,
-    task_acks_late=False,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
     # Programación periódica
     beat_schedule={
         # Crea tareas para leads enfriando/fríos — cada 15 min
