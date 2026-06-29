@@ -30,6 +30,6 @@
 
 ## 5. Deploy y validación
 
-- [ ] 5.1 Reiniciar `api` y `worker` con `docker compose restart api worker`
+- [x] 5.1 Reiniciar `api` y `worker` con `docker compose restart api worker`
 - [ ] 5.2 Enviar mensaje de prueba: preguntar una conversación donde el bot pregunte cartas y el candidato responda "Es correcto señor" — verificar que NO repite la pregunta y responde con ack + siguiente campo
 - [ ] 5.3 Verificar en log que aparece `[ROUTE1_ACTIVE]` en lugar de `[ROUTE1_SHADOW]` para ese turno
