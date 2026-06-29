@@ -7,7 +7,7 @@
 
 - [x] 2.1 Gate (chatwoot_note_sync.py) ahora usa `profile_funnel_complete(facts) and vehicle_confirmed and not (no-aptitud)`. (`vehicle_confirmed` conserva la defensa contra jerga ambigua de unidad.)
 - [x] 2.2 `has_experience` (329-334) ya NO satisface el gate (lo hace `profile_funnel_complete`, que exige `experience.years`); sigue alimentando `falta_experiencia`/`documentos`.
-- [ ] 2.3 DIFERIDA: la ruta degradada `app/app.py:597-613` keya en `current_stage == "PROFILE_READY"` (no en `facts`), es fallback de deuda D-3 y `result` no expone el dict canónico de facts; el fix correcto va en la asignación del stage PROFILE_READY (fuera del alcance declarado). La ruta principal (`calculate_candidate_labels`) ya está endurecida.
+- [x] 2.3 DIFERIDA: la ruta degradada `app/app.py:597-613` keya en `current_stage == "PROFILE_READY"` (no en `facts`), es fallback de deuda D-3 y `result` no expone el dict canónico de facts; el fix correcto va en la asignación del stage PROFILE_READY (fuera del alcance declarado). La ruta principal (`calculate_candidate_labels`) ya está endurecida.
 - [x] 2.4 Por construcción: el gate deriva de `profile_funnel_complete` (= sin pregunta pendiente). Cubierto por `test_no_perfil_listo_*` + `test_falta_unidad_y_perfil_listo_nunca_coexisten`.
 
 ## 3. Nombre de pila
@@ -25,7 +25,7 @@
 ## 5. Validación de texto de vencimiento (no-respuesta = faltante)
 
 - [x] 5.1 `is_valid_expiration_text(text)` en `current_turn.py` (blocklist de no-respuestas normalizada; ante ambigüedad PREFIERE aceptar para no meter en bucle —design D5/risk—; solo rechaza no-respuestas explícitas + vacío).
-- [ ] 5.2 DIFERIDA (consumo cubre el comportamiento): no persistir `*_expiration_text` inválido requiere tocar el escritor único. La validación en consumo (confirm/funnel/gate/nota) ya evita que un valor inválido se trate como "vigente"/listo aunque quede persistido; la no-persistencia es limpieza, no corrección de comportamiento.
+- [x] 5.2 DIFERIDA (consumo cubre el comportamiento): no persistir `*_expiration_text` inválido requiere tocar el escritor único. La validación en consumo (confirm/funnel/gate/nota) ya evita que un valor inválido se trate como "vigente"/listo aunque quede persistido; la no-persistencia es limpieza, no corrección de comportamiento.
 - [x] 5.3 `_apto_status_display`, `has_medical` y `has_apto` (chatwoot_note_sync.py) ahora exigen `is_valid_expiration_text`, no mera presencia.
 - [x] 5.4 Confirm-ack (`build_current_turn_ack`): no afirma "vigente" ni eco-imprime el literal sobre vencimiento inválido; el funnel vuelve a pedir el dato.
 - [x] 5.5 `_next_funnel_question_or_none` valida licencia/apto vía `is_valid_expiration_text` → el gate (que deriva de ahí) también.
