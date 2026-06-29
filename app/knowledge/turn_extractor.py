@@ -321,4 +321,16 @@ def validate_extraction(
         # license.expiration_text, experience.years, documents.proof — pasan con su evidencia
         _emit(key, fv.value, fv, catalog_validated=False)
 
+    # Señal de comprobante de renovación: surface como fact del path activo. Sin esto
+    # la señal se descarta y el funnel re-pregunta el comprobante en bucle.
+    _renewal = extraction.signals.renewal_proof
+    if _renewal in {"si", "no"}:
+        out.append({
+            "fact_group": "documents",
+            "fact_key": "renewal_proof",
+            "fact_value": _renewal,
+            "confidence": 0.8,
+            "is_explicit_correction": is_correction,
+        })
+
     return out

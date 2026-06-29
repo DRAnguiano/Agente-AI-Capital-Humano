@@ -516,9 +516,18 @@ def process_chatwoot_debounced_message(
                 or conversation_key_for_facts
             )
             merged_facts = {**saved_facts, **_current_turn_facts}
+            # Solo el PREFIJO del ack se restringe a facts nuevos del turno: si el
+            # extractor parrotea los "DATOS YA CONOCIDOS" (echo típico del 8b), esos
+            # facts ya guardados con el mismo valor no deben re-confirmarse. La
+            # siguiente pregunta del funnel sigue derivando de merged_facts (estado
+            # completo), no de _fresh_facts.
+            _fresh_facts = {
+                k: v for k, v in _current_turn_facts.items()
+                if saved_facts.get(k) != v
+            }
             guarded_reply = build_current_turn_ack(
                 combined_content, merged_facts, last_bot_message,
-                pre_current_facts=_current_turn_facts,
+                pre_current_facts=_fresh_facts,
             )
 
             # Persist current-turn facts so funnel doesn't re-ask

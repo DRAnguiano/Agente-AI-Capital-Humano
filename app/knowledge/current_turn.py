@@ -266,6 +266,12 @@ _TOPIC_LICENSE_VIGENTE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _TOPIC_LETTERS = re.compile(r"\bcartas?\s+laborales?\b", re.IGNORECASE)
+# Pregunta de comprobante/papel de renovación ("¿Ya tiene el papel o comprobante de
+# renovación?"). Cubre "comprobante de renovacion" y "papel ... renovacion".
+_TOPIC_RENEWAL_PROOF = re.compile(
+    r"\b(?:comprobante|papel|tramite|trámite)\b.{0,40}\brenovaci",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str, _turn_signals=None) -> dict[str, Any]:
@@ -325,7 +331,12 @@ def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str
     )
     # La negación bloquea cualquier confirmación (incluye "si no, ...").
     is_yes = (strong_yes or soft_yes) and not has_negation
+    _asks_renewal = bool(_TOPIC_RENEWAL_PROOF.search(last_bot_message))
     if not is_yes:
+        # Negación corta a la pregunta de comprobante de renovación → "no".
+        # (El resto de campos no se infiere desde una negación corta.)
+        if _asks_renewal and has_negation:
+            return {"documents.renewal_proof": "no"}
         return {}
 
     facts: dict[str, Any] = {}
@@ -335,6 +346,8 @@ def _extract_context_confirmation_facts(norm_message: str, last_bot_message: str
         facts["license.status"] = "vigente"
     if _TOPIC_LETTERS.search(last_bot_message):
         facts["documents.labor_letters"] = "sí"
+    if _asks_renewal:
+        facts["documents.renewal_proof"] = "si"
     return facts
 
 
@@ -671,7 +684,10 @@ def build_current_turn_ack(
     pre_current_facts: dict[str, Any] | None = None,
 ) -> str:
     current = pre_current_facts if pre_current_facts is not None else extract_current_turn_facts(message, last_bot_message)
-    # Full profile for deciding what to ask next; only current turn for the ack prefix.
+    # Invariante: `current` contiene SOLO los facts nuevos del turno (el caller filtra
+    # contra lo ya guardado). El prefijo de confirmación se construye únicamente sobre
+    # `current` para no re-confirmar datos previos (echo del extractor). La siguiente
+    # pregunta del funnel deriva de `facts` (estado completo mergeado), no del prefijo.
     facts = {**(merged_facts or {}), **current}
 
     if is_age_disqualified(facts):
