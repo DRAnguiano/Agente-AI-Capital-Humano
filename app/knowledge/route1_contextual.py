@@ -1,13 +1,13 @@
-"""Route-1 contextual resolver (G2, Fase A shadow).
+"""Route-1 contextual resolver (G2, Fase B activo).
 
 Interpreta una respuesta corta del candidato usando el campo canónico que el
 funnel preguntó en el turno previo (fresh canonical keys, leídas por el
 integrador vía ``read_current_asked_field_keys``). Puro, delgado, SIN BD y SIN
-writes: devuelve qué *haría* route-1, nunca persiste.
+writes: devuelve qué *hace* route-1 y el ack string a usar.
 
-Fase A = log-only. No reemplaza el path textual vivo ni el current_turn guard
-(`guard_context` en ``tasks_chatwoot``, debounce ON), que se reconcilian en
-Fase B. Alcance v1: solo ``experience.years``, ``experience.vehicle_type`` y
+Fase B = activo para allowlist. Inyecta el hecho confirmado en active_facts
+del nudge y reemplaza el friendly LLM con un ack determinista.
+Alcance v1: solo ``experience.years``, ``experience.vehicle_type`` y
 ``documents.proof``. v1 conservador: negación → no_persist.
 """
 from __future__ import annotations
@@ -24,6 +24,14 @@ ROUTE1_ALLOWED: frozenset[str] = frozenset({
     "experience.vehicle_type",
     "documents.proof",
 })
+
+# Ack determinista por campo (Fase B). El orquestador usa
+# ROUTE1_ACK[field].format(value=value) para construir el prefijo de respuesta.
+ROUTE1_ACK: dict[str, str] = {
+    "documents.proof":         "Cartas anotadas.",
+    "experience.years":        "{value} años de experiencia, anotado.",
+    "experience.vehicle_type": "Entendido, {value}.",
+}
 
 # Negación conservadora (alineada con current_turn._neg_hints). v1: negación -> no_persist.
 _NEG_HINTS: frozenset[str] = frozenset({

@@ -1919,15 +1919,56 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
             # respuesta embebida es el reply completo, sin "\n\n" colgando.
             reply = embedded_question["answer"]
 
+    # Route-1 contextual (G2, Fase B): resuelve confirmaciones implícitas del funnel
+    # ANTES del nudge para que el campo confirmado no se vuelva a preguntar este turno.
+    _r1_ack: str | None = None
+    _r1_confirmed = False
+    try:
+        from app.knowledge.route1_contextual import ROUTE1_ACK, resolve_route1
+        from app.lead_memory.last_asked_field import read_current_asked_field_keys
+
+        _fresh_keys = read_current_asked_field_keys(lead_key)
+        if _fresh_keys:
+            _r1 = resolve_route1(message, _fresh_keys)
+            if _r1["status"] == "confirmed":
+                _r1_confirmed = True
+                _r1_field: str = _r1["field"]
+                _r1_value = _r1.get("value")
+                _ack_tmpl = ROUTE1_ACK.get(_r1_field, "Entendido.")
+                _r1_ack = _ack_tmpl.format(value=_r1_value if _r1_value is not None else "")
+                _parts = _r1_field.split(".", 1)
+                _r1_fact = {
+                    "fact_group": _parts[0],
+                    "fact_key": _parts[1] if len(_parts) > 1 else _r1_field,
+                    "fact_value": str(_r1_value),
+                }
+                _pre_validated = list(_pre_validated or []) + [_r1_fact]
+                friendly_result = None  # ack reemplaza el comentario amistoso del LLM
+                log.info(
+                    "[ROUTE1_ACTIVE] lead=%s fresh_keys=%s field=%s value=%s ack=%r",
+                    lead_key, _fresh_keys, _r1_field, _r1_value, _r1_ack,
+                )
+            else:
+                log.info(
+                    "[ROUTE1_SHADOW] lead=%s fresh_keys=%s status=%s field=%s value=%s reason=%s",
+                    lead_key, _fresh_keys, _r1["status"], _r1.get("field"),
+                    _r1.get("value"), _r1.get("reason"),
+                )
+    except Exception as exc:
+        log.warning("[ROUTE1] omitido por error: %s", exc)
+
     # Append one funnel profiling question after RAG, friendly, or profile ack.
     # Capture which canonical field(s) the nudge asked about (passive metadata).
     asked_field_keys: list[str] = []
-    if (rag_result is not None or friendly_result is not None or profile_ack_used) and not embedded_derived:
+    if (rag_result is not None or friendly_result is not None or profile_ack_used or _r1_confirmed) and not embedded_derived:
         nudge, asked_field_keys = _build_funnel_nudge(
             message, contract, lead_memory_before,
             turn_signals=turn_signals, pre_validated_facts=_pre_validated,
         )
-        if nudge:
+        if _r1_confirmed:
+            # Ack del dato confirmado + siguiente pregunta (o solo ack si perfil completo)
+            reply = f"{_r1_ack}\n\n{nudge}" if nudge else (_r1_ack or "")
+        elif nudge:
             # 3.2: puente suave si el RAG respondió una duda en el primer turno (sin nombre aún)
             _facts_before = {
                 f"{r['fact_group']}.{r['fact_key']}": r["fact_value"]
@@ -1960,29 +2001,6 @@ def handle_message(payload: dict[str, Any]) -> dict[str, Any]:
         risk_level=contract.get("risk_level") or "low",
         requires_human=bool(contract.get("requires_human")),
     )
-
-    # SHADOW route-1 (G2, Fase A): log-only. NO persiste, NO decide, NO modifica
-    # reply/facts/stage/profile_ready. Interpreta el MENSAJE ACTUAL del candidato
-    # contra el campo canónico que el bot preguntó en el turno previo (fresh
-    # canonical keys, leídas de BD; NO confundir con la variable local
-    # `asked_field_keys`, que es lo que el bot va a preguntar ESTE turno).
-    # Deuda Fase B: en debounce ON existe la ruta `guard_context` (current_turn en
-    # tasks_chatwoot) que persiste y puede pisar el reply tras handle_message;
-    # route-1 productivo deberá reconciliarse con ella. Aquí solo observamos.
-    try:
-        from app.knowledge.route1_contextual import resolve_route1
-        from app.lead_memory.last_asked_field import read_current_asked_field_keys
-
-        fresh_keys = read_current_asked_field_keys(lead_key)
-        if fresh_keys:
-            r1 = resolve_route1(message, fresh_keys)
-            log.info(
-                "[ROUTE1_SHADOW] lead=%s fresh_keys=%s status=%s field=%s value=%s reason=%s",
-                lead_key, fresh_keys, r1["status"], r1.get("field"),
-                r1.get("value"), r1.get("reason"),
-            )
-    except Exception as exc:
-        log.warning("[ROUTE1_SHADOW] omitido por error: %s", exc)
 
     lead_write = _store_lead_memory_updates(
         lead_key=lead_key,
