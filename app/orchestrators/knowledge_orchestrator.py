@@ -889,8 +889,8 @@ def _answer_friendly_message(message: str, contract: dict[str, Any], lead_memory
     strong = _is_strong_candidate(lead_memory)
 
     tono_extra = (
-        "Este candidato ya tiene buen perfil. Cierra con una frase corta que lo anime, "
-        "tipo 'Con ese perfil nos interesa conocerle' o 'Va por buen camino'."
+        "Este candidato ya tiene buen perfil registrado. Cierra con algo breve y cálido, "
+        "sin prometer contratación ni repetir frases que ya hayas dicho antes en este chat."
         if strong else
         "Responde corto y cordial."
     )
@@ -1461,7 +1461,6 @@ _FUNNEL_STEPS: list[dict] = [
         "keys": {"experience.years"},
         "variants": [
             "¿Cuántos años tiene de experiencia como operador?",
-            "Para su perfil, ¿cuántos años lleva manejando de manera profesional?",
             "¿Cuánto tiempo tiene de experiencia al volante?",
         ],
     },

@@ -65,7 +65,7 @@ COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r-plus-08-2024")
 COHERE_MAX_TOKENS = _env_int("COHERE_MAX_TOKENS", GROQ_MAX_TOKENS)
 
 # Generación
-TEMPERATURE = _env_float("TEMPERATURE", 0.1)
+TEMPERATURE = _env_float("TEMPERATURE", 0.0)
 
 # Edad máxima (exclusive) para operar. Candidatos con edad >= este valor
 # no aplican al perfil de operador. Configurable vía env para no redeployar

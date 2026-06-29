@@ -692,7 +692,12 @@ def build_current_turn_ack(
         if not (_apto_exp and is_valid_expiration_text(_apto_exp)):
             confirms.append("Bien, apto médico vigente.")
     if current.get("experience.years"):
-        confirms.append(f"Esa experiencia es valiosa. Con ese perfil nos interesa conocerle.")
+        _yrs = current["experience.years"]
+        _yrs_str = str(_yrs).strip() if _yrs else ""
+        if _yrs_str and _yrs_str not in ("None", ""):
+            confirms.append(f"{_yrs_str} años de experiencia, anotado.")
+        else:
+            confirms.append("Experiencia anotada.")
     if current.get("documents.labor_letters") == "sí" or current.get("documents.proof") in {"cartas", "semanas_imss"}:
         confirms.append("Listo, documentos anotados.")
     if current.get("documents.general_status") == "vigente":
