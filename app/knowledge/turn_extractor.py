@@ -192,6 +192,10 @@ def extract_turn(
             del fields["documents.proof"]  # no mapeable → no persistir texto crudo
         else:
             fields["documents.proof"].value = _proof_canon
+    # Vigencia enunciada por el candidato: si el mensaje trae un marcador de
+    # vencimiento, marca la vigencia como explícita para que D3 no la descarte
+    # cuando se ofrece antes de preguntarla (volunteered-expiration-extraction).
+    _mark_stated_expirations(fields, message)
     embedded = data.get("embedded_question") or None
     return TurnExtraction(
         fields=fields,
@@ -213,6 +217,29 @@ _EQUALITY_HINTS = (
     "igual", "mismo", "lo mismo", "al mismo tiempo", "igual que", "mismo que",
     "los dos", "ambos", "misma vigencia", "igualmente",
 )
+# Marcadores de vencimiento inequívocos (sobre texto normalizado). Si el candidato
+# ENUNCIA la vigencia ("vence en...", "vigencia...") su valor debe tratarse como
+# explícito aunque el LLM deje explicit_marker=False, para no perderlo por D3 cuando
+# se ofrece antes de preguntarlo (volunteered-expiration-extraction).
+_EXPIRATION_MARKERS = ("vence", "venci", "vigenc", "vencimiento", "caduc")
+
+
+def _states_expiration(text: str) -> bool:
+    """True si el texto del turno enuncia claramente una vigencia (vencimiento)."""
+    from app.knowledge.text_normalizer import normalize_text
+    t = normalize_text(text or "")
+    return any(m in t for m in _EXPIRATION_MARKERS)
+
+
+def _mark_stated_expirations(fields: dict[str, "FieldValue"], message: str) -> None:
+    """Marca explicit_marker=True en las vigencias con valor cuando el mensaje enuncia
+    un vencimiento, para que D3 no las descarte al ofrecerse antes de preguntarlas."""
+    if not _states_expiration(message):
+        return
+    for key in ("license.expiration_text", "medical.apto_expiration_text"):
+        fv = fields.get(key)
+        if fv is not None and fv.value:
+            fv.explicit_marker = True
 _NAME_SKIP = {
     "si", "no", "nel", "nop", "ok", "va", "dale", "sale", "claro", "exacto",
     "hola", "ola", "buenas", "buenos", "buen", "hey", "gracias", "perfecto",
