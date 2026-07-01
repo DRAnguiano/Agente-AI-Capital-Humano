@@ -333,10 +333,13 @@ def _resolve_embedded_question(
             if _ans.get("field") and _ans.get("value") is not None:
                 _rag_facts[str(_ans["field"])] = str(_ans["value"])
         answer_text, derive = _generate_rag_answer(q, message, _rag_facts)
+        # Limpia por el limpiador unificado (igual que _answer_rag_message): elimina
+        # `<think></think>` vacío y `> ` residuales antes de anteponer al reply.
+        answer_text = _clean_reply(answer_text or "")
         if not answer_text:
             return None
         return {
-            "answer": answer_text.strip(),
+            "answer": answer_text,
             "derive_to_human": bool(derive),
             "intent": q.get("intent"),
         }
