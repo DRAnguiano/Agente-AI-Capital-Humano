@@ -1,42 +1,46 @@
-## 1. TurnDecision + FunnelState (puros, sin BD)
+> Orden corregido por auditoría: bloques pequeños; **D1/D2 primero en shadow** (los 2 P0,
+> mejor fundamentados). Principio: no intuir — cada bloque se justifica con pruebas antes de
+> gobernar; cutover por consumidor detrás de flags; adapter antes de escritores.
+
+## 1. TurnDecision + FunnelState (puros, sin BD/LLM) — FASE 1 (D1)
 
 - [ ] 1.1 Definir `TurnDecision` (`dataclass frozen`) con los 9 campos; `delivery_policy: Literal["send","suppress","ack_then_handoff"]`.
 - [ ] 1.2 Definir `FunnelState` y `funnel_state_planner.plan(facts) -> FunnelState` (`profile_ready`, `missing_fields`, `conflicts`, `next_question`, `asked_field_keys`).
-- [ ] 1.3 Tests puros de `plan()` por estado de facts (golden), incluidos conflictos.
+- [ ] 1.3 Shadow `[TURN_DECISION_SHADOW]`: construir el `TurnDecision` en paralelo y loggear divergencia vs el reply legacy — SIN gobernar. Confirmar paridad antes de cortar.
+- [ ] 1.4 Tests puros de `plan()` por estado de facts (golden), incluidos conflictos.
 
-## 2. Autoridad única de funnel
+## 2. Detector único de pregunta embebida (raíz del bug #3)
 
-- [ ] 2.1 Migrar los consumidores (ack del guard, nudge, Nota IA, labels) a `funnel_state_planner.plan()`.
-- [ ] 2.2 Eliminar `current_turn._next_funnel_question_or_none`, `_FUNNEL_STEPS`, lista de `intent_orchestrator`.
-- [ ] 2.3 Resolver prefijos (intro Mundo, vocativo) DENTRO del `TurnDecision`, no en el worker.
+- [ ] 2.1 Unificar en un solo detector lo que hoy hacen `signals.has_embedded_question` (`tasks_chatwoot.py:503`) y `_looks_like_question` (`knowledge_orchestrator.py:282`); consumido por guard Y orquestador.
+- [ ] 2.2 Cubrir el caso "compuesto sin `?` ni término de negocio conocido".
+- [ ] 2.3 Tests: guard y orquestador coinciden; compuesto sin marcador se responde; el 2º clasificador no puede descartar en silencio.
 
-## 3. Namespace canónico + adapter
+## 3. Entrega única: texto entregado == memoria (D1/D2, los 2 P0)
 
-- [ ] 3.1 Adapter único legacy→canónico según la matriz (design D4): `license.category→license.type`, `apto_status`/`apto_expiration_text`, `documents.proof`, `experience.vehicle_type`.
-- [ ] 3.2 Eliminar mapeos implícitos dispersos; toda lectura de facts pasa por el adapter/planner.
-- [ ] 3.3 Tratar `license.type=A` como no apta (solo B/E) en el planner.
+- [ ] 3.1 Mover la intro (`_maybe_prepend_first_reply_intro`, `tasks_chatwoot.py:647`) DENTRO del `TurnDecision` (antes de persistir).
+- [ ] 3.2 Una sola persistencia assistant = el texto exacto entregado; eliminar las persistencias duplicadas (`knowledge_orchestrator.py:1207` V2, `:2189` legacy, `tasks_chatwoot.py:595` V2-guard).
+- [ ] 3.3 El worker solo entrega el `TurnDecision`; ninguna capa recompone `reply`.
+- [ ] 3.4 Tests H1/H2: un solo assistant/turno; memoria == entregado (incluye primer contacto con intro).
 
-## 4. Preguntas laterales y handoff
+## 4. funnel_state_planner autoridad (cableado nuevo) + name/age
 
-- [ ] 4.1 Pregunta lateral: `TurnDecision` responde la pregunta, `next_question=None`, preserva el pendiente, cierre suave opcional.
-- [ ] 4.2 `pre_handoff_verification`: `route != human_handoff`, `requires_human=False`.
-- [ ] 4.3 Handoff final explícito (`handoff_reason` + `requires_human=True`); ack gobernado por `delivery_policy` (`ack_then_handoff`).
+- [ ] 4.1 Incorporar `candidate.name` y `candidate.age` a `CORE_FIELDS` (`funnel_state_planner.py:29`) — hoy los omite y los funnels vivos sí los piden (evitar regresión).
+- [ ] 4.2 Cablear `plan()` en vivo; Nota IA y labels leen de aquí.
+- [ ] 4.3 Retirar los funnels vivos duplicados (`current_turn._next_funnel_question_or_none`, `_FUNNEL_STEPS`) DESPUÉS de verificar paridad.
 
-## 5. V2 única verdad + outbox
+## 5. Namespace canónico + adapter (antes de escritores)
 
-- [ ] 5.1 Migrar `release_human_review` a `rh_leads_v2`; legacy read-only detrás de flag.
-- [ ] 5.2 Proyección de nota/labels/stage DESDE V2.
-- [ ] 5.3 Tabla `rh_outbox` con único `(lead_key, turn_id, kind)`; entrega chequea/inserta antes del POST a Chatwoot.
-- [ ] 5.4 Reemplazo de labels declarativo/idempotente; retry lee el outbox y no reenvía.
-- [ ] 5.5 Memoria assistant = texto exacto entregado; un solo assistant por turno.
-- [ ] 5.6 Extraer los helpers de proyección de `app.py` (`_send_chatwoot_message`, `_set_chatwoot_labels`, `_send_chatwoot_private_note`, `_build_chatwoot_internal_note`, `_human_*`, work_queue) a un módulo dedicado (`chatwoot_projection`) consumido por el outbox; webhook y worker dejan de duplicar el flujo — ambos entregan el `TurnDecision` por el outbox. Mantener `_clean_llm_answer` como precedente (ya delega en `reply_cleaner`).
+- [ ] 5.1 Adapter de lectura `license.category→license.type` en un solo punto; verificar con regresión ANTES de tocar escritores.
+- [ ] 5.2 Matriz de compatibilidad AMPLIADA: `apto_status` + `document.apto_status` (singular, `profile_extractor.py:373`) + `documents.general_status` → canónico; reconciliar funnel (lee `apto_expiration_text`) vs nota (lee `apto_status`).
+- [ ] 5.3 `license.type=A` = no apta (solo B/E) en el planner.
 
-## 6. Shadow, cutover y limpieza
+## 6. V2 única verdad + outbox + handoff
 
-- [ ] 6.1 Shadow `[TURN_DECISION_SHADOW]`: comparar `TurnDecision.reply`/funnel_state contra el legacy sin gobernar.
-- [ ] 6.2 Cutover por consumidor detrás de flags (reply → memoria → nota/labels → handoff → followup).
-- [ ] 6.3 Retirar puntos de reemplazo de reply y funnels duplicados una vez deferidos.
-- [ ] 6.4 Incluir `beat` en los deploys (rebuild/restart junto con api/worker) para que no quede con imagen/código stale; verificar hashes de código iguales en los 3 contenedores.
+- [ ] 6.1 Migrar `release_human_review` (`db.py:367`, `rh_conversations` legacy) a V2 (`rh_leads_v2`); legacy read-only detrás de flag.
+- [ ] 6.2 `pre_handoff_verification`: `route != human_handoff`, `requires_human=False`; handoff final explícito (`handoff_reason` + `requires_human=True`); ack por `delivery_policy`.
+- [ ] 6.3 Outbox `rh_outbox` único `(lead_key, turn_id, kind)`; entrega chequea/inserta antes del POST; retry no reenvía; labels declarativos/idempotentes; proyección desde V2.
+- [ ] 6.4 Extraer helpers de proyección de `app.py` a módulo `chatwoot_projection` consumido por el outbox; webhook y worker dejan de duplicar el flujo.
+- [ ] 6.5 Incluir `beat` en los deploys (rebuild/restart con api/worker); verificar hashes iguales en los 3 contenedores.
 
 ## 7. Matriz de regresión (obligatoria — cada caso es un test)
 
@@ -50,6 +54,8 @@
 - [ ] 7.8 `perfil_listo` → stage V2, labels y nota coinciden.
 - [ ] 7.9 Release humano → modifica V2 y la siguiente proyección elimina el estado de revisión.
 - [ ] 7.10 Retry de outbox → no duplica mensajes ni notas.
+- [ ] 7.11 Compuesto sin marcador (`?`/término) → el detector único lo responde.
+- [ ] 7.12 apto_status=vigente sin expiration_text → funnel y nota coinciden (no re-pregunta).
 
 ## 8. Validación
 
