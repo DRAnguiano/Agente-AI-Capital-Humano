@@ -556,8 +556,8 @@ def _next_funnel_question_or_none(facts: dict[str, Any]) -> str | None:
             return "¿Le interesa una vacante de tracto full o de sencillo?"
         else:
             return (
-                "¿Su experiencia es en tracto full o en sencillo? "
-                "Las vacantes disponibles son para operadores de tracto full o sencillo."
+                "Le comento, actualmente tenemos vacantes para operador de tracto "
+                "full y de sencillo. ¿En cuál tiene experiencia?"
             )
     if not facts.get("license.category"):
         return "¿Qué tipo de licencia federal tiene y cuándo vence?"
@@ -682,6 +682,7 @@ def build_current_turn_ack(
     merged_facts: dict[str, Any] | None = None,
     last_bot_message: str | None = None,
     pre_current_facts: dict[str, Any] | None = None,
+    name_just_learned: bool = False,
 ) -> str:
     current = pre_current_facts if pre_current_facts is not None else extract_current_turn_facts(message, last_bot_message)
     # Invariante: `current` contiene SOLO los facts nuevos del turno (el caller filtra
@@ -692,6 +693,16 @@ def build_current_turn_ack(
 
     if is_age_disqualified(facts):
         return age_disqualification_reply(_to_int(facts.get("candidate.age")))
+
+    # Trato por nombre de pila la primera vez que se conoce el nombre (p. ej.
+    # extraído de una INE por visión): genera confianza. `name_just_learned` lo
+    # calcula el caller contra el snapshot PRE-turno (no contra `current`, que se
+    # vacía porque el orquestador ya persistió el nombre antes del guard). Cuando el
+    # nombre es nuevo, el acuse es ÚNICAMENTE "Gracias, <nombre>." + la siguiente
+    # pregunta del funnel; no se confirman los demás datos del mismo turno.
+    _fname = first_name(facts)
+    if name_just_learned and _fname:
+        return _join_ack_and_question(f"Gracias, {_fname}.", next_question_from_missing_facts(facts))
 
     # Frases de confirmación naturales por tipo de dato (P2-5)
     confirms = []
