@@ -6,7 +6,7 @@
 
 - [x] 1.1 Definir `TurnDecision` (`dataclass frozen`) con los 9 campos; `delivery_policy: Literal["send","suppress","ack_then_handoff"]`.
 - [x] 1.2 `FunnelState` + `compute_funnel_state()` YA EXISTEN en `funnel_state_planner.py` (puros, no cableados) — se REUSAN, no se duplica un `plan()`. `TurnDecision` embebe `FunnelState`.
-- [ ] 1.3 Shadow `[TURN_DECISION_SHADOW]`: construir el `TurnDecision` en paralelo y loggear divergencia vs el reply legacy — SIN gobernar. Confirmar paridad antes de cortar.
+- [x] 1.3 Shadow `[TURN_DECISION_SHADOW]`: construir el `TurnDecision` en paralelo y loggear divergencia vs el reply legacy — SIN gobernar. Confirmar paridad antes de cortar.
 - [x] 1.4 Tests puros de `TurnDecision` (inmutabilidad) + planner existente por estado de facts (golden), incluidos conflictos.
 
 ## 2. Detector único de pregunta embebida (raíz del bug #3)

@@ -648,6 +648,49 @@ def process_chatwoot_debounced_message(
             reply, result, is_first_reply=(last_bot_message is None)
         )
 
+        # ── TURN_DECISION_SHADOW (fase 1/D1) ────────────────────────────────
+        # Read-only: construye TurnDecision equivalente y loggea divergencia
+        # entre el reply que vio el candidato y el que se persistió en memoria.
+        # No gobierna nada; solo evidencia los P0 (H1/H2) del auditor.
+        try:
+            from app.knowledge.turn_decision import TurnDecision
+            from app.knowledge.funnel_state_planner import compute_funnel_state, CanonicalFact
+
+            _persisted_reply = (result.get("reply") or result.get("text") or "").strip()
+            _delivered_reply = reply  # post-intro (lo que recibe el candidato)
+            _td_shadow = TurnDecision(
+                reply=_delivered_reply,
+                delivery_policy=(
+                    "suppress" if result.get("requires_human") and not result.get("human_handoff_ack")
+                    else "ack_then_handoff" if result.get("requires_human")
+                    else "send"
+                ),
+                requires_human=bool(result.get("requires_human")),
+                handoff_reason=result.get("intent") if result.get("requires_human") else None,
+                should_continue_profile=not result.get("requires_human", False),
+            )
+            _divergence = _persisted_reply != _delivered_reply
+            print(
+                "[TURN_DECISION_SHADOW]",
+                json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "delivery_policy": _td_shadow.delivery_policy,
+                        "reply_divergence": _divergence,
+                        "persisted_len": len(_persisted_reply),
+                        "delivered_len": len(_delivered_reply),
+                        "persisted_preview": _persisted_reply[:80],
+                        "delivered_preview": _delivered_reply[:80],
+                        "guard_applied": result.get("current_turn_guard_applied", False),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+        except Exception as _e_shadow:
+            print("[TURN_DECISION_SHADOW_ERROR]", str(_e_shadow), flush=True)
+        # ── fin shadow ───────────────────────────────────────────────────────
+
         if not reply:
             return {
                 "status": "ok",
