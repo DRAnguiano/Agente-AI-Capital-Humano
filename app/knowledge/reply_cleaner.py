@@ -5,10 +5,12 @@ Punto ÚNICO de limpieza para todas las rutas que devuelven texto del LLM al can
 existían dos implementaciones divergentes; esta consolida la unión de ambas:
 
 1. sanitiza el carácter de reemplazo Unicode (U+FFFD) que algunos modelos emiten;
-2. elimina `<think>...</think>`;
-3. recorta cierres genéricos exactos (frases completas) en bucle;
-4. recorta cierres genéricos por patrón (regex);
-5. quita un nivel de comillas que envuelvan toda la respuesta.
+2. elimina `<think>...</think>` (cerrado) y el razonamiento tras un `<think>` sin
+   cerrar (modelos reasoning como qwen que truncan el pensamiento);
+3. quita marcadores de blockquote markdown (`> `) al inicio de línea;
+4. recorta cierres genéricos exactos (frases completas) en bucle;
+5. recorta cierres genéricos por patrón (regex);
+6. quita un nivel de comillas que envuelvan toda la respuesta.
 
 Idempotente y sin dependencias de red.
 """
@@ -69,7 +71,14 @@ def clean_reply(text: str) -> str:
     if not clean:
         return clean
     clean = re.sub(r"<think>.*?</think>", "", clean, flags=re.IGNORECASE | re.DOTALL)
+    # Razonamiento truncado: un <think> sin cierre (el modelo reasoning agotó tokens
+    # dentro del bloque de pensamiento) → todo lo que sigue es razonamiento, no la
+    # respuesta. Se descarta hasta el final (evita filtrar el "pensamiento" al candidato).
+    clean = re.sub(r"<think>.*$", "", clean, flags=re.IGNORECASE | re.DOTALL)
     clean = re.sub(r"</?think>", "", clean, flags=re.IGNORECASE).strip()
+    # Marcadores de blockquote markdown ("> ") que algunos modelos (p. ej. qwen)
+    # anteponen; se ven mal en WhatsApp/Chatwoot. Se quitan al inicio de cada línea.
+    clean = re.sub(r"(?m)^[ \t]*>[ \t]?", "", clean).strip()
 
     changed = True
     while changed:

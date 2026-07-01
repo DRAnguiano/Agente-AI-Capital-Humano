@@ -36,6 +36,18 @@ def test_clean_reply_unified_behaviors():
     assert clean_reply('La ruta "MTY-NLD" sale temprano.') == 'La ruta "MTY-NLD" sale temprano.'
 
 
+def test_clean_reply_reasoning_and_blockquote_artifacts():
+    # <think> sin cerrar (reasoning truncado, p. ej. qwen): se descarta todo el
+    # razonamiento → vacío (el caller cae al fallback neutral), no se filtra el pensar.
+    assert clean_reply("<think>") == ""
+    assert clean_reply("<think>\nOkay, el candidato dice kiubo, respondo corto...") == ""
+    # blockquote markdown "> " al inicio de línea → se quita
+    assert clean_reply("> Nuestro modo de trabajo es el corredor.") == "Nuestro modo de trabajo es el corredor."
+    assert clean_reply("> uno\n> dos") == "uno\ndos"
+    # respuesta normal intacta
+    assert clean_reply("Anotado, Torreón.") == "Anotado, Torreón."
+
+
 def test_clean_reply_idempotent():
     for s in _SAMPLES:
         once = clean_reply(s)
