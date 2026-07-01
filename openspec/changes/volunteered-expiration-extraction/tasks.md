@@ -18,4 +18,4 @@
 ## 4. Validación y verificación
 
 - [x] 4.1 `openspec validate volunteered-expiration-extraction` sin errores; suite en verde en contenedor.
-- [ ] 4.2 Verificación en vivo (número nuevo): dar "licencia E, vence en un año" antes de que lo pregunten → el funnel avanza sin re-preguntar la vigencia.
+- [x] 4.2 Verificación en vivo (número nuevo): dar "licencia E, vence en un año" antes de que lo pregunten → el funnel avanza sin re-preguntar la vigencia.
