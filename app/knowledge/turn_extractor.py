@@ -27,6 +27,7 @@ from typing import Any
 
 from app.knowledge.turn_intent_classifier import TurnIntentSignals
 from app.knowledge.geo_utils import normalize_zm_laguna_city
+from app.knowledge.llm_errors import LLMUnavailableError
 
 # El extractor unificado usa su propio modelo: por defecto el de generación (70b),
 # más capaz para distinguir reclamo/negación de dato afirmado que el 8b clasificador.
@@ -164,8 +165,15 @@ def extract_turn(
 
     try:
         from app.indexer import call_groq_json
+        from groq import RateLimitError as GroqRateLimitError
         raw = call_groq_json(user_content, _TURN_EXTRACTOR_SYSTEM, temperature=0.0, model=_EXTRACTOR_MODEL)
         data = json.loads(raw)
+    except GroqRateLimitError as exc:
+        # Cuota agotada en primaria y backup: abort silencioso del turno.
+        # El worker captura LLMUnavailableError antes de enviar nada a Chatwoot.
+        raise LLMUnavailableError(
+            f"Groq quota agotada en ambas claves (TPD): {exc}"
+        ) from exc
     except Exception:
         return TurnExtraction()
 
@@ -312,5 +320,17 @@ def validate_extraction(
 
         # license.expiration_text, experience.years, documents.proof — pasan con su evidencia
         _emit(key, fv.value, fv, catalog_validated=False)
+
+    # Señal de comprobante de renovación: surface como fact del path activo. Sin esto
+    # la señal se descarta y el funnel re-pregunta el comprobante en bucle.
+    _renewal = extraction.signals.renewal_proof
+    if _renewal in {"si", "no"}:
+        out.append({
+            "fact_group": "documents",
+            "fact_key": "renewal_proof",
+            "fact_value": _renewal,
+            "confidence": 0.8,
+            "is_explicit_correction": is_correction,
+        })
 
     return out

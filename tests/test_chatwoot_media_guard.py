@@ -1,26 +1,27 @@
 """G4 — media_guard a nivel del webhook de Chatwoot (agnóstico al canal).
 
-Fixture de payload **de Chatwoot** (no de Telegram): si el evento entrante trae
-`attachments`, el webhook responde con el aviso canned y NO extrae, NO encola, NO orquesta.
-Parametrizado por canal (telegram/whatsapp) para probar la agnosticidad.
-
-Notas de mocking (decisión 8): `_send_chatwoot_message` es async → fake async;
-`run_hr_graph_message` es sync → fake sync (devuelve {} → el webhook corta en `empty_reply`
-sin tocar HTTP/BD aguas abajo).
+Cubre:
+- Audio: transcripción existente (no cambia).
+- Imagen/sticker: ahora van por visión Groq → si devuelve texto ≥3 chars, se encola;
+  si falla/vacío → fallback acotado y media_guard.
+- Adjunto no soportado (doc/video): fallback acotado (comportamiento anterior).
+- Tests unit de los helpers _detect_visual_attachment y _classify_attachment.
+- Test unit de call_groq_vision con fallback de clave.
 """
 from __future__ import annotations
 
+import asyncio
+import base64
 import pytest
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 TOKEN = "test-token"
 CHANNELS = ["telegram", "whatsapp"]
-MEDIA = [
-    [{"file_type": "image", "data_url": "x"}],   # imagen / sticker (Chatwoot lo expone como image)
-    [{"file_type": "file", "data_url": "x"}],     # documento / archivo
-    [{"file_type": "audio", "data_url": "x"}],     # audio
-]
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers de payload
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _payload(*, attachments=None, content="", channel_type="telegram"):
     return {
@@ -36,6 +37,10 @@ def _payload(*, attachments=None, content="", channel_type="telegram"):
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Fixture base del client (sin mock de visión — se añade por test)
+# ─────────────────────────────────────────────────────────────────────────────
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("CHATWOOT_WEBHOOK_TOKEN", TOKEN)
@@ -46,15 +51,15 @@ def client(monkeypatch):
 
     sent: dict = {}
 
-    async def fake_send(account_id, conversation_id, content):  # async: matchea el await
+    async def fake_send(account_id, conversation_id, content):
         sent.update(account_id=account_id, conversation_id=conversation_id, content=content)
         return {"ok": True}
 
     called = {"orchestrator": 0}
 
-    def fake_orchestrator(**kwargs):  # sync: matchea la llamada no-await
+    def fake_orchestrator(**kwargs):
         called["orchestrator"] += 1
-        return {}  # reply vacío → el webhook corta en empty_reply
+        return {}
 
     monkeypatch.setattr(A, "_send_chatwoot_message", fake_send)
     monkeypatch.setattr(A, "run_hr_graph_message", fake_orchestrator)
@@ -62,52 +67,334 @@ def client(monkeypatch):
     return TestClient(A.app), sent, called
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 6.1 — Unit: _detect_visual_attachment y _classify_attachment
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_detect_visual_image():
+    from app.app import _detect_visual_attachment
+    payload = _payload(attachments=[{"file_type": "image", "data_url": "http://x/img.jpg"}])
+    url, kind = _detect_visual_attachment(payload)
+    assert kind == "image"
+    assert url == "http://x/img.jpg"
+
+
+def test_detect_visual_sticker_by_filetype():
+    from app.app import _detect_visual_attachment
+    payload = _payload(attachments=[{"file_type": "sticker", "data_url": "http://x/s.webp"}])
+    url, kind = _detect_visual_attachment(payload)
+    assert kind == "sticker"
+
+
+def test_detect_visual_sticker_by_extension():
+    from app.app import _detect_visual_attachment
+    payload = _payload(attachments=[{"file_type": "image", "data_url": "http://x/s.webp"}])
+    url, kind = _detect_visual_attachment(payload)
+    assert kind == "sticker"
+
+
+def test_detect_visual_audio_returns_none():
+    from app.app import _detect_visual_attachment
+    payload = _payload(attachments=[{"file_type": "audio", "data_url": "http://x/a.ogg"}])
+    url, kind = _detect_visual_attachment(payload)
+    assert kind == ""
+    assert url is None
+
+
+def test_detect_visual_no_attachment():
+    from app.app import _detect_visual_attachment
+    url, kind = _detect_visual_attachment(_payload())
+    assert kind == ""
+    assert url is None
+
+
+def test_detect_visual_nested_message_attachments():
+    from app.app import _detect_visual_attachment
+    payload = _payload(attachments=[])
+    payload["message"] = {"attachments": [{"file_type": "image", "data_url": "http://x/img.png"}]}
+    url, kind = _detect_visual_attachment(payload)
+    assert kind == "image"
+
+
+def test_classify_attachment_audio():
+    from app.app import _classify_attachment
+    p = _payload(attachments=[{"file_type": "audio", "data_url": "x"}])
+    assert _classify_attachment(p) == "audio"
+
+
+def test_classify_attachment_image():
+    from app.app import _classify_attachment
+    p = _payload(attachments=[{"file_type": "image", "data_url": "http://x/img.jpg"}])
+    assert _classify_attachment(p) == "image"
+
+
+def test_classify_attachment_sticker():
+    from app.app import _classify_attachment
+    p = _payload(attachments=[{"file_type": "sticker", "data_url": "http://x/s.webp"}])
+    assert _classify_attachment(p) == "sticker"
+
+
+def test_classify_attachment_other():
+    from app.app import _classify_attachment
+    p = _payload(attachments=[{"file_type": "file", "data_url": "http://x/doc.pdf"}])
+    # file_type="file" sin extensión de imagen → other
+    assert _classify_attachment(p) == "other"
+
+
+def test_classify_attachment_none():
+    from app.app import _classify_attachment
+    assert _classify_attachment(_payload()) == "none"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6.2 — Unit: call_groq_vision fallback de clave en RateLimitError
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_call_groq_vision_fallback_on_rate_limit(monkeypatch):
+    """call_groq_vision usa BACKUP cuando la primaria devuelve RateLimitError."""
+    from groq import RateLimitError as GroqRateLimitError
+    import app.indexer as IDX
+
+    primary_called = {"n": 0}
+    backup_called = {"n": 0}
+
+    def fake_call(key, *a, **kw):
+        if key == "primary":
+            primary_called["n"] += 1
+            # Simular RateLimitError de Groq
+            resp_mock = MagicMock()
+            resp_mock.status_code = 429
+            resp_mock.headers = {}
+            resp_mock.text = "rate limit"
+            raise GroqRateLimitError(message="rate limit", response=resp_mock, body={})
+        backup_called["n"] += 1
+        return "licencia tipo E"
+
+    monkeypatch.setenv("GROQ_API_KEY", "primary")
+    monkeypatch.setenv("GROQ_API_KEY_BACKUP", "backup")
+
+    with patch.object(IDX, "_groq_call", side_effect=fake_call):
+        # call_groq_vision no usa _groq_call directamente — tiene su propio _call interno
+        # Mockeamos en el nivel correcto: Groq.chat.completions.create
+        pass
+
+    # Test real: mockeamos httpx.Client y Groq a nivel de instancia
+    from unittest.mock import patch as upatch
+    call_count = {"n": 0}
+
+    class FakeChoice:
+        class message:
+            content = "licencia tipo E"
+
+    class FakeCompletion:
+        choices = [FakeChoice()]
+
+    class FakeGroq:
+        def __init__(self, api_key, **kw):
+            self.api_key = api_key
+
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kw):
+                    pass  # overridden per-instance
+
+        def __init__(self, api_key, **kw):
+            self.api_key = api_key
+            self.chat = MagicMock()
+            if api_key == "primary_rl":
+                resp_mock = MagicMock()
+                resp_mock.status_code = 429
+                resp_mock.headers = {}
+                resp_mock.text = "rate limit"
+                self.chat.completions.create.side_effect = GroqRateLimitError(
+                    message="rate limit", response=resp_mock, body={}
+                )
+            else:
+                self.chat.completions.create.return_value = FakeCompletion()
+
+    monkeypatch.setenv("GROQ_API_KEY", "primary_rl")
+    monkeypatch.setenv("GROQ_API_KEY_BACKUP", "backup_ok")
+    monkeypatch.delenv("GROQ_API_KEY_ORG2", raising=False)
+
+    import app.indexer as IDX2
+    with upatch("app.indexer.Groq", FakeGroq):
+        result = IDX2.call_groq_vision(b"\x89PNG\r\n", is_sticker=False)
+
+    assert result == "licencia tipo E"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6.3 — Integración webhook: imagen con dato de funnel → encola, sin enlatado
+# ─────────────────────────────────────────────────────────────────────────────
+
 @pytest.mark.parametrize("channel_type", CHANNELS)
-@pytest.mark.parametrize("attachments", MEDIA)
-def test_media_guard_blocks(client, channel_type, attachments):
+def test_image_with_funnel_data_enqueues(client, monkeypatch, channel_type):
+    """Imagen procesada por visión → content sobreescrito, pipeline corre, NO enlatado."""
+    import app.app as A
+
     c, sent, called = client
+
+    async def fake_vision_download(*a, **kw):
+        pass
+
+    # Mock de call_groq_vision para devolver un dato de funnel
+    monkeypatch.setattr(A, "call_groq_vision", lambda *a, **kw: "licencia tipo E")
+
+    # Mock de descarga HTTP dentro del webhook
+    class FakeResp:
+        content = b"\xff\xd8\xff"  # bytes JPEG mínimos
+        status_code = 200
+        def raise_for_status(self): pass
+
+    class FakeAsyncClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def get(self, url, **kw): return FakeResp()
+
+    monkeypatch.setattr(A.httpx, "AsyncClient", lambda **kw: FakeAsyncClient())
+
     r = c.post(
         "/chatwoot/webhook",
         params={"token": TOKEN},
-        json=_payload(attachments=attachments, content="", channel_type=channel_type),
+        json=_payload(
+            attachments=[{"file_type": "image", "data_url": "http://x/img.jpg"}],
+            content="",
+            channel_type=channel_type,
+        ),
+    )
+    body = r.json()
+    # No debe ser media_guard — el pipeline debe haber corrido
+    assert body["status"] != "media_guard", f"Esperaba pipeline, got {body}"
+    assert called["orchestrator"] == 1
+    # No se emitió reply enlatado de rechazo al candidato
+    assert "content" not in sent or "no puedo revisar" not in sent.get("content", "")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6.4 — Integración webhook: sticker afirmativo → encola texto de intención
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("channel_type", CHANNELS)
+def test_sticker_intent_enqueues(client, monkeypatch, channel_type):
+    """Sticker procesado por visión → intención textual encolada, pipeline corre."""
+    import app.app as A
+
+    c, sent, called = client
+
+    monkeypatch.setattr(A, "call_groq_vision", lambda *a, **kw: "afirmativo")
+
+    class FakeResp:
+        content = b"RIFF"  # bytes mínimos webp-like
+        status_code = 200
+        def raise_for_status(self): pass
+
+    class FakeAsyncClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def get(self, url, **kw): return FakeResp()
+
+    monkeypatch.setattr(A.httpx, "AsyncClient", lambda **kw: FakeAsyncClient())
+
+    r = c.post(
+        "/chatwoot/webhook",
+        params={"token": TOKEN},
+        json=_payload(
+            attachments=[{"file_type": "sticker", "data_url": "http://x/s.webp"}],
+            content="",
+            channel_type=channel_type,
+        ),
+    )
+    body = r.json()
+    assert body["status"] != "media_guard", f"Esperaba pipeline, got {body}"
+    assert called["orchestrator"] == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6.5 — Imagen/sticker no procesable → fallback acotado, no encola
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("att", [
+    [{"file_type": "image", "data_url": "http://x/img.jpg"}],
+    [{"file_type": "sticker", "data_url": "http://x/s.webp"}],
+])
+def test_image_sticker_vision_fails_media_guard(client, monkeypatch, att):
+    """Visión devuelve vacío → fallback acotado, sin encolar."""
+    import app.app as A
+
+    c, sent, called = client
+
+    monkeypatch.setattr(A, "call_groq_vision", lambda *a, **kw: "")
+
+    class FakeResp:
+        content = b"\x00"
+        status_code = 200
+        def raise_for_status(self): pass
+
+    class FakeAsyncClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def get(self, url, **kw): return FakeResp()
+
+    monkeypatch.setattr(A.httpx, "AsyncClient", lambda **kw: FakeAsyncClient())
+
+    r = c.post(
+        "/chatwoot/webhook",
+        params={"token": TOKEN},
+        json=_payload(attachments=att, content=""),
     )
     body = r.json()
     assert body["status"] == "media_guard"
-    assert body["extracted"] is False and body["enqueued"] is False
-    assert "no puedo revisar" in sent["content"]
-    assert called["orchestrator"] == 0  # no orquestador, no extracción
+    assert body.get("extracted") is False and body.get("enqueued") is False
+    assert called["orchestrator"] == 0
 
 
-@pytest.mark.parametrize("channel_type", CHANNELS)
-def test_media_with_caption_blocks(client, channel_type):
+# ─────────────────────────────────────────────────────────────────────────────
+# 6.6 — Adjunto no soportado (doc/video) → fallback acotado
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("att", [
+    [{"file_type": "file", "data_url": "http://x/doc.pdf"}],
+    [{"file_type": "video", "data_url": "http://x/vid.mp4"}],
+])
+def test_unsupported_attachment_media_guard(client, att):
+    """Adjuntos no soportados (doc/video) siguen al fallback acotado."""
     c, sent, called = client
     r = c.post(
         "/chatwoot/webhook",
         params={"token": TOKEN},
-        json=_payload(attachments=[{"file_type": "image"}], content="aquí mi licencia", channel_type=channel_type),
+        json=_payload(attachments=att, content=""),
     )
-    assert r.json()["status"] == "media_guard"
-    assert called["orchestrator"] == 0  # caption NO se procesa como fact en v1
+    body = r.json()
+    assert body["status"] == "media_guard"
+    assert body.get("extracted") is False and body.get("enqueued") is False
+    assert called["orchestrator"] == 0
+    # El fallback acotado se emite para adjuntos no soportados
+    assert "content" in sent
 
 
-def test_media_nested_message_attachments(client):
-    """Robustez: attachments anidados en `message.attachments`."""
+# ─────────────────────────────────────────────────────────────────────────────
+# Casos de robustez previos (conservados)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_media_nested_message_attachments_doc(client):
+    """Robustez: attachments de tipo doc anidados en message.attachments → media_guard."""
     c, sent, called = client
     payload = _payload(attachments=[], content="")
-    payload["message"] = {"attachments": [{"file_type": "image", "data_url": "x"}]}
+    payload["message"] = {"attachments": [{"file_type": "file", "data_url": "x"}]}
     r = c.post("/chatwoot/webhook", params={"token": TOKEN}, json=payload)
     assert r.json()["status"] == "media_guard"
     assert called["orchestrator"] == 0
 
 
 @pytest.mark.parametrize("attachments", [
-    [{"id": 555}],            # solo id (señal típica de adjunto)
-    [{"message_id": 9}],       # solo message_id
-    [{"extension": "pdf"}],    # solo extensión
-    [{"foo": "bar"}],          # dict no vacío atípico → cuenta como media (robustez)
+    [{"id": 555}],
+    [{"message_id": 9}],
+    [{"extension": "pdf"}],
+    [{"foo": "bar"}],
 ])
 def test_media_atypical_attachment_dict(client, attachments):
-    """Robustez: cualquier attachment dict no vacío activa media_guard, sin depender de file_type/data_url."""
+    """Robustez: cualquier attachment dict no vacío sin file_type conocida → media_guard."""
     c, sent, called = client
     r = c.post("/chatwoot/webhook", params={"token": TOKEN}, json=_payload(attachments=attachments, content=""))
     assert r.json()["status"] == "media_guard"
@@ -119,7 +406,7 @@ def test_empty_attachment_dict_is_not_media(client):
     c, sent, called = client
     r = c.post("/chatwoot/webhook", params={"token": TOKEN}, json=_payload(attachments=[{}], content="tengo licencia tipo E"))
     assert r.json()["status"] != "media_guard"
-    assert called["orchestrator"] == 1  # flujo normal
+    assert called["orchestrator"] == 1
 
 
 def test_text_only_passes(client):
@@ -130,17 +417,34 @@ def test_text_only_passes(client):
         json=_payload(attachments=[], content="tengo licencia tipo E"),
     )
     assert r.json()["status"] != "media_guard"
-    assert called["orchestrator"] == 1  # flujo normal: el orquestador sí corre
+    assert called["orchestrator"] == 1
 
 
-def test_debounce_on_media_guard_does_not_enqueue(client, monkeypatch):
+def test_debounce_on_image_vision_success(client, monkeypatch):
+    """Con debounce ON, imagen procesada exitosamente se encola (no media_guard)."""
+    import app.app as A
+
     monkeypatch.setenv("INBOUND_DEBOUNCE_ENABLED", "true")
     c, sent, called = client
+
+    monkeypatch.setattr(A, "call_groq_vision", lambda *a, **kw: "licencia tipo E")
+
+    class FakeResp:
+        content = b"\xff\xd8\xff"
+        status_code = 200
+        def raise_for_status(self): pass
+
+    class FakeAsyncClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def get(self, url, **kw): return FakeResp()
+
+    monkeypatch.setattr(A.httpx, "AsyncClient", lambda **kw: FakeAsyncClient())
+
     r = c.post(
         "/chatwoot/webhook",
         params={"token": TOKEN},
-        json=_payload(attachments=[{"file_type": "image"}], content=""),
+        json=_payload(attachments=[{"file_type": "image", "data_url": "http://x/img.jpg"}], content=""),
     )
-    # media_guard corta ANTES del branch de debounce → responde y NO encola
-    assert r.json()["status"] == "media_guard"
-    assert called["orchestrator"] == 0
+    # Con debounce ON y visión exitosa se encola; la respuesta es "enqueued" no "media_guard"
+    assert r.json()["status"] != "media_guard"

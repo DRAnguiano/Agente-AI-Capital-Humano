@@ -387,12 +387,28 @@ def process_chatwoot_debounced_message(
         # ── 6.1: extracción única antes de bifurcar guard/orquestador ──────────
         from app.knowledge.turn_extractor import extract_turn, validate_extraction
         from app.knowledge.text_normalizer import normalize_text as _norm
+        from app.knowledge.llm_errors import LLMUnavailableError
         _known_facts = {
             f"{r['fact_group']}.{r['fact_key']}": r["fact_value"]
             for r in (pre_memory.get("facts") or [])
             if r.get("fact_group") and r.get("fact_key") and r.get("fact_value")
         }
-        _pre_extraction = extract_turn(combined_content, last_bot_message, _known_facts)
+        try:
+            _pre_extraction = extract_turn(combined_content, last_bot_message, _known_facts)
+        except LLMUnavailableError as _llm_exc:
+            # Gate: LLM no disponible (quota agotada en primaria y backup).
+            # Abort silencioso: sin respuesta al candidato, sin persistencia, solo log.
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "[LLM_GATE] turno abortado — LLM no disponible: lead=%s conv=%s err=%s",
+                conversation_key_for_facts, conversation_id, _llm_exc,
+            )
+            return {
+                "status": "skipped_llm_unavailable",
+                "processed": False,
+                "sent_to_chatwoot": False,
+                "reason": str(_llm_exc),
+            }
         _pre_validated = validate_extraction(_pre_extraction, _known_facts)
 
         # Construir dict de guard a partir de los facts validados (Capa 2)
@@ -500,9 +516,18 @@ def process_chatwoot_debounced_message(
                 or conversation_key_for_facts
             )
             merged_facts = {**saved_facts, **_current_turn_facts}
+            # Solo el PREFIJO del ack se restringe a facts nuevos del turno: si el
+            # extractor parrotea los "DATOS YA CONOCIDOS" (echo típico del 8b), esos
+            # facts ya guardados con el mismo valor no deben re-confirmarse. La
+            # siguiente pregunta del funnel sigue derivando de merged_facts (estado
+            # completo), no de _fresh_facts.
+            _fresh_facts = {
+                k: v for k, v in _current_turn_facts.items()
+                if saved_facts.get(k) != v
+            }
             guarded_reply = build_current_turn_ack(
                 combined_content, merged_facts, last_bot_message,
-                pre_current_facts=_current_turn_facts,
+                pre_current_facts=_fresh_facts,
             )
 
             # Persist current-turn facts so funnel doesn't re-ask

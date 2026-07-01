@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
 import asyncio
-from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int, call_groq_transcribe
+from .indexer import build_index, call_llm, retrieve_context_for_guardrail, _to_int, call_groq_transcribe, call_groq_vision
 from .graphs.hr_graph import run_hr_graph_message
 from .db import get_conn, make_conversation_key
 from .persona_config import SYSTEM_PROMPT
@@ -477,10 +477,12 @@ def _extract_chatwoot_channel_label(payload: dict) -> str:
     return "Chatwoot"
 
 
-# Reply canned del media_guard (G4). Para adjuntos no-audio (imagen, doc, sticker, video).
+# Reply de fallback acotado del media_guard (G4).
+# Se emite SOLO para: fallo de visión en imagen/sticker, o adjunto no soportado (doc/video).
+# Las imágenes y stickers exitosamente procesados por visión NO emiten este mensaje.
 _MEDIA_GUARD_REPLY = (
-    "Gracias por compartirlo. Por el momento no puedo revisar documentos, imágenes, "
-    "audios o stickers por este medio. Para continuar con su registro, por favor "
+    "Gracias por compartirlo. Por el momento no puedo revisar documentos o videos "
+    "por este medio. Para continuar con su registro, por favor "
     "respóndame en texto la información solicitada."
 )
 
@@ -551,6 +553,67 @@ def _detect_audio_url(payload: dict) -> str | None:
     if isinstance(message, dict):
         return _find_audio(message.get("attachments"))
     return None
+
+
+def _detect_visual_attachment(payload: dict) -> tuple[str | None, str]:
+    """Devuelve (data_url, tipo) del primer adjunto visual (imagen o sticker), o (None, "").
+
+    Tipos posibles: "image", "sticker".
+    - file_type == "sticker" o nombre/extensión .webp → "sticker"
+    - file_type in {"image", "file"} con extensión de imagen → "image"
+    Revisa ruta top-level y message.attachments.
+    """
+    _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".heic", ".heif"}
+
+    def _find_visual(items) -> tuple[str | None, str]:
+        if not isinstance(items, list):
+            return None, ""
+        for a in items:
+            if not isinstance(a, dict):
+                continue
+            ft = (a.get("file_type") or "").lower()
+            url = a.get("data_url") or a.get("thumb_url") or ""
+            url_lower = url.lower().split("?")[0]
+            ext = "." + url_lower.rsplit(".", 1)[-1] if "." in url_lower.rsplit("/", 1)[-1] else ""
+            # Sticker explícito por file_type
+            if ft == "sticker":
+                return url or None, "sticker"
+            # file_type == "image" → imagen; si la URL es .webp tratar como sticker
+            if ft == "image":
+                if ext == ".webp":
+                    return url or None, "sticker"
+                return url or None, "image"
+            # file_type == "file" solo si la extensión de URL es de imagen reconocida
+            if ft == "file":
+                if ext == ".webp":
+                    return url or None, "sticker"
+                if ext in _IMAGE_EXTS:
+                    return url or None, "image"
+        return None, ""
+
+    url, kind = _find_visual(payload.get("attachments"))
+    if kind:
+        return url, kind
+    message = payload.get("message")
+    if isinstance(message, dict):
+        return _find_visual(message.get("attachments"))
+    return None, ""
+
+
+def _classify_attachment(payload: dict) -> str:
+    """Clasifica el tipo de adjunto dominante: 'audio' | 'image' | 'sticker' | 'other' | 'none'.
+
+    Usa la misma lógica de detección que _detect_audio_url y _detect_visual_attachment,
+    consolidada en un solo lugar para la rama media_guard.
+    """
+    if not _chatwoot_has_media(payload):
+        return "none"
+    if _detect_audio_url(payload):
+        return "audio"
+    _, kind = _detect_visual_attachment(payload)
+    if kind in {"image", "sticker"}:
+        return kind
+    return "other"
 
 
 async def _send_chatwoot_message(
@@ -1143,45 +1206,122 @@ async def chatwoot_webhook(
                     "enqueued": False,
                 }
         else:
-            # ── Rama no-audio: imagen, doc, sticker, video → reply genérico ──
-            _top_att = payload.get("attachments")
-            _msg_att = (payload.get("message") or {}).get("attachments")
-            attachments_count = (
-                (len(_top_att) if isinstance(_top_att, list) else 0)
-                + (len(_msg_att) if isinstance(_msg_att, list) else 0)
-            )
-            sent = False
-            try:
-                await _send_chatwoot_message(
-                    account_id=account_id,
-                    conversation_id=conversation_id,
-                    content=_MEDIA_GUARD_REPLY,
+            # ── Rama no-audio: imagen/sticker → visión; otro → fallback acotado ──
+            att_kind = _classify_attachment(payload)
+            _visual_url, _visual_kind = _detect_visual_attachment(payload)
+
+            if att_kind in {"image", "sticker"}:
+                # ── Sub-rama visión: descargar + procesar con Groq Vision ──
+                vision_text = ""
+                vision_error = None
+                try:
+                    chatwoot_token = os.getenv("CHATWOOT_API_TOKEN", "")
+                    headers = {"api_access_token": chatwoot_token} if chatwoot_token else {}
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(20.0, connect=5.0), follow_redirects=True
+                    ) as hc:
+                        _vis_url = _visual_url or ""
+                        resp = await hc.get(_vis_url, headers=headers)
+                        resp.raise_for_status()
+                        image_bytes = resp.content
+                    # Inferir mime_type desde la URL para base64
+                    _url_path = _vis_url.split("?")[0].lower()
+                    if _url_path.endswith(".png"):
+                        mime_type = "image/png"
+                    elif _url_path.endswith(".webp"):
+                        mime_type = "image/webp"
+                    elif _url_path.endswith(".gif"):
+                        mime_type = "image/gif"
+                    else:
+                        mime_type = "image/jpeg"
+                    vision_text = await asyncio.to_thread(
+                        call_groq_vision,
+                        image_bytes,
+                        is_sticker=(att_kind == "sticker"),
+                        mime_type=mime_type,
+                    )
+                except Exception as exc:
+                    vision_error = str(exc)
+                    print(f"[CHATWOOT_VISION] Error descarga/visión: {exc}", flush=True)
+
+                print(
+                    "[CHATWOOT_VISION]",
+                    json.dumps(
+                        {
+                            "account_id": account_id,
+                            "conversation_id": conversation_id,
+                            "message_id": message_id,
+                            "channel_label": channel_label,
+                            "att_kind": att_kind,
+                            "vision_text_len": len(vision_text),
+                            "error": vision_error,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
                 )
-                sent = True
-            except Exception:
-                traceback.print_exc()
-            print(
-                "[CHATWOOT_MEDIA_GUARD]",
-                json.dumps(
-                    {
-                        "account_id": account_id,
-                        "conversation_id": conversation_id,
-                        "message_id": message_id,
-                        "channel_label": channel_label,
-                        "attachments": attachments_count,
-                        "had_caption": bool(content),
-                        "sent": sent,
-                    },
-                    ensure_ascii=False,
-                ),
-                flush=True,
-            )
-            return {
-                "status": "media_guard",
-                "sent_to_chatwoot": sent,
-                "extracted": False,
-                "enqueued": False,
-            }
+
+                if len(vision_text) >= 3:
+                    # Texto válido → sobreescribir content y continuar el pipeline normal
+                    content = vision_text
+                else:
+                    # Visión no devolvió nada útil → fallback acotado y cortar
+                    sent = False
+                    try:
+                        await _send_chatwoot_message(
+                            account_id=account_id,
+                            conversation_id=conversation_id,
+                            content=_MEDIA_GUARD_REPLY,
+                        )
+                        sent = True
+                    except Exception:
+                        traceback.print_exc()
+                    return {
+                        "status": "media_guard",
+                        "sent_to_chatwoot": sent,
+                        "extracted": False,
+                        "enqueued": False,
+                    }
+            else:
+                # ── Sub-rama no soportada: doc, video, etc. → fallback acotado ──
+                _top_att = payload.get("attachments")
+                _msg_att = (payload.get("message") or {}).get("attachments")
+                attachments_count = (
+                    (len(_top_att) if isinstance(_top_att, list) else 0)
+                    + (len(_msg_att) if isinstance(_msg_att, list) else 0)
+                )
+                sent = False
+                try:
+                    await _send_chatwoot_message(
+                        account_id=account_id,
+                        conversation_id=conversation_id,
+                        content=_MEDIA_GUARD_REPLY,
+                    )
+                    sent = True
+                except Exception:
+                    traceback.print_exc()
+                print(
+                    "[CHATWOOT_MEDIA_GUARD]",
+                    json.dumps(
+                        {
+                            "account_id": account_id,
+                            "conversation_id": conversation_id,
+                            "message_id": message_id,
+                            "channel_label": channel_label,
+                            "attachments": attachments_count,
+                            "had_caption": bool(content),
+                            "sent": sent,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                return {
+                    "status": "media_guard",
+                    "sent_to_chatwoot": sent,
+                    "extracted": False,
+                    "enqueued": False,
+                }
 
     if not content:
         return {

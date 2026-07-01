@@ -95,6 +95,7 @@ COHERE_MAX_TOKENS = int(
 TEMPERATURE = float(getattr(settings, "TEMPERATURE", os.getenv("TEMPERATURE", "0.0")))
 
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
+GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 # Cohere Rerank.
 # Flujo:
@@ -749,9 +750,12 @@ def _groq_with_fallback(
     max_tokens: int = GROQ_MAX_TOKENS,
     timeout_key: str = "GROQ_TIMEOUT_SECONDS",
     timeout_default: str = "8",
+    org2_key: str | None = None,
 ) -> str:
     """Llama a _groq_call con primary_key; si devuelve RateLimitError y hay
-    backup_key, reintenta con ella. Registra el fallback en el log.
+    backup_key, reintenta con ella. Si backup también falla y hay org2_key
+    (organización Groq distinta con cuota TPD independiente), reintenta una vez más.
+    Registra cada fallback en el log.
     """
     call_kwargs = dict(
         json_mode=json_mode,
@@ -770,6 +774,9 @@ def _groq_with_fallback(
             return _groq_call(backup_key, messages, model, **call_kwargs)
         except GroqRateLimitError as exc2:
             print(f"[groq-fallback] BACKUP también agotada — {fn_name}: {exc2}", flush=True)
+            if org2_key:
+                print(f"[groq-fallback] usando ORG2 — {fn_name}", flush=True)
+                return _groq_call(org2_key, messages, model, **call_kwargs)
             raise exc2
 
 
@@ -780,6 +787,12 @@ def call_groq_llm(prompt: str) -> str:
         return "Error: falta configurar GROQ_API_KEY."
 
     backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
+    # GROQ_LLM_HISTORY_TURNS: el orquestador ya acota el historial a messages[-4:]
+    # con 180 chars por mensaje, por lo que el prompt no crece sin cota. Esta
+    # variable queda disponible para documentación/ajuste futuro; no se aplica
+    # truncado adicional aquí porque el historial ya es bounded por diseño.
+    # _history_turns = _to_int(os.environ.get("GROQ_LLM_HISTORY_TURNS"), 6)
     messages = [
         {"role": "system", "content": _llm_system_message()},
         {"role": "user", "content": prompt},
@@ -789,6 +802,7 @@ def call_groq_llm(prompt: str) -> str:
         return _groq_with_fallback(
             api_key, backup_key, "call_groq_llm", messages, GROQ_MODEL,
             temperature=TEMPERATURE, max_tokens=GROQ_MAX_TOKENS,
+            org2_key=org2_key,
         )
     except Exception as exc:
         print(f"[groq] Error: {type(exc).__name__}: {exc}", flush=True)
@@ -854,13 +868,14 @@ def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0
     propio (no el de Mundo conversacional). No reemplaza call_llm.
 
     model: por defecto GROQ_MODEL. Para clasificación conviene un modelo chico
-    (ej. llama-3.1-8b-instant): más barato en tokens y más rápido.
+    (ej. llama-3.3-70b-versatile).
     """
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         return '{"error": "missing_groq_api_key"}'
 
     backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
     messages = [
         {"role": "system", "content": system_message},
         {"role": "user", "content": prompt},
@@ -870,7 +885,10 @@ def call_groq_json(prompt: str, system_message: str, *, temperature: float = 0.0
             api_key, backup_key, "call_groq_json", messages, model or GROQ_MODEL,
             json_mode=True, temperature=temperature, max_tokens=GROQ_MAX_TOKENS,
             timeout_key="GROQ_JSON_TIMEOUT_SECONDS", timeout_default="10",
+            org2_key=org2_key,
         )
+    except GroqRateLimitError:
+        raise
     except Exception as exc:
         print(f"[groq_json] Error: {type(exc).__name__}: {exc}", flush=True)
         return f'{{"error": "{type(exc).__name__}"}}'
@@ -887,6 +905,7 @@ def call_groq_with_system(system: str, user: str, *, temperature: float | None =
     if not api_key:
         return "Tuve un problema al generar la respuesta. Por favor intenta de nuevo."
     backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
     t = temperature if temperature is not None else TEMPERATURE
     messages = [
         {"role": "system", "content": system},
@@ -896,6 +915,7 @@ def call_groq_with_system(system: str, user: str, *, temperature: float | None =
         return _groq_with_fallback(
             api_key, backup_key, "call_groq_with_system", messages, GROQ_MODEL,
             temperature=t, max_tokens=max_tokens,
+            org2_key=org2_key,
         )
     except Exception as exc:
         print(f"[groq_with_system] Error: {type(exc).__name__}: {exc}", flush=True)
@@ -941,6 +961,171 @@ def call_groq_transcribe(audio_bytes: bytes, filename: str = "audio.ogg") -> str
     except Exception as exc:
         print(f"[groq_transcribe] Error: {type(exc).__name__}: {exc}", flush=True)
         return ""
+
+
+# ── Prompts de visión ────────────────────────────────────────────────────────
+# Prompt para imágenes: extrae SOLO datos de perfilamiento del funnel.
+_VISION_PROMPT_IMAGE = (
+    "Eres un asistente de reclutamiento. Analiza la imagen (típicamente una INE, "
+    "licencia, CURP, comprobante u otro documento) y extrae ÚNICAMENTE los datos "
+    "PRESENTES y verificables en ella. Campos posibles: nombre, fecha_nacimiento, "
+    "ciudad, licencia (A, B o E), apto_medico, documento.\n"
+    "REGLAS ESTRICTAS:\n"
+    "- Devuelve SOLO los campos que aparezcan en la imagen, uno por línea, en formato "
+    "'clave: valor'. NO menciones, expliques ni enumeres los datos ausentes. NO "
+    "escribas frases como 'no se puede determinar'. Si un dato no está, simplemente "
+    "omítelo.\n"
+    "- nombre: en una INE el bloque de nombre tiene TRES renglones, de arriba a abajo: "
+    "primer apellido (paterno), segundo apellido (materno) y al final el/los nombre(s). "
+    "Reconstruye el nombre completo en el orden natural 'nombre(s) apellido_paterno "
+    "apellido_materno'. Ejemplo: renglones 'RAMOS' / 'ANGUIANO' / 'DAVID' → "
+    "nombre: David Ramos Anguiano (NO 'David Anguiano Ramos').\n"
+    "- NUNCA infieras años de experiencia como chofer ni tipo de unidad "
+    "(sencillo / full / torton): esos datos NO aparecen en ningún documento; ignóralos "
+    "por completo.\n"
+    "- fecha_nacimiento: extráela SIEMPRE en formato AAAA-MM-DD. En una INE viene "
+    "explícita. Si no, dedúcela de la CURP: los caracteres 5 a 10 codifican AAMMDD "
+    "(p. ej. una CURP que empiece 'XXXX970701...' → 1997-07-01). NO calcules ni "
+    "reportes la edad; solo la fecha de nacimiento.\n"
+    "- ciudad: extrae SOLO el municipio o ciudad, NUNCA el estado. En el domicilio de "
+    "una INE el ÚLTIMO apartado es el ESTADO (a veces abreviado: DGO., JAL., NL., etc.) "
+    "y el municipio/ciudad es el apartado JUSTO ANTES. Devuelve únicamente ese "
+    "municipio. Ejemplo: '..., GOMEZ PALACIO, DGO.' → ciudad: Gómez Palacio (NO "
+    "Durango). NUNCA uses el nombre del estado ni su abreviatura como ciudad. NO emitas "
+    "un campo 'estado'. Si el domicilio no es legible, omite ciudad.\n"
+    "- Si la imagen NO contiene NINGÚN dato relevante, responde exactamente con una "
+    "cadena vacía sin ningún otro texto."
+)
+
+# Prompt para stickers: infiere la intención del usuario.
+_VISION_PROMPT_STICKER = (
+    "La imagen es un sticker de WhatsApp. Determina la intención que expresa: "
+    "afirmación (sí / de acuerdo), negación (no / rechazo), saludo, agradecimiento, "
+    "despedida, emoción positiva (alegría, entusiasmo) o emoción negativa (tristeza, "
+    "enojo). Responde en español con una expresión muy corta que transmita esa "
+    "intención (p. ej. 'sí', 'no', 'hola', 'gracias', 'hasta luego', 'genial'). "
+    "Si no puedes determinar la intención con confianza, responde exactamente con "
+    "una cadena vacía sin ningún otro texto."
+)
+
+
+_VISION_BIRTHDATE_RE = re.compile(
+    r"^\s*fecha_nacimiento\s*:\s*(\d{4})-(\d{2})-(\d{2})\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _replace_birthdate_with_age(text: str) -> str:
+    """Convierte una línea 'fecha_nacimiento: AAAA-MM-DD' en 'edad: X años'.
+
+    El cálculo es determinista contra la fecha de hoy (incluye el borde del
+    cumpleaños), nunca se delega al LLM. Si la fecha es inválida o futura, se
+    elimina la línea para no propagar un dato basura al funnel.
+    """
+    from datetime import date
+
+    def _sub(m: "re.Match[str]") -> str:
+        try:
+            born = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return ""
+        today = date.today()
+        age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        if age < 0 or age > 120:
+            return ""
+        return f"edad: {age} años"
+
+    out = _VISION_BIRTHDATE_RE.sub(_sub, text)
+    # Limpia líneas vacías que pudieran quedar tras una sustitución descartada.
+    return "\n".join(line for line in out.splitlines() if line.strip()).strip()
+
+
+def call_groq_vision(
+    image_bytes: bytes,
+    *,
+    is_sticker: bool = False,
+    mime_type: str = "image/jpeg",
+) -> str:
+    """Procesa una imagen con un modelo de visión Groq y devuelve texto en español.
+
+    - ``is_sticker=True``: usa el prompt de inferencia de intención.
+    - ``is_sticker=False`` (default): usa el prompt de extracción de datos de funnel.
+
+    Aplica el mismo patrón de fallback de claves (primaria → BACKUP → ORG2) que
+    el resto de las funciones Groq. Devuelve string vacío ante fallo o sin contenido útil.
+    """
+    import base64
+
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        print("[groq_vision] Falta GROQ_API_KEY", flush=True)
+        return ""
+    if not image_bytes:
+        return ""
+
+    backup_key = os.environ.get("GROQ_API_KEY_BACKUP")
+    org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
+    system_prompt = _VISION_PROMPT_STICKER if is_sticker else _VISION_PROMPT_IMAGE
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    data_url = f"data:{mime_type};base64,{b64}"
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_url},
+                }
+            ],
+        },
+    ]
+
+    def _call(key: str) -> str:
+        timeout_secs = float(os.getenv("GROQ_VISION_TIMEOUT_SECONDS", "15"))
+        timeout = httpx.Timeout(timeout_secs, connect=5.0)
+        with httpx.Client(timeout=timeout) as http_client:
+            client = Groq(api_key=key, http_client=http_client)
+            completion = client.chat.completions.create(
+                model=GROQ_VISION_MODEL,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=200,
+            )
+        return (completion.choices[0].message.content or "").strip()
+
+    try:
+        result = _call(api_key)
+    except GroqRateLimitError:
+        if not backup_key:
+            print("[groq_vision] RateLimitError sin BACKUP configurado", flush=True)
+            return ""
+        print("[groq-fallback] cuota primaria agotada, usando BACKUP — call_groq_vision", flush=True)
+        try:
+            result = _call(backup_key)
+        except GroqRateLimitError as exc2:
+            print(f"[groq-fallback] BACKUP también agotada — call_groq_vision: {exc2}", flush=True)
+            if org2_key:
+                print("[groq-fallback] usando ORG2 — call_groq_vision", flush=True)
+                try:
+                    result = _call(org2_key)
+                except Exception as exc3:
+                    print(f"[groq_vision] ORG2 falló: {type(exc3).__name__}: {exc3}", flush=True)
+                    return ""
+            else:
+                return ""
+        except Exception as exc2:
+            print(f"[groq_vision] BACKUP falló: {type(exc2).__name__}: {exc2}", flush=True)
+            return ""
+    except Exception as exc:
+        print(f"[groq_vision] Error: {type(exc).__name__}: {exc}", flush=True)
+        return ""
+
+    if not is_sticker and result:
+        result = _replace_birthdate_with_age(result)
+
+    return result
 
 
 def call_llm(prompt: str) -> str:
