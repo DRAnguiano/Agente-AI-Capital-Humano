@@ -655,6 +655,14 @@ def retrieve_context_for_guardrail(question: str, top_k: int | None = None) -> l
 # LLM remoto: Groq / Cohere
 # =========================
 
+def _reasoning_suppression_suffix(model: str) -> str:
+    """Interruptor `/no_think` para modelos qwen reasoning (qwen3): evita que gasten
+    el budget de tokens en `<think>…</think>` y trunquen la respuesta. No-op para
+    modelos no-qwen (70b/otros). Solo se aplica en GENERACIÓN de prosa, nunca en
+    `call_groq_json` (extracción/clasificación), para no ensuciar el JSON."""
+    return " /no_think" if "qwen" in (model or "").lower() else ""
+
+
 def _llm_system_message() -> str:
     return (
         "Eres Mundo, del equipo de reclutamiento de Transmontes. "
@@ -796,7 +804,7 @@ def call_groq_llm(prompt: str) -> str:
     # truncado adicional aquí porque el historial ya es bounded por diseño.
     # _history_turns = _to_int(os.environ.get("GROQ_LLM_HISTORY_TURNS"), 6)
     messages = [
-        {"role": "system", "content": _llm_system_message()},
+        {"role": "system", "content": _llm_system_message() + _reasoning_suppression_suffix(GROQ_MODEL)},
         {"role": "user", "content": prompt},
     ]
     print(f"[groq] Modelo: {GROQ_MODEL}", flush=True)
@@ -910,7 +918,7 @@ def call_groq_with_system(system: str, user: str, *, temperature: float | None =
     org2_key = os.environ.get("GROQ_API_KEY_ORG2") or None
     t = temperature if temperature is not None else TEMPERATURE
     messages = [
-        {"role": "system", "content": system},
+        {"role": "system", "content": system + _reasoning_suppression_suffix(GROQ_MODEL)},
         {"role": "user", "content": user},
     ]
     try:
