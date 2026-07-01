@@ -525,9 +525,17 @@ def process_chatwoot_debounced_message(
                 k: v for k, v in _current_turn_facts.items()
                 if saved_facts.get(k) != v
             }
+            # Nombre recién conocido este turno: se evalúa contra el snapshot PRE-turno
+            # (`_known_facts`), no contra `saved_facts` recargado, porque el orquestador
+            # ya persistió el nombre antes de llegar aquí (lo cual vaciaría _fresh_facts).
+            _name_just_learned = (
+                bool(_current_turn_facts.get("candidate.name"))
+                and not _known_facts.get("candidate.name")
+            )
             guarded_reply = build_current_turn_ack(
                 combined_content, merged_facts, last_bot_message,
                 pre_current_facts=_fresh_facts,
+                name_just_learned=_name_just_learned,
             )
 
             # Persist current-turn facts so funnel doesn't re-ask
